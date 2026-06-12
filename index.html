@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#2563eb" />
+    <title>就活管理</title>
+    <link rel="manifest" href="./manifest.json" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">Job Hunt Tracker</p>
+        <h1>就活管理</h1>
+      </div>
+      <button class="primary-button" id="openFormButton" type="button">＋ 追加</button>
+    </header>
+
+    <main class="app-shell">
+      <section class="summary-grid" aria-label="サマリー">
+        <article class="summary-item">
+          <span class="summary-label">近日の締切</span>
+          <strong id="deadlineCount">0</strong>
+        </article>
+        <article class="summary-item">
+          <span class="summary-label">面接・説明会</span>
+          <strong id="eventCount">0</strong>
+        </article>
+        <article class="summary-item">
+          <span class="summary-label">選考中</span>
+          <strong id="activeCount">0</strong>
+        </article>
+      </section>
+
+      <section class="dashboard-grid">
+        <article class="panel">
+          <div class="panel-heading">
+            <h2>近日の締切</h2>
+            <span>14日以内</span>
+          </div>
+          <div class="item-list" id="deadlineList"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-heading">
+            <h2>近日の面接・説明会</h2>
+            <span>予定日順</span>
+          </div>
+          <div class="item-list" id="eventList"></div>
+        </article>
+
+        <article class="panel wide-panel">
+          <div class="panel-heading">
+            <h2>選考中の企業一覧</h2>
+            <div class="filter-row" role="group" aria-label="企業フィルター">
+              <button class="filter-button active" data-filter="all" type="button">全部</button>
+              <button class="filter-button" data-filter="インターン" type="button">インターン</button>
+              <button class="filter-button" data-filter="早期選考" type="button">早期</button>
+              <button class="filter-button" data-filter="本選考" type="button">本選考</button>
+            </div>
+          </div>
+          <div class="company-list" id="companyList"></div>
+        </article>
+
+        <article class="panel calendar-panel">
+          <div class="panel-heading">
+            <h2>カレンダーまとめ</h2>
+            <span id="calendarMonthLabel"></span>
+          </div>
+          <div class="calendar" id="calendarGrid"></div>
+        </article>
+      </section>
+    </main>
+
+    <dialog class="entry-dialog" id="entryDialog">
+      <form class="entry-form" id="entryForm" method="dialog">
+        <div class="form-heading">
+          <div>
+            <p class="eyebrow">New Entry</p>
+            <h2>企業・選考を追加</h2>
+          </div>
+          <button class="icon-button" id="closeFormButton" type="button" aria-label="閉じる">×</button>
+        </div>
+
+        <label>
+          企業名
+          <input id="companyNameInput" name="companyName" required placeholder="例: 株式会社サンプル" />
+        </label>
+
+        <div class="field-grid">
+          <label>
+            種類
+            <select id="trackTypeInput" name="trackType">
+              <option>インターン</option>
+              <option>早期選考</option>
+              <option>本選考</option>
+              <option>説明会</option>
+              <option>面談</option>
+              <option>OB/OG訪問</option>
+            </select>
+          </label>
+
+          <label>
+            ステータス
+            <select id="statusInput" name="status">
+              <option>気になる</option>
+              <option>応募予定</option>
+              <option>応募済み</option>
+              <option>ES提出済み</option>
+              <option>Webテスト</option>
+              <option>一次面接</option>
+              <option>二次面接</option>
+              <option>最終面接</option>
+              <option>結果待ち</option>
+              <option>内定</option>
+              <option>落選</option>
+              <option>辞退</option>
+              <option>参加済み</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="field-grid">
+          <label>
+            締切日
+            <input id="deadlineInput" name="deadline" type="date" />
+          </label>
+
+          <label>
+            次の予定日
+            <input id="eventDateInput" name="eventDate" type="date" />
+          </label>
+        </div>
+
+        <div class="field-grid">
+          <label>
+            予定の種類
+            <select id="eventTypeInput" name="eventType">
+              <option>ES締切</option>
+              <option>Webテスト</option>
+              <option>面接</option>
+              <option>説明会</option>
+              <option>面談</option>
+              <option>インターン</option>
+              <option>その他</option>
+            </select>
+          </label>
+
+          <label>
+            志望度
+            <select id="priorityInput" name="priority">
+              <option>高</option>
+              <option>中</option>
+              <option>低</option>
+              <option>未定</option>
+            </select>
+          </label>
+        </div>
+
+        <label>
+          メモ
+          <textarea id="memoInput" name="memo" rows="4" placeholder="志望理由、面接メモ、気になることなど"></textarea>
+        </label>
+
+        <div class="form-actions">
+          <button class="secondary-button" id="clearSampleButton" type="button">全データ削除</button>
+          <button class="primary-button" type="submit">保存</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
