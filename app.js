@@ -177,7 +177,7 @@ function ensureMascotDom() {
     mascot.setAttribute("aria-label", "応援キャラクター");
     mascot.innerHTML = `
       <span class="mascot-fallback" aria-hidden="true">祝</span>
-      <img src="./assets/mascot.png" alt="" />
+      <img src="./assets/mascot-cutout.png" alt="" />
       <span class="mascot-bubble" id="mascotBubble">今日もいける！</span>
     `;
     document.body.append(mascot);
@@ -192,7 +192,7 @@ function ensureMascotDom() {
       <div class="celebration-confetti" id="celebrationConfetti" aria-hidden="true"></div>
       <section class="celebration-card" role="dialog" aria-modal="true" aria-labelledby="celebrationTitle">
         <span class="celebration-character-fallback" aria-hidden="true">祝</span>
-        <img class="celebration-character" src="./assets/mascot.png" alt="" />
+        <img class="celebration-character" src="./assets/mascot-cutout.png" alt="" />
         <p class="eyebrow">Congratulations</p>
         <h2 id="celebrationTitle">おめでとう！</h2>
         <p id="celebrationMessage">ここまでの積み重ね、ちゃんと届いた。</p>
@@ -933,13 +933,17 @@ function getMascotBounds() {
   return {
     minX: 10,
     minY: 74,
-    maxX: Math.max(10, window.innerWidth - size - 10),
-    maxY: Math.max(74, window.innerHeight - size - 10)
+    maxX: Math.max(10, window.innerWidth - size.width - 10),
+    maxY: Math.max(74, window.innerHeight - size.height - 10)
   };
 }
 
 function getMascotSize() {
-  return els.mascot.getBoundingClientRect().width || 86;
+  const rect = els.mascot.getBoundingClientRect();
+  return {
+    width: rect.width || 112,
+    height: rect.height || 132
+  };
 }
 
 function applyMascotPosition() {
