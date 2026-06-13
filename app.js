@@ -600,8 +600,7 @@ function renderEventList() {
 
 function renderCompanyList() {
   const entries = state.entries
-    .filter(isActive)
-    .filter((entry) => state.filter === "all" || entry.trackType === state.filter)
+    .filter(matchesListFilter)
     .filter(matchesSearchQuery)
     .filter(matchesIndustryFilter)
     .filter(matchesDeadlineFilter)
@@ -609,7 +608,7 @@ function renderCompanyList() {
     .sort(sortCompanyEntries);
 
   if (entries.length === 0) {
-    els.companyList.innerHTML = emptyState("条件に合う企業がありません。検索条件を変えるか、右上の追加から登録できます。");
+    els.companyList.innerHTML = emptyState("条件に合う企業がありません。内定・落選の企業も「全部」または「結果済み」に残ります。");
     return;
   }
 
@@ -1182,6 +1181,13 @@ function matchesPriorityFilter(entry) {
   return state.priorityFilter === "all" || entry.priority === state.priorityFilter;
 }
 
+function matchesListFilter(entry) {
+  if (state.filter === "all") return true;
+  if (state.filter === "active") return isActive(entry);
+  if (state.filter === "finished") return isFinished(entry);
+  return entry.trackType === state.filter;
+}
+
 function calendarItemsFor(dateKey) {
   const items = [];
   state.entries.forEach((entry) => {
@@ -1197,6 +1203,10 @@ function calendarItemsFor(dateKey) {
 
 function isActive(entry) {
   return activeStatuses.includes(entry.status) || !finishedStatuses.includes(entry.status);
+}
+
+function isFinished(entry) {
+  return finishedStatuses.includes(entry.status);
 }
 
 function isWithinDays(dateValue, days) {
