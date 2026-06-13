@@ -7,6 +7,8 @@
     <title>就活管理</title>
     <link rel="manifest" href="./manifest.json" />
     <link rel="stylesheet" href="./styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./config.js"></script>
   </head>
   <body>
     <header class="app-header">
@@ -14,63 +16,112 @@
         <p class="eyebrow">Job Hunt Tracker</p>
         <h1>就活管理</h1>
       </div>
-      <button class="primary-button" id="openFormButton" type="button">＋ 追加</button>
+      <div class="header-actions">
+        <span class="sync-pill" id="syncStatus">読み込み中</span>
+        <button class="secondary-button" id="signOutButton" type="button" hidden>ログアウト</button>
+        <button class="primary-button" id="openFormButton" type="button">＋ 追加</button>
+      </div>
     </header>
 
     <main class="app-shell">
-      <section class="summary-grid" aria-label="サマリー">
-        <article class="summary-item">
-          <span class="summary-label">近日の締切</span>
-          <strong id="deadlineCount">0</strong>
-        </article>
-        <article class="summary-item">
-          <span class="summary-label">面接・説明会</span>
-          <strong id="eventCount">0</strong>
-        </article>
-        <article class="summary-item">
-          <span class="summary-label">選考中</span>
-          <strong id="activeCount">0</strong>
-        </article>
+      <section class="auth-panel" id="authPanel" hidden>
+        <div>
+          <p class="eyebrow">Cloud Sync</p>
+          <h2>ログインして同期</h2>
+          <p>
+            メールアドレスとパスワードでログインすると、iPhoneとPCで同じ就活データを使えます。
+            データはログインした本人だけに表示されます。
+          </p>
+        </div>
+        <form class="auth-form" id="authForm">
+          <label>
+            メールアドレス
+            <input id="authEmailInput" type="email" autocomplete="email" required placeholder="you@example.com" />
+          </label>
+          <label>
+            パスワード
+            <input id="authPasswordInput" type="password" autocomplete="current-password" required minlength="6" placeholder="6文字以上" />
+          </label>
+          <div class="auth-actions">
+            <button class="primary-button" id="signInButton" type="button">ログイン</button>
+            <button class="secondary-button" id="signUpButton" type="button">新規登録</button>
+          </div>
+          <p class="auth-message" id="authMessage"></p>
+        </form>
       </section>
 
-      <section class="dashboard-grid">
-        <article class="panel">
-          <div class="panel-heading">
-            <h2>近日の締切</h2>
-            <span>14日以内</span>
-          </div>
-          <div class="item-list" id="deadlineList"></div>
-        </article>
+      <section class="account-panel" id="accountPanel" hidden>
+        <div>
+          <p class="eyebrow">Signed In</p>
+          <h2 id="userEmailLabel">ログイン中</h2>
+          <p>クラウド同期が有効です。別の端末でも同じアカウントでログインすると、このデータを見られます。</p>
+        </div>
+        <div class="account-actions">
+          <button class="secondary-button" id="importLocalButton" type="button" hidden>端末データを移す</button>
+          <button class="secondary-button" id="refreshButton" type="button">同期更新</button>
+        </div>
+      </section>
 
-        <article class="panel">
-          <div class="panel-heading">
-            <h2>近日の面接・説明会</h2>
-            <span>予定日順</span>
-          </div>
-          <div class="item-list" id="eventList"></div>
-        </article>
+      <section class="local-panel" id="localPanel" hidden>
+        <strong>今は端末保存モードです。</strong>
+        <span>Supabaseの設定を入れると、ログインとPC/iPhone同期が有効になります。</span>
+      </section>
 
-        <article class="panel wide-panel">
-          <div class="panel-heading">
-            <h2>選考中の企業一覧</h2>
-            <div class="filter-row" role="group" aria-label="企業フィルター">
-              <button class="filter-button active" data-filter="all" type="button">全部</button>
-              <button class="filter-button" data-filter="インターン" type="button">インターン</button>
-              <button class="filter-button" data-filter="早期選考" type="button">早期</button>
-              <button class="filter-button" data-filter="本選考" type="button">本選考</button>
+      <div id="appContent">
+        <section class="summary-grid" aria-label="サマリー">
+          <article class="summary-item">
+            <span class="summary-label">近日の締切</span>
+            <strong id="deadlineCount">0</strong>
+          </article>
+          <article class="summary-item">
+            <span class="summary-label">面接・説明会</span>
+            <strong id="eventCount">0</strong>
+          </article>
+          <article class="summary-item">
+            <span class="summary-label">選考中</span>
+            <strong id="activeCount">0</strong>
+          </article>
+        </section>
+
+        <section class="dashboard-grid">
+          <article class="panel">
+            <div class="panel-heading">
+              <h2>近日の締切</h2>
+              <span>14日以内</span>
             </div>
-          </div>
-          <div class="company-list" id="companyList"></div>
-        </article>
+            <div class="item-list" id="deadlineList"></div>
+          </article>
 
-        <article class="panel calendar-panel">
-          <div class="panel-heading">
-            <h2>カレンダーまとめ</h2>
-            <span id="calendarMonthLabel"></span>
-          </div>
-          <div class="calendar" id="calendarGrid"></div>
-        </article>
-      </section>
+          <article class="panel">
+            <div class="panel-heading">
+              <h2>近日の面接・説明会</h2>
+              <span>予定日順</span>
+            </div>
+            <div class="item-list" id="eventList"></div>
+          </article>
+
+          <article class="panel wide-panel">
+            <div class="panel-heading">
+              <h2>選考中の企業一覧</h2>
+              <div class="filter-row" role="group" aria-label="企業フィルター">
+                <button class="filter-button active" data-filter="all" type="button">全部</button>
+                <button class="filter-button" data-filter="インターン" type="button">インターン</button>
+                <button class="filter-button" data-filter="早期選考" type="button">早期</button>
+                <button class="filter-button" data-filter="本選考" type="button">本選考</button>
+              </div>
+            </div>
+            <div class="company-list" id="companyList"></div>
+          </article>
+
+          <article class="panel calendar-panel">
+            <div class="panel-heading">
+              <h2>カレンダーまとめ</h2>
+              <span id="calendarMonthLabel"></span>
+            </div>
+            <div class="calendar" id="calendarGrid"></div>
+          </article>
+        </section>
+      </div>
     </main>
 
     <dialog class="entry-dialog" id="entryDialog">
@@ -170,6 +221,7 @@
       </form>
     </dialog>
 
+    <div class="toast" id="toast" role="status" hidden></div>
     <script src="./app.js"></script>
   </body>
 </html>

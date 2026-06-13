@@ -1,4 +1,6 @@
 const storageKey = "shukatsu-tracker-entries";
+const activeStatuses = ["気になる", "応募予定", "応募済み", "ES提出済み", "Webテスト", "一次面接", "二次面接", "最終面接", "結果待ち"];
+const finishedStatuses = ["内定", "落選", "辞退", "参加済み"];
 
 const sampleEntries = [
   {
@@ -39,15 +41,39 @@ const sampleEntries = [
   }
 ];
 
+const appConfig = window.SHUKATSU_CONFIG || {};
+const hasCloudConfig = Boolean(appConfig.supabaseUrl && appConfig.supabaseAnonKey && window.supabase);
+const supabaseClient = hasCloudConfig
+  ? window.supabase.createClient(appConfig.supabaseUrl, appConfig.supabaseAnonKey)
+  : null;
+
 const state = {
-  entries: loadEntries(),
-  filter: "all"
+  entries: [],
+  filter: "all",
+  mode: hasCloudConfig ? "cloud" : "local",
+  session: null,
+  loading: true
 };
 
 const els = {
   openFormButton: document.querySelector("#openFormButton"),
   closeFormButton: document.querySelector("#closeFormButton"),
   clearSampleButton: document.querySelector("#clearSampleButton"),
+  signOutButton: document.querySelector("#signOutButton"),
+  signInButton: document.querySelector("#signInButton"),
+  signUpButton: document.querySelector("#signUpButton"),
+  refreshButton: document.querySelector("#refreshButton"),
+  importLocalButton: document.querySelector("#importLocalButton"),
+  authForm: document.querySelector("#authForm"),
+  authPanel: document.querySelector("#authPanel"),
+  accountPanel: document.querySelector("#accountPanel"),
+  localPanel: document.querySelector("#localPanel"),
+  appContent: document.querySelector("#appContent"),
+  authEmailInput: document.querySelector("#authEmailInput"),
+  authPasswordInput: document.querySelector("#authPasswordInput"),
+  authMessage: document.querySelector("#authMessage"),
+  userEmailLabel: document.querySelector("#userEmailLabel"),
+  syncStatus: document.querySelector("#syncStatus"),
   entryDialog: document.querySelector("#entryDialog"),
   entryForm: document.querySelector("#entryForm"),
   deadlineCount: document.querySelector("#deadlineCount"),
@@ -58,32 +84,146 @@ const els = {
   companyList: document.querySelector("#companyList"),
   calendarGrid: document.querySelector("#calendarGrid"),
   calendarMonthLabel: document.querySelector("#calendarMonthLabel"),
-  filterButtons: document.querySelectorAll(".filter-button")
+  filterButtons: document.querySelectorAll(".filter-button"),
+  toast: document.querySelector("#toast")
 };
 
-els.openFormButton.addEventListener("click", () => {
-  if (typeof els.entryDialog.showModal === "function") {
-    els.entryDialog.showModal();
-  } else {
-    els.entryDialog.setAttribute("open", "");
+bindEvents();
+init();
+
+function bindEvents() {
+  els.openFormButton.addEventListener("click", () => {
+    if (state.mode === "cloud" && !state.session) {
+      showToast("ログインすると追加できます。");
+      return;
+    }
+
+    if (typeof els.entryDialog.showModal === "function") {
+      els.entryDialog.showModal();
+    } else {
+      els.entryDialog.setAttribute("open", "");
+    }
+  });
+
+  els.closeFormButton.addEventListener("click", () => {
+    els.entryDialog.close();
+  });
+
+  els.clearSampleButton.addEventListener("click", handleClearEntries);
+  els.entryForm.addEventListener("submit", handleEntrySubmit);
+  els.authForm.addEventListener("submit", (event) => event.preventDefault());
+  els.signInButton.addEventListener("click", handleSignIn);
+  els.signUpButton.addEventListener("click", handleSignUp);
+  els.signOutButton.addEventListener("click", handleSignOut);
+  els.refreshButton.addEventListener("click", loadCloudEntries);
+  els.importLocalButton.addEventListener("click", handleImportLocalEntries);
+
+  els.filterButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      state.filter = button.dataset.filter;
+      els.filterButtons.forEach((item) => item.classList.toggle("active", item === button));
+      renderCompanyList();
+    });
+  });
+
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-delete-id]");
+    if (!button) return;
+    handleDeleteEntry(button.dataset.deleteId);
+  });
+}
+
+async function init() {
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./service-worker.js").catch(() => {});
+    });
   }
-});
 
-els.closeFormButton.addEventListener("click", () => {
-  els.entryDialog.close();
-});
+  if (!hasCloudConfig) {
+    state.entries = loadLocalEntries();
+    state.loading = false;
+    render();
+    return;
+  }
 
-els.clearSampleButton.addEventListener("click", () => {
-  const shouldClear = window.confirm("登録したデータをすべて削除しますか？");
-  if (!shouldClear) return;
+  const { data, error } = await supabaseClient.auth.getSession();
+  if (error) {
+    setAuthMessage(error.message);
+  }
 
-  state.entries = [];
-  saveEntries();
-  render();
-  els.entryDialog.close();
-});
+  state.session = data?.session || null;
+  supabaseClient.auth.onAuthStateChange(async (_event, session) => {
+    state.session = session;
+    if (session) {
+      await loadCloudEntries();
+    } else {
+      state.entries = [];
+      state.loading = false;
+      render();
+    }
+  });
 
-els.entryForm.addEventListener("submit", (event) => {
+  if (state.session) {
+    await loadCloudEntries();
+  } else {
+    state.entries = [];
+    state.loading = false;
+    render();
+  }
+}
+
+async function handleSignIn() {
+  const credentials = getAuthCredentials();
+  if (!credentials) return;
+
+  setAuthBusy(true);
+  setAuthMessage("ログイン中です...");
+  const { error } = await supabaseClient.auth.signInWithPassword(credentials);
+  setAuthBusy(false);
+
+  if (error) {
+    setAuthMessage(error.message);
+    return;
+  }
+
+  setAuthMessage("");
+  showToast("ログインしました。");
+}
+
+async function handleSignUp() {
+  const credentials = getAuthCredentials();
+  if (!credentials) return;
+
+  setAuthBusy(true);
+  setAuthMessage("登録中です...");
+  const { data, error } = await supabaseClient.auth.signUp(credentials);
+  setAuthBusy(false);
+
+  if (error) {
+    setAuthMessage(error.message);
+    return;
+  }
+
+  if (data.session) {
+    setAuthMessage("");
+    showToast("登録しました。");
+    return;
+  }
+
+  setAuthMessage("確認メールを送りました。メール内のリンクを押してからログインしてください。");
+}
+
+async function handleSignOut() {
+  const { error } = await supabaseClient.auth.signOut();
+  if (error) {
+    showToast(error.message);
+    return;
+  }
+  showToast("ログアウトしました。");
+}
+
+async function handleEntrySubmit(event) {
   event.preventDefault();
   const formData = new FormData(els.entryForm);
   const entry = {
@@ -99,60 +239,146 @@ els.entryForm.addEventListener("submit", (event) => {
     createdAt: new Date().toISOString()
   };
 
-  state.entries.unshift(entry);
-  saveEntries();
+  if (!entry.companyName) {
+    showToast("企業名を入力してください。");
+    return;
+  }
+
+  if (state.mode === "cloud") {
+    if (!state.session) {
+      showToast("ログインすると保存できます。");
+      return;
+    }
+
+    const saved = await createCloudEntry(entry);
+    if (!saved) return;
+    state.entries.unshift(saved);
+  } else {
+    state.entries.unshift(entry);
+    saveLocalEntries(state.entries);
+  }
+
   els.entryForm.reset();
   els.entryDialog.close();
   render();
-});
-
-els.filterButtons.forEach((button) => {
-  button.addEventListener("click", () => {
-    state.filter = button.dataset.filter;
-    els.filterButtons.forEach((item) => item.classList.toggle("active", item === button));
-    renderCompanyList();
-  });
-});
-
-document.addEventListener("click", (event) => {
-  const button = event.target.closest("[data-delete-id]");
-  if (!button) return;
-
-  state.entries = state.entries.filter((entry) => entry.id !== button.dataset.deleteId);
-  saveEntries();
-  render();
-});
-
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./service-worker.js").catch(() => {});
-  });
+  showToast("保存しました。");
 }
 
-render();
+async function handleDeleteEntry(id) {
+  const shouldDelete = window.confirm("このデータを削除しますか？");
+  if (!shouldDelete) return;
 
-function loadEntries() {
-  const saved = localStorage.getItem(storageKey);
-  if (!saved) return sampleEntries;
-
-  try {
-    const parsed = JSON.parse(saved);
-    return Array.isArray(parsed) ? parsed : sampleEntries;
-  } catch {
-    return sampleEntries;
+  if (state.mode === "cloud") {
+    const { error } = await supabaseClient.from("entries").delete().eq("id", id);
+    if (error) {
+      showToast(error.message);
+      return;
+    }
   }
+
+  state.entries = state.entries.filter((entry) => entry.id !== id);
+  if (state.mode === "local") saveLocalEntries(state.entries);
+  render();
 }
 
-function saveEntries() {
-  localStorage.setItem(storageKey, JSON.stringify(state.entries));
+async function handleClearEntries() {
+  const shouldClear = window.confirm("登録したデータをすべて削除しますか？");
+  if (!shouldClear) return;
+
+  if (state.mode === "cloud") {
+    const ids = state.entries.map((entry) => entry.id);
+    if (ids.length > 0) {
+      const { error } = await supabaseClient.from("entries").delete().in("id", ids);
+      if (error) {
+        showToast(error.message);
+        return;
+      }
+    }
+  }
+
+  state.entries = [];
+  if (state.mode === "local") saveLocalEntries(state.entries);
+  render();
+  els.entryDialog.close();
+  showToast("削除しました。");
+}
+
+async function handleImportLocalEntries() {
+  const localEntries = readSavedLocalEntries();
+  if (localEntries.length === 0 || !state.session) return;
+
+  const shouldImport = window.confirm("この端末に残っているデータをクラウドへ移しますか？");
+  if (!shouldImport) return;
+
+  const payload = localEntries.map((entry) => toDbEntry(entry));
+  const { error } = await supabaseClient.from("entries").upsert(payload, { onConflict: "id" });
+  if (error) {
+    showToast(error.message);
+    return;
+  }
+
+  localStorage.removeItem(storageKey);
+  await loadCloudEntries();
+  showToast("端末データをクラウドへ移しました。");
+}
+
+async function loadCloudEntries() {
+  if (!state.session) return;
+
+  state.loading = true;
+  renderMode();
+  const { data, error } = await supabaseClient.from("entries").select("*").order("created_at", { ascending: false });
+  state.loading = false;
+
+  if (error) {
+    showToast(error.message);
+    render();
+    return;
+  }
+
+  state.entries = data.map(fromDbEntry);
+  render();
+}
+
+async function createCloudEntry(entry) {
+  const { data, error } = await supabaseClient.from("entries").insert(toDbEntry(entry)).select("*").single();
+  if (error) {
+    showToast(error.message);
+    return null;
+  }
+  return fromDbEntry(data);
 }
 
 function render() {
+  renderMode();
   renderSummary();
   renderDeadlineList();
   renderEventList();
   renderCompanyList();
   renderCalendar();
+}
+
+function renderMode() {
+  const waitingForLogin = state.mode === "cloud" && !state.session;
+  els.authPanel.hidden = !waitingForLogin;
+  els.accountPanel.hidden = state.mode !== "cloud" || !state.session;
+  els.localPanel.hidden = state.mode !== "local";
+  els.appContent.hidden = waitingForLogin;
+  els.openFormButton.disabled = waitingForLogin || state.loading;
+  els.signOutButton.hidden = state.mode !== "cloud" || !state.session;
+  els.importLocalButton.hidden = state.mode !== "cloud" || !state.session || readSavedLocalEntries().length === 0;
+
+  if (state.mode === "local") {
+    els.syncStatus.textContent = "端末保存";
+    els.syncStatus.className = "sync-pill local";
+  } else if (state.session) {
+    els.syncStatus.textContent = state.loading ? "同期中" : "クラウド同期";
+    els.syncStatus.className = "sync-pill cloud";
+    els.userEmailLabel.textContent = state.session.user.email || "ログイン中";
+  } else {
+    els.syncStatus.textContent = "ログイン待ち";
+    els.syncStatus.className = "sync-pill";
+  }
 }
 
 function renderSummary() {
@@ -262,7 +488,6 @@ function renderCalendar() {
   const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
 
   els.calendarMonthLabel.textContent = `${year}年${month + 1}月`;
-
   const cells = weekdays.map((day) => `<div class="calendar-weekday">${day}</div>`);
 
   for (let blank = 0; blank < firstDay; blank += 1) {
@@ -285,6 +510,108 @@ function renderCalendar() {
   }
 
   els.calendarGrid.innerHTML = cells.join("");
+}
+
+function loadLocalEntries() {
+  const savedEntries = readSavedLocalEntries();
+  return savedEntries.length > 0 ? savedEntries : sampleEntries;
+}
+
+function readSavedLocalEntries() {
+  const saved = localStorage.getItem(storageKey);
+  if (!saved) return [];
+
+  try {
+    const parsed = JSON.parse(saved);
+    return Array.isArray(parsed) ? parsed.map(normalizeEntry) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalEntries(entries) {
+  localStorage.setItem(storageKey, JSON.stringify(entries));
+}
+
+function toDbEntry(entry) {
+  return {
+    id: entry.id,
+    user_id: state.session.user.id,
+    company_name: entry.companyName,
+    track_type: entry.trackType,
+    status: entry.status,
+    deadline: entry.deadline || null,
+    event_date: entry.eventDate || null,
+    event_type: entry.eventType,
+    priority: entry.priority,
+    memo: entry.memo,
+    created_at: entry.createdAt || new Date().toISOString()
+  };
+}
+
+function fromDbEntry(row) {
+  return normalizeEntry({
+    id: row.id,
+    companyName: row.company_name,
+    trackType: row.track_type,
+    status: row.status,
+    deadline: row.deadline || "",
+    eventDate: row.event_date || "",
+    eventType: row.event_type,
+    priority: row.priority,
+    memo: row.memo || "",
+    createdAt: row.created_at
+  });
+}
+
+function normalizeEntry(entry) {
+  return {
+    id: entry.id || createId(),
+    companyName: entry.companyName || "",
+    trackType: entry.trackType || "本選考",
+    status: entry.status || "気になる",
+    deadline: entry.deadline || "",
+    eventDate: entry.eventDate || "",
+    eventType: entry.eventType || "面接",
+    priority: entry.priority || "未定",
+    memo: entry.memo || "",
+    createdAt: entry.createdAt || new Date().toISOString()
+  };
+}
+
+function getAuthCredentials() {
+  const email = els.authEmailInput.value.trim();
+  const password = els.authPasswordInput.value;
+
+  if (!email || !password) {
+    setAuthMessage("メールアドレスとパスワードを入力してください。");
+    return null;
+  }
+
+  if (password.length < 6) {
+    setAuthMessage("パスワードは6文字以上にしてください。");
+    return null;
+  }
+
+  return { email, password };
+}
+
+function setAuthBusy(isBusy) {
+  els.signInButton.disabled = isBusy;
+  els.signUpButton.disabled = isBusy;
+}
+
+function setAuthMessage(message) {
+  els.authMessage.textContent = message;
+}
+
+function showToast(message) {
+  els.toast.textContent = message;
+  els.toast.hidden = false;
+  window.clearTimeout(showToast.timer);
+  showToast.timer = window.setTimeout(() => {
+    els.toast.hidden = true;
+  }, 3200);
 }
 
 function getUpcomingDeadlines() {
@@ -313,7 +640,7 @@ function calendarItemsFor(dateKey) {
 }
 
 function isActive(entry) {
-  return !["内定", "落選", "辞退", "参加済み"].includes(entry.status);
+  return activeStatuses.includes(entry.status) || !finishedStatuses.includes(entry.status);
 }
 
 function isWithinDays(dateValue, days) {
