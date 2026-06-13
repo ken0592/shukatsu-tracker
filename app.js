@@ -1,4 +1,5 @@
 const storageKey = "shukatsu-tracker-entries";
+const templateStorageKey = "shukatsu-tracker-templates";
 const mascotPositionKey = "shukatsu-tracker-mascot-position";
 const activeStatuses = ["気になる", "応募予定", "応募済み", "ES提出済み", "Webテスト", "一次面接", "二次面接", "最終面接", "結果待ち", "選考通過", "インターン選考通過", "インターン参加決定"];
 const finishedStatuses = ["内定", "落選", "辞退", "参加済み"];
@@ -40,6 +41,7 @@ const supabaseClient = hasCloudConfig
 
 const state = {
   entries: [],
+  templates: [],
   filter: "all",
   searchQuery: "",
   industryFilter: "all",
@@ -49,6 +51,8 @@ const state = {
   session: null,
   loading: true,
   editingId: null,
+  detailEditingId: null,
+  editingTemplateId: null,
   calendarYear: initialCalendarDate.getFullYear(),
   calendarMonth: initialCalendarDate.getMonth()
 };
@@ -77,6 +81,26 @@ const els = {
   entryForm: document.querySelector("#entryForm"),
   entryFormTitle: document.querySelector("#entryFormTitle"),
   saveEntryButton: document.querySelector("#saveEntryButton"),
+  companyDetailDialog: document.querySelector("#companyDetailDialog"),
+  companyDetailForm: document.querySelector("#companyDetailForm"),
+  closeDetailButton: document.querySelector("#closeDetailButton"),
+  detailCompanyTitle: document.querySelector("#detailCompanyTitle"),
+  detailCompanyMeta: document.querySelector("#detailCompanyMeta"),
+  detailEsList: document.querySelector("#detailEsList"),
+  addEsItemButton: document.querySelector("#addEsItemButton"),
+  detailTemplateSelect: document.querySelector("#detailTemplateSelect"),
+  insertTemplateButton: document.querySelector("#insertTemplateButton"),
+  detailInterviewNotesInput: document.querySelector("#detailInterviewNotesInput"),
+  detailMemoInput: document.querySelector("#detailMemoInput"),
+  openBasicEditButton: document.querySelector("#openBasicEditButton"),
+  templateForm: document.querySelector("#templateForm"),
+  templateKindInput: document.querySelector("#templateKindInput"),
+  templateTitleInput: document.querySelector("#templateTitleInput"),
+  templateBodyInput: document.querySelector("#templateBodyInput"),
+  templateBodyCount: document.querySelector("#templateBodyCount"),
+  resetTemplateButton: document.querySelector("#resetTemplateButton"),
+  saveTemplateButton: document.querySelector("#saveTemplateButton"),
+  templateList: document.querySelector("#templateList"),
   deadlineCount: document.querySelector("#deadlineCount"),
   eventCount: document.querySelector("#eventCount"),
   activeCount: document.querySelector("#activeCount"),
@@ -98,9 +122,15 @@ const els = {
   mascotBubble: document.querySelector("#mascotBubble"),
   celebrationOverlay: document.querySelector("#celebrationOverlay"),
   celebrationConfetti: document.querySelector("#celebrationConfetti"),
+  celebrationEyebrow: document.querySelector("#celebrationEyebrow"),
   celebrationTitle: document.querySelector("#celebrationTitle"),
   celebrationMessage: document.querySelector("#celebrationMessage"),
   closeCelebrationButton: document.querySelector("#closeCelebrationButton"),
+  mascotHelpPanel: document.querySelector("#mascotHelpPanel"),
+  closeMascotHelpButton: document.querySelector("#closeMascotHelpButton"),
+  mascotHelpForm: document.querySelector("#mascotHelpForm"),
+  mascotHelpInput: document.querySelector("#mascotHelpInput"),
+  mascotHelpLog: document.querySelector("#mascotHelpLog"),
   toast: document.querySelector("#toast")
 };
 
@@ -147,19 +177,38 @@ function bindEvents() {
   els.signInButton.addEventListener("click", handleSignIn);
   els.signUpButton.addEventListener("click", handleSignUp);
   els.signOutButton.addEventListener("click", handleSignOut);
-  els.refreshButton.addEventListener("click", loadCloudEntries);
+  els.refreshButton.addEventListener("click", loadCloudData);
   els.importLocalButton.addEventListener("click", handleImportLocalEntries);
   els.mascot.addEventListener("click", () => {
     if (mascotState.didDrag) {
       mascotState.didDrag = false;
       return;
     }
-    showMascotBubble("応援してる！");
+    openMascotHelp();
   });
+  els.closeMascotHelpButton.addEventListener("click", closeMascotHelp);
+  els.mascotHelpForm.addEventListener("submit", handleMascotHelpSubmit);
   els.closeCelebrationButton.addEventListener("click", closeCelebration);
   els.celebrationOverlay.addEventListener("click", (event) => {
     if (event.target === els.celebrationOverlay) closeCelebration();
   });
+  els.closeDetailButton.addEventListener("click", closeCompanyDetail);
+  els.companyDetailForm.addEventListener("submit", handleDetailSubmit);
+  els.addEsItemButton.addEventListener("click", () => addDetailEsItem());
+  els.insertTemplateButton.addEventListener("click", insertSelectedTemplateIntoDetail);
+  els.openBasicEditButton.addEventListener("click", handleOpenBasicEditFromDetail);
+  els.detailEsList.addEventListener("input", updateDetailEsCharCounts);
+  els.detailEsList.addEventListener("click", (event) => {
+    const deleteButton = event.target.closest("[data-es-delete]");
+    if (!deleteButton) return;
+    const card = deleteButton.closest(".es-editor-card");
+    card?.remove();
+    ensureDetailHasEsItem();
+    updateDetailEsCharCounts();
+  });
+  els.templateForm.addEventListener("submit", handleTemplateSubmit);
+  els.templateBodyInput.addEventListener("input", updateTemplateBodyCount);
+  els.resetTemplateButton.addEventListener("click", resetTemplateForm);
   els.prevCalendarButton.addEventListener("click", () => moveCalendarMonth(-1));
   els.nextCalendarButton.addEventListener("click", () => moveCalendarMonth(1));
   els.todayCalendarButton.addEventListener("click", resetCalendarMonth);
@@ -190,6 +239,24 @@ function bindEvents() {
   });
 
   document.addEventListener("click", (event) => {
+    const detailButton = event.target.closest("[data-detail-id]");
+    if (detailButton) {
+      openCompanyDetail(detailButton.dataset.detailId);
+      return;
+    }
+
+    const templateEditButton = event.target.closest("[data-template-edit-id]");
+    if (templateEditButton) {
+      handleEditTemplate(templateEditButton.dataset.templateEditId);
+      return;
+    }
+
+    const templateDeleteButton = event.target.closest("[data-template-delete-id]");
+    if (templateDeleteButton) {
+      handleDeleteTemplate(templateDeleteButton.dataset.templateDeleteId);
+      return;
+    }
+
     const editButton = event.target.closest("[data-edit-id]");
     if (editButton) {
       handleEditEntry(editButton.dataset.editId);
@@ -227,7 +294,7 @@ function ensureMascotDom() {
       <section class="celebration-card" role="dialog" aria-modal="true" aria-labelledby="celebrationTitle">
         <span class="celebration-character-fallback" aria-hidden="true">祝</span>
         <img class="celebration-character" src="${getMascotImageSrc()}" alt="" />
-        <p class="eyebrow">Congratulations</p>
+        <p class="eyebrow" id="celebrationEyebrow">Congratulations</p>
         <h2 id="celebrationTitle">おめでとう！</h2>
         <p id="celebrationMessage">ここまでの積み重ね、ちゃんと届いた。</p>
         <button class="primary-button" id="closeCelebrationButton" type="button">よし、次へ</button>
@@ -248,6 +315,7 @@ async function init() {
 
   if (!hasCloudConfig) {
     state.entries = loadLocalEntries();
+    state.templates = loadLocalTemplates();
     state.loading = false;
     render();
     return;
@@ -262,18 +330,20 @@ async function init() {
   supabaseClient.auth.onAuthStateChange(async (_event, session) => {
     state.session = session;
     if (session) {
-      await loadCloudEntries();
+      await loadCloudData();
     } else {
       state.entries = [];
+      state.templates = [];
       state.loading = false;
       render();
     }
   });
 
   if (state.session) {
-    await loadCloudEntries();
+    await loadCloudData();
   } else {
     state.entries = [];
+    state.templates = [];
     state.loading = false;
     render();
   }
@@ -339,6 +409,7 @@ async function handleEntrySubmit(event) {
   const existingEntry = state.editingId
     ? state.entries.find((entry) => entry.id === state.editingId)
     : null;
+  const esContent = String(formData.get("esContent")).trim();
   const entry = {
     id: existingEntry?.id || createId(),
     companyName: String(formData.get("companyName")).trim(),
@@ -353,7 +424,8 @@ async function handleEntrySubmit(event) {
     officialUrl: String(formData.get("officialUrl")).trim(),
     logoUrl: String(formData.get("logoUrl")).trim(),
     mypageUrl: String(formData.get("mypageUrl")).trim(),
-    esContent: String(formData.get("esContent")).trim(),
+    esContent,
+    esItems: existingEntry?.esItems?.length ? existingEntry.esItems : normalizeEsItems([], esContent),
     interviewNotes: String(formData.get("interviewNotes")).trim(),
     memo: String(formData.get("memo")).trim(),
     createdAt: existingEntry?.createdAt || new Date().toISOString()
@@ -452,6 +524,256 @@ async function handleClearEntries() {
   showToast("削除しました。");
 }
 
+function openCompanyDetail(id) {
+  const entry = state.entries.find((item) => item.id === id);
+  if (!entry) {
+    showToast("詳細を開くデータが見つかりません。");
+    return;
+  }
+
+  const values = normalizeEntry(entry);
+  state.detailEditingId = values.id;
+  els.detailCompanyTitle.textContent = values.companyName || "企業詳細";
+  els.detailCompanyMeta.textContent = [
+    values.industry,
+    values.trackType,
+    values.status,
+    values.priority ? `志望度 ${values.priority}` : ""
+  ].filter(Boolean).join(" ・ ");
+  els.detailInterviewNotesInput.value = values.interviewNotes;
+  els.detailMemoInput.value = values.memo;
+  renderDetailEsItems(values.esItems.length > 0 ? values.esItems : [createEsItem()]);
+  renderTemplateOptions();
+
+  if (typeof els.companyDetailDialog.showModal === "function") {
+    els.companyDetailDialog.showModal();
+  } else {
+    els.companyDetailDialog.setAttribute("open", "");
+  }
+}
+
+function closeCompanyDetail() {
+  state.detailEditingId = null;
+  els.companyDetailForm.reset();
+  els.detailEsList.textContent = "";
+  els.companyDetailDialog.close();
+}
+
+function renderDetailEsItems(items) {
+  els.detailEsList.innerHTML = items.map(esEditorCard).join("");
+  updateDetailEsCharCounts();
+}
+
+function esEditorCard(item) {
+  const value = createEsItem(item.question, item.answer);
+  value.id = item.id || value.id;
+
+  return `
+    <article class="es-editor-card" data-es-id="${escapeAttribute(value.id)}">
+      <div class="es-card-heading">
+        <strong>ES質問</strong>
+        <button class="delete-button" data-es-delete type="button">削除</button>
+      </div>
+      <label>
+        質問
+        <input class="es-question-input" data-es-question value="${escapeAttribute(value.question)}" placeholder="例: 学生時代に力を入れたことを教えてください。" />
+      </label>
+      <label>
+        回答
+        <textarea class="es-answer-input" data-es-answer rows="9" placeholder="回答をここに書く">${escapeHtml(value.answer)}</textarea>
+        <span class="char-count" data-es-count>0字</span>
+      </label>
+    </article>
+  `;
+}
+
+function addDetailEsItem(item = createEsItem()) {
+  els.detailEsList.insertAdjacentHTML("beforeend", esEditorCard(item));
+  updateDetailEsCharCounts();
+  const lastAnswer = els.detailEsList.querySelector(".es-editor-card:last-child [data-es-answer]");
+  lastAnswer?.focus();
+}
+
+function ensureDetailHasEsItem() {
+  if (!els.detailEsList.querySelector(".es-editor-card")) {
+    addDetailEsItem();
+  }
+}
+
+function collectDetailEsItems() {
+  return Array.from(els.detailEsList.querySelectorAll(".es-editor-card"))
+    .map((card) => ({
+      id: card.dataset.esId || createId(),
+      question: card.querySelector("[data-es-question]")?.value.trim() || "",
+      answer: card.querySelector("[data-es-answer]")?.value.trim() || ""
+    }))
+    .filter((item) => item.question || item.answer);
+}
+
+async function handleDetailSubmit(event) {
+  event.preventDefault();
+  const existingEntry = state.entries.find((entry) => entry.id === state.detailEditingId);
+  if (!existingEntry) {
+    showToast("保存する企業が見つかりません。");
+    return;
+  }
+
+  const esItems = collectDetailEsItems();
+  const entry = normalizeEntry({
+    ...existingEntry,
+    esItems,
+    esContent: esItemsToLegacyText(esItems),
+    interviewNotes: els.detailInterviewNotesInput.value.trim(),
+    memo: els.detailMemoInput.value.trim()
+  });
+
+  if (state.mode === "cloud") {
+    if (!state.session) {
+      showToast("ログインすると保存できます。");
+      return;
+    }
+
+    const saved = await updateCloudEntry(entry);
+    if (!saved) return;
+    state.entries = state.entries.map((item) => (item.id === saved.id ? saved : item));
+  } else {
+    state.entries = state.entries.map((item) => (item.id === entry.id ? entry : item));
+    saveLocalEntries(state.entries);
+  }
+
+  closeCompanyDetail();
+  render();
+  showToast("詳細を保存しました。");
+}
+
+function handleOpenBasicEditFromDetail() {
+  const entry = state.entries.find((item) => item.id === state.detailEditingId);
+  if (!entry) return;
+  closeCompanyDetail();
+  openEntryDialog(entry);
+}
+
+function updateDetailEsCharCounts() {
+  els.detailEsList.querySelectorAll(".es-editor-card").forEach((card) => {
+    const answer = card.querySelector("[data-es-answer]");
+    const count = card.querySelector("[data-es-count]");
+    if (count) count.textContent = formatCharCount(answer?.value || "");
+  });
+}
+
+function insertSelectedTemplateIntoDetail() {
+  const template = state.templates.find((item) => item.id === els.detailTemplateSelect.value);
+  if (!template) {
+    showToast("使う型を選んでください。");
+    return;
+  }
+
+  let card = document.activeElement?.closest?.(".es-editor-card");
+  if (!card) card = els.detailEsList.querySelector(".es-editor-card:last-child");
+  if (!card) {
+    addDetailEsItem();
+    card = els.detailEsList.querySelector(".es-editor-card:last-child");
+  }
+
+  const answer = card.querySelector("[data-es-answer]");
+  const current = answer.value.trimEnd();
+  answer.value = current ? `${current}\n\n${template.body}` : template.body;
+  answer.focus();
+  updateDetailEsCharCounts();
+  showToast("型を回答に入れました。");
+}
+
+async function handleTemplateSubmit(event) {
+  event.preventDefault();
+  const existingTemplate = state.editingTemplateId
+    ? state.templates.find((template) => template.id === state.editingTemplateId)
+    : null;
+  const template = normalizeTemplate({
+    id: existingTemplate?.id || createId(),
+    kind: els.templateKindInput.value,
+    title: els.templateTitleInput.value.trim(),
+    body: els.templateBodyInput.value.trim(),
+    createdAt: existingTemplate?.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  });
+
+  if (!template.title || !template.body) {
+    showToast("タイトルと本文を入力してください。");
+    return;
+  }
+
+  if (state.mode === "cloud") {
+    if (!state.session) {
+      showToast("ログインすると保存できます。");
+      return;
+    }
+
+    const saved = existingTemplate ? await updateCloudTemplate(template) : await createCloudTemplate(template);
+    if (!saved) return;
+    if (existingTemplate) {
+      state.templates = state.templates.map((item) => (item.id === saved.id ? saved : item));
+    } else {
+      state.templates.unshift(saved);
+    }
+  } else {
+    if (existingTemplate) {
+      state.templates = state.templates.map((item) => (item.id === template.id ? template : item));
+    } else {
+      state.templates.unshift(template);
+    }
+    saveLocalTemplates(state.templates);
+  }
+
+  resetTemplateForm();
+  renderTemplateList();
+  renderTemplateOptions();
+  showToast(existingTemplate ? "型を更新しました。" : "型を保存しました。");
+}
+
+function handleEditTemplate(id) {
+  const template = state.templates.find((item) => item.id === id);
+  if (!template) return;
+
+  state.editingTemplateId = template.id;
+  els.templateKindInput.value = template.kind;
+  els.templateTitleInput.value = template.title;
+  els.templateBodyInput.value = template.body;
+  els.saveTemplateButton.textContent = "型を更新";
+  updateTemplateBodyCount();
+  els.templateTitleInput.focus();
+}
+
+async function handleDeleteTemplate(id) {
+  const shouldDelete = window.confirm("この型を削除しますか？");
+  if (!shouldDelete) return;
+
+  if (state.mode === "cloud") {
+    const { error } = await supabaseClient.from("es_templates").delete().eq("id", id);
+    if (error) {
+      showToast(error.message);
+      return;
+    }
+  }
+
+  state.templates = state.templates.filter((template) => template.id !== id);
+  if (state.mode === "local") saveLocalTemplates(state.templates);
+  if (state.editingTemplateId === id) resetTemplateForm();
+  renderTemplateList();
+  renderTemplateOptions();
+  showToast("型を削除しました。");
+}
+
+function resetTemplateForm() {
+  state.editingTemplateId = null;
+  els.templateForm.reset();
+  els.saveTemplateButton.textContent = "型を保存";
+  updateTemplateBodyCount();
+}
+
+function updateTemplateBodyCount() {
+  els.templateBodyCount.textContent = formatCharCount(els.templateBodyInput.value);
+}
+
 async function handleImportLocalEntries() {
   const localEntries = readSavedLocalEntries();
   if (localEntries.length === 0 || !state.session) return;
@@ -467,8 +789,35 @@ async function handleImportLocalEntries() {
   }
 
   localStorage.removeItem(storageKey);
-  await loadCloudEntries();
+  await loadCloudData();
   showToast("端末データをクラウドへ移しました。");
+}
+
+async function loadCloudData() {
+  if (!state.session) return;
+
+  state.loading = true;
+  renderMode();
+  const [entriesResult, templatesResult] = await Promise.all([
+    supabaseClient.from("entries").select("*").order("created_at", { ascending: false }),
+    supabaseClient.from("es_templates").select("*").order("updated_at", { ascending: false })
+  ]);
+  state.loading = false;
+
+  if (entriesResult.error) {
+    showToast(entriesResult.error.message);
+  } else {
+    state.entries = entriesResult.data.map(fromDbEntry);
+  }
+
+  if (templatesResult.error) {
+    state.templates = [];
+    showToast("SupabaseのSQLを更新すると、ESの型保存も使えます。");
+  } else {
+    state.templates = templatesResult.data.map(fromDbTemplate);
+  }
+
+  render();
 }
 
 async function loadCloudEntries() {
@@ -508,6 +857,25 @@ async function updateCloudEntry(entry) {
   return fromDbEntry(data);
 }
 
+async function createCloudTemplate(template) {
+  const { data, error } = await supabaseClient.from("es_templates").insert(toDbTemplate(template)).select("*").single();
+  if (error) {
+    showToast(error.message);
+    return null;
+  }
+  return fromDbTemplate(data);
+}
+
+async function updateCloudTemplate(template) {
+  const { id, user_id, created_at, ...changes } = toDbTemplate(template);
+  const { data, error } = await supabaseClient.from("es_templates").update(changes).eq("id", id).select("*").single();
+  if (error) {
+    showToast(error.message);
+    return null;
+  }
+  return fromDbTemplate(data);
+}
+
 function render() {
   renderMode();
   renderDailyQuote();
@@ -516,6 +884,8 @@ function render() {
   renderEventList();
   renderFilterOptions();
   renderCompanyList();
+  renderTemplateList();
+  renderTemplateOptions();
   renderCalendar();
 }
 
@@ -648,6 +1018,7 @@ function renderCompanyList() {
               </div>
             </div>
             <div class="card-actions">
+              <button class="detail-button" data-detail-id="${entry.id}" type="button">詳細</button>
               <button class="edit-button" data-edit-id="${entry.id}" type="button">編集</button>
               <button class="delete-button" data-delete-id="${entry.id}" type="button">削除</button>
             </div>
@@ -660,13 +1031,55 @@ function renderCompanyList() {
           ${entry.mypageId ? `<div class="credential-line"><strong>マイページID</strong><span>${escapeHtml(entry.mypageId)}</span></div>` : ""}
           ${entry.officialUrl ? `<a class="mypage-link" href="${escapeAttribute(entry.officialUrl)}" target="_blank" rel="noopener noreferrer">企業公式サイトを開く</a>` : ""}
           ${entry.mypageUrl ? `<a class="mypage-link" href="${escapeAttribute(entry.mypageUrl)}" target="_blank" rel="noopener noreferrer">企業マイページを開く</a>` : ""}
-          ${entry.esContent ? noteBlock("ES", entry.esContent) : ""}
+          ${esPreviewBlock(entry)}
           ${entry.interviewNotes ? noteBlock("面接対策", entry.interviewNotes) : ""}
           ${entry.memo ? `<p class="memo">${escapeHtml(entry.memo)}</p>` : ""}
         </article>
       `;
     })
     .join("");
+}
+
+function renderTemplateList() {
+  if (state.templates.length === 0) {
+    els.templateList.innerHTML = emptyState("まだ型がありません。ガクチカ、自己PR、志望動機などを保存しておくと使い回せます。");
+    return;
+  }
+
+  els.templateList.innerHTML = state.templates
+    .map((template) => {
+      const preview = template.body.length > 180 ? `${template.body.slice(0, 180)}...` : template.body;
+      return `
+        <article class="template-card">
+          <div class="template-card-heading">
+            <div>
+              <span class="tag">${escapeHtml(template.kind)}</span>
+              <strong>${escapeHtml(template.title)}</strong>
+            </div>
+            <div class="template-card-actions">
+              <button class="edit-button" data-template-edit-id="${template.id}" type="button">編集</button>
+              <button class="delete-button" data-template-delete-id="${template.id}" type="button">削除</button>
+            </div>
+          </div>
+          <p>${escapeHtml(preview)}</p>
+          <span class="char-count">${formatCharCount(template.body)}</span>
+        </article>
+      `;
+    })
+    .join("");
+}
+
+function renderTemplateOptions() {
+  const selected = els.detailTemplateSelect.value;
+  els.detailTemplateSelect.innerHTML = [
+    '<option value="">型を選択</option>',
+    ...state.templates.map((template) =>
+      `<option value="${escapeAttribute(template.id)}">${escapeHtml(template.kind)}：${escapeHtml(template.title)}</option>`
+    )
+  ].join("");
+  if (state.templates.some((template) => template.id === selected)) {
+    els.detailTemplateSelect.value = selected;
+  }
 }
 
 function renderCalendar() {
@@ -746,7 +1159,7 @@ function fillEntryForm(entry) {
   setFormValue("eventDate", entry ? values.eventDate : "");
   setFormValue("eventType", values.eventType);
   setFormValue("priority", values.priority);
-  setFormValue("esContent", entry ? values.esContent : "");
+  setFormValue("esContent", entry ? entryEsText(values) : "");
   setFormValue("interviewNotes", entry ? values.interviewNotes : "");
   setFormValue("memo", entry ? values.memo : "");
 }
@@ -817,6 +1230,22 @@ function saveLocalEntries(entries) {
   localStorage.setItem(storageKey, JSON.stringify(entries));
 }
 
+function loadLocalTemplates() {
+  const saved = localStorage.getItem(templateStorageKey);
+  if (!saved) return [];
+
+  try {
+    const parsed = JSON.parse(saved);
+    return Array.isArray(parsed) ? parsed.map(normalizeTemplate) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalTemplates(templates) {
+  localStorage.setItem(templateStorageKey, JSON.stringify(templates));
+}
+
 function toDbEntry(entry) {
   return {
     id: entry.id,
@@ -834,6 +1263,7 @@ function toDbEntry(entry) {
     priority: entry.priority,
     mypage_url: entry.mypageUrl,
     es_content: entry.esContent,
+    es_items: normalizeEsItems(entry.esItems, entry.esContent),
     interview_notes: entry.interviewNotes,
     memo: entry.memo,
     created_at: entry.createdAt || new Date().toISOString()
@@ -856,6 +1286,7 @@ function fromDbEntry(row) {
     priority: row.priority,
     mypageUrl: row.mypage_url || "",
     esContent: row.es_content || "",
+    esItems: row.es_items || [],
     interviewNotes: row.interview_notes || "",
     memo: row.memo || "",
     createdAt: row.created_at
@@ -878,10 +1309,70 @@ function normalizeEntry(entry) {
     priority: entry.priority || "未定",
     mypageUrl: entry.mypageUrl || "",
     esContent: entry.esContent || "",
+    esItems: normalizeEsItems(entry.esItems, entry.esContent || ""),
     interviewNotes: entry.interviewNotes || "",
     memo: entry.memo || "",
     createdAt: entry.createdAt || new Date().toISOString()
   };
+}
+
+function createEsItem(question = "", answer = "") {
+  return {
+    id: createId(),
+    question: String(question || ""),
+    answer: String(answer || "")
+  };
+}
+
+function normalizeEsItems(items, legacyContent = "") {
+  const normalized = Array.isArray(items)
+    ? items
+        .map((item) => ({
+          id: item.id || createId(),
+          question: String(item.question || ""),
+          answer: String(item.answer || "")
+        }))
+        .filter((item) => item.question.trim() || item.answer.trim())
+    : [];
+
+  if (normalized.length > 0) return normalized;
+
+  const legacyAnswer = String(legacyContent || "").trim();
+  return legacyAnswer ? [createEsItem("", legacyAnswer)] : [];
+}
+
+function normalizeTemplate(template) {
+  return {
+    id: template.id || createId(),
+    kind: template.kind || "ガクチカ",
+    title: template.title || "",
+    body: template.body || "",
+    createdAt: template.createdAt || new Date().toISOString(),
+    updatedAt: template.updatedAt || template.createdAt || new Date().toISOString()
+  };
+}
+
+function toDbTemplate(template) {
+  return {
+    id: template.id,
+    user_id: state.session.user.id,
+    kind: template.kind,
+    title: template.title,
+    body: template.body,
+    created_at: template.createdAt || new Date().toISOString(),
+    updated_at: template.updatedAt || new Date().toISOString()
+  };
+}
+
+function fromDbTemplate(row) {
+  return normalizeTemplate({
+    id: row.id,
+    kind: row.kind,
+    title: row.title,
+    body: row.body,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  });
 }
 
 function getAuthCredentials() {
@@ -1108,6 +1599,7 @@ function getEntryCelebration(entry, existingEntry) {
 
   if (entry.status === "落選") {
     return {
+      eyebrow: "Not the End",
       title: "なんて見る目のない企業なの！！",
       message: `${entry.companyName}はここで切り替え。もっと合う企業に、こっちから会いにいこう。`,
       bubble: "見る目ない！",
@@ -1162,6 +1654,7 @@ function getEntryCelebration(entry, existingEntry) {
 
 function showCelebration(entry, celebration) {
   setMascotImage(celebration.mood || "normal");
+  els.celebrationEyebrow.textContent = celebration.eyebrow || "Congratulations";
   renderCelebrationTitle(celebration.title);
   els.celebrationMessage.textContent = celebration.message;
   createConfetti(celebration.mood);
@@ -1236,6 +1729,64 @@ function showToast(message) {
   }, 3200);
 }
 
+function openMascotHelp() {
+  els.mascotHelpPanel.hidden = false;
+  showMascotBubble("相談のるよ");
+  window.setTimeout(() => els.mascotHelpInput.focus(), 80);
+}
+
+function closeMascotHelp() {
+  els.mascotHelpPanel.hidden = true;
+}
+
+function handleMascotHelpSubmit(event) {
+  event.preventDefault();
+  const question = els.mascotHelpInput.value.trim();
+  if (!question) return;
+
+  appendHelpMessage(question, "user");
+  appendHelpMessage(getMascotHelpAnswer(question), "assistant");
+  els.mascotHelpInput.value = "";
+  els.mascotHelpLog.scrollTop = els.mascotHelpLog.scrollHeight;
+}
+
+function appendHelpMessage(message, role) {
+  const paragraph = document.createElement("p");
+  paragraph.className = `help-message ${role}`;
+  paragraph.textContent = message;
+  els.mascotHelpLog.append(paragraph);
+}
+
+function getMascotHelpAnswer(question) {
+  const text = question.toLowerCase();
+
+  if (text.includes("es") || text.includes("ガクチカ") || text.includes("自己pr") || text.includes("文字") || text.includes("質問")) {
+    return "企業カードの「詳細」を押すと、ESを質問欄と回答欄に分けて大きく編集できます。回答欄の下に文字数も自動で出ます。";
+  }
+
+  if (text.includes("型") || text.includes("テンプレ") || text.includes("使い回") || text.includes("使いまわ")) {
+    return "画面の「ES・ガクチカの型」によく使う文章を保存できます。企業詳細の「保存した型を使う」から回答欄へ入れられます。";
+  }
+
+  if (text.includes("締切") || text.includes("予定") || text.includes("カレンダー") || text.includes("面接")) {
+    return "締切日と次の予定日を入れると、上の近日リストとカレンダーに出ます。カレンダーは前月・翌月ボタンで別の月も見られます。";
+  }
+
+  if (text.includes("同期") || text.includes("スマホ") || text.includes("iphone") || text.includes("ログイン") || text.includes("supabase")) {
+    return "同じメールアドレスとパスワードでログインすると、PCとiPhoneで同じデータを見られます。新規登録後は確認メールを押してからログインしてください。";
+  }
+
+  if (text.includes("アイコン") || text.includes("ロゴ")) {
+    return "企業公式サイトURLやマイページURLからアイコン候補を自動で探します。違う画像になったら、企業アイコン画像URLに好きな画像URLを入れれば上書きできます。";
+  }
+
+  if (text.includes("落選") || text.includes("内定") || text.includes("通過")) {
+    return "ステータスを内定・選考通過・インターン選考通過にすると派手に祝います。落選にしたときは怒り顔で励ます演出になります。";
+  }
+
+  return "まずは「＋追加」で企業を登録して、締切日・次の予定日・ステータスを入れるのがおすすめ。詳しく書きたい企業は「詳細」からESや面接メモを編集できます。本物のAI相談にする場合は、あとでAI APIをつなげます。";
+}
+
 function getUpcomingDeadlines() {
   return state.entries
     .filter((entry) => entry.deadline && isWithinDays(entry.deadline, 14))
@@ -1262,6 +1813,7 @@ function matchesSearchQuery(entry) {
     entry.logoUrl,
     entry.mypageUrl,
     entry.esContent,
+    ...normalizeEsItems(entry.esItems, entry.esContent).flatMap((item) => [item.question, item.answer]),
     entry.interviewNotes,
     entry.memo
   ]
@@ -1544,6 +2096,34 @@ function statusLabelParts(status) {
   return partsByStatus[status] || [status];
 }
 
+function esPreviewBlock(entry) {
+  const items = normalizeEsItems(entry.esItems, entry.esContent);
+  if (items.length === 0) return "";
+
+  const first = items[0];
+  const previewSource = first.question || first.answer;
+  const preview = previewSource.length > 150 ? `${previewSource.slice(0, 150)}...` : previewSource;
+  const totalCharacters = items.reduce((sum, item) => sum + countCharacters(item.answer), 0);
+
+  return `
+    <div class="note-block es-preview">
+      <strong>ES ${items.length}問 / 回答 ${totalCharacters}字</strong>
+      <p>${escapeHtml(preview)}</p>
+    </div>
+  `;
+}
+
+function entryEsText(entry) {
+  const items = normalizeEsItems(entry.esItems, entry.esContent);
+  return items.length > 0 ? esItemsToLegacyText(items) : entry.esContent || "";
+}
+
+function esItemsToLegacyText(items) {
+  return normalizeEsItems(items)
+    .map((item) => [item.question ? `Q. ${item.question}` : "", item.answer].filter(Boolean).join("\n"))
+    .join("\n\n");
+}
+
 function noteBlock(title, value) {
   const preview = value.length > 160 ? `${value.slice(0, 160)}...` : value;
   return `
@@ -1552,6 +2132,14 @@ function noteBlock(title, value) {
       <p>${escapeHtml(preview)}</p>
     </div>
   `;
+}
+
+function countCharacters(value) {
+  return Array.from(String(value || "")).length;
+}
+
+function formatCharCount(value) {
+  return `${countCharacters(value)}字`;
 }
 
 function emptyState(message) {

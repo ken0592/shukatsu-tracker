@@ -151,6 +151,43 @@
             <div class="company-list" id="companyList"></div>
           </article>
 
+          <article class="panel wide-panel template-panel">
+            <div class="panel-heading">
+              <div>
+                <h2>ES・ガクチカの型</h2>
+                <span>使い回せる回答を保存</span>
+              </div>
+            </div>
+            <form class="template-form" id="templateForm">
+              <div class="field-grid">
+                <label>
+                  種類
+                  <select id="templateKindInput" name="templateKind">
+                    <option>ガクチカ</option>
+                    <option>自己PR</option>
+                    <option>志望動機</option>
+                    <option>ESテンプレ</option>
+                    <option>逆質問</option>
+                  </select>
+                </label>
+                <label>
+                  タイトル
+                  <input id="templateTitleInput" name="templateTitle" required placeholder="例: ガクチカ 基本形" />
+                </label>
+              </div>
+              <label>
+                本文
+                <textarea id="templateBodyInput" name="templateBody" rows="5" placeholder="どの企業にも使える型、ガクチカ、自己PRなど"></textarea>
+                <span class="char-count" id="templateBodyCount">0字</span>
+              </label>
+              <div class="form-actions">
+                <button class="secondary-button" id="resetTemplateButton" type="button">新規に戻す</button>
+                <button class="primary-button" id="saveTemplateButton" type="submit">型を保存</button>
+              </div>
+            </form>
+            <div class="template-list" id="templateList"></div>
+          </article>
+
           <article class="panel calendar-panel">
             <div class="panel-heading">
               <h2>カレンダーまとめ</h2>
@@ -296,7 +333,7 @@
         </div>
 
         <label>
-          ESの内容
+          ES簡易メモ（質問ごとの編集は詳細から）
           <textarea id="esContentInput" name="esContent" rows="5" placeholder="提出したES、志望動機、ガクチカ、自己PRなど"></textarea>
         </label>
 
@@ -317,6 +354,77 @@
       </form>
     </dialog>
 
+    <dialog class="detail-dialog" id="companyDetailDialog">
+      <form class="detail-form" id="companyDetailForm" method="dialog">
+        <div class="form-heading detail-heading">
+          <div>
+            <p class="eyebrow">Company Page</p>
+            <h2 id="detailCompanyTitle">企業詳細</h2>
+            <p id="detailCompanyMeta" class="detail-meta"></p>
+          </div>
+          <button class="icon-button" id="closeDetailButton" type="button" aria-label="閉じる">×</button>
+        </div>
+
+        <section class="detail-section">
+          <div class="detail-section-heading">
+            <div>
+              <h3>ES</h3>
+              <p>質問と回答を分けて管理します。</p>
+            </div>
+            <button class="secondary-button" id="addEsItemButton" type="button">＋ 質問を追加</button>
+          </div>
+
+          <div class="template-insert-row">
+            <label>
+              保存した型を使う
+              <select id="detailTemplateSelect">
+                <option value="">型を選択</option>
+              </select>
+            </label>
+            <button class="secondary-button" id="insertTemplateButton" type="button">回答に追加</button>
+          </div>
+
+          <div class="es-editor-list" id="detailEsList"></div>
+        </section>
+
+        <section class="detail-section">
+          <label>
+            面接対策メモ
+            <textarea id="detailInterviewNotesInput" name="detailInterviewNotes" rows="7" placeholder="想定質問、逆質問、面接で話すこと、振り返りなど"></textarea>
+          </label>
+        </section>
+
+        <section class="detail-section">
+          <label>
+            その他メモ
+            <textarea id="detailMemoInput" name="detailMemo" rows="5" placeholder="企業研究、連絡履歴、気になることなど"></textarea>
+          </label>
+        </section>
+
+        <div class="form-actions">
+          <button class="secondary-button" id="openBasicEditButton" type="button">基本情報を編集</button>
+          <button class="primary-button" id="saveDetailButton" type="submit">詳細を保存</button>
+        </div>
+      </form>
+    </dialog>
+
+    <section class="mascot-help-panel" id="mascotHelpPanel" hidden aria-label="使い方ヘルプ">
+      <div class="mascot-help-heading">
+        <div>
+          <p class="eyebrow">Help AI</p>
+          <h2>使い方を相談</h2>
+        </div>
+        <button class="icon-button" id="closeMascotHelpButton" type="button" aria-label="閉じる">×</button>
+      </div>
+      <div class="help-chat-log" id="mascotHelpLog" aria-live="polite">
+        <p class="help-message assistant">何に困ってる？「ES」「締切」「同期」「型」みたいに聞いてくれたら答えるよ。</p>
+      </div>
+      <form class="help-chat-form" id="mascotHelpForm">
+        <input id="mascotHelpInput" autocomplete="off" placeholder="例: ESの文字数はどこで見る？" />
+        <button class="primary-button" type="submit">聞く</button>
+      </form>
+    </section>
+
     <div class="toast" id="toast" role="status" hidden></div>
     <button class="mascot" id="mascot" type="button" aria-label="応援キャラクター">
       <span class="mascot-fallback" aria-hidden="true">祝</span>
@@ -329,7 +437,7 @@
       <section class="celebration-card" role="dialog" aria-modal="true" aria-labelledby="celebrationTitle">
         <span class="celebration-character-fallback" aria-hidden="true">祝</span>
         <img class="celebration-character" src="./assets/mascot-summer-smile.png" alt="" />
-        <p class="eyebrow">Congratulations</p>
+        <p class="eyebrow" id="celebrationEyebrow">Congratulations</p>
         <h2 id="celebrationTitle">おめでとう！</h2>
         <p id="celebrationMessage">ここまでの積み重ね、ちゃんと届いた。</p>
         <button class="primary-button" id="closeCelebrationButton" type="button">よし、次へ</button>
