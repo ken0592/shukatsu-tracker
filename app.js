@@ -3,6 +3,7 @@ const activeStatuses = ["気になる", "応募予定", "応募済み", "ES提�
 const finishedStatuses = ["内定", "落選", "辞退", "参加済み"];
 const sampleCompanyNames = ["株式会社サンプル商事", "ミライテック株式会社", "東都キャリア株式会社"];
 const initialCalendarDate = new Date();
+const commonIndustries = ["IT・通信", "メーカー", "商社", "金融", "コンサル", "広告・メディア", "人材", "不動産・建設", "インフラ", "小売・サービス"];
 
 const appConfig = window.SHUKATSU_CONFIG || {};
 const hasCloudConfig = Boolean(appConfig.supabaseUrl && appConfig.supabaseAnonKey && window.supabase);
@@ -13,6 +14,10 @@ const supabaseClient = hasCloudConfig
 const state = {
   entries: [],
   filter: "all",
+  searchQuery: "",
+  industryFilter: "all",
+  deadlineFilter: "all",
+  priorityFilter: "all",
   mode: hasCloudConfig ? "cloud" : "local",
   session: null,
   loading: true,
@@ -55,6 +60,11 @@ const els = {
   prevCalendarButton: document.querySelector("#prevCalendarButton"),
   nextCalendarButton: document.querySelector("#nextCalendarButton"),
   todayCalendarButton: document.querySelector("#todayCalendarButton"),
+  companySearchInput: document.querySelector("#companySearchInput"),
+  industryFilterInput: document.querySelector("#industryFilterInput"),
+  deadlineFilterInput: document.querySelector("#deadlineFilterInput"),
+  priorityFilterInput: document.querySelector("#priorityFilterInput"),
+  clearFiltersButton: document.querySelector("#clearFiltersButton"),
   filterButtons: document.querySelectorAll(".filter-button"),
   toast: document.querySelector("#toast")
 };
@@ -88,6 +98,23 @@ function bindEvents() {
   els.prevCalendarButton.addEventListener("click", () => moveCalendarMonth(-1));
   els.nextCalendarButton.addEventListener("click", () => moveCalendarMonth(1));
   els.todayCalendarButton.addEventListener("click", resetCalendarMonth);
+  els.companySearchInput.addEventListener("input", () => {
+    state.searchQuery = els.companySearchInput.value.trim();
+    renderCompanyList();
+  });
+  els.industryFilterInput.addEventListener("change", () => {
+    state.industryFilter = els.industryFilterInput.value;
+    renderCompanyList();
+  });
+  els.deadlineFilterInput.addEventListener("change", () => {
+    state.deadlineFilter = els.deadlineFilterInput.value;
+    renderCompanyList();
+  });
+  els.priorityFilterInput.addEventListener("change", () => {
+    state.priorityFilter = els.priorityFilterInput.value;
+    renderCompanyList();
+  });
+  els.clearFiltersButton.addEventListener("click", clearCompanyFilters);
 
   els.filterButtons.forEach((button) => {
     button.addEventListener("click", () => {
@@ -209,6 +236,7 @@ async function handleEntrySubmit(event) {
   const entry = {
     id: existingEntry?.id || createId(),
     companyName: String(formData.get("companyName")).trim(),
+    industry: String(formData.get("industry")).trim(),
     trackType: String(formData.get("trackType")),
     status: String(formData.get("status")),
     deadline: String(formData.get("deadline")),
@@ -370,6 +398,7 @@ function render() {
   renderSummary();
   renderDeadlineList();
   renderEventList();
+  renderFilterOptions();
   renderCompanyList();
   renderCalendar();
 }
@@ -459,10 +488,14 @@ function renderCompanyList() {
   const entries = state.entries
     .filter(isActive)
     .filter((entry) => state.filter === "all" || entry.trackType === state.filter)
-    .sort(sortByClosestDate);
+    .filter(matchesSearchQuery)
+    .filter(matchesIndustryFilter)
+    .filter(matchesDeadlineFilter)
+    .filter(matchesPriorityFilter)
+    .sort(sortCompanyEntries);
 
   if (entries.length === 0) {
-    els.companyList.innerHTML = emptyState("表示する企業がありません。右上の追加から登録できます。");
+    els.companyList.innerHTML = emptyState("条件に合う企業がありません。検索条件を変えるか、右上の追加から登録できます。");
     return;
   }
 
@@ -471,12 +504,16 @@ function renderCompanyList() {
       return `
         <article class="company-card">
           <div class="company-title-row">
-            <div>
-              <strong>${escapeHtml(entry.companyName)}</strong>
-              <div class="meta-row">
-                <span>${escapeHtml(entry.trackType)}</span>
-                <span>${escapeHtml(entry.eventType)}</span>
-                <span>志望度 ${escapeHtml(entry.priority)}</span>
+            <div class="company-identity">
+              <div class="company-icon" style="--company-color: ${companyColor(entry.companyName)}">${escapeHtml(companyIconText(entry.companyName))}</div>
+              <div>
+                <strong>${escapeHtml(entry.companyName)}</strong>
+                <div class="meta-row">
+                  ${entry.industry ? `<span>${escapeHtml(entry.industry)}</span>` : ""}
+                  <span>${escapeHtml(entry.trackType)}</span>
+                  <span>${escapeHtml(entry.eventType)}</span>
+                  <span>志望度 ${escapeHtml(entry.priority)}</span>
+                </div>
               </div>
             </div>
             <div class="card-actions">
@@ -565,6 +602,7 @@ function openEntryDialog(entry = null) {
 function fillEntryForm(entry) {
   const values = normalizeEntry(entry || {});
   setFormValue("companyName", entry ? values.companyName : "");
+  setFormValue("industry", entry ? values.industry : "");
   setFormValue("mypageUrl", entry ? values.mypageUrl : "");
   setFormValue("trackType", values.trackType);
   setFormValue("status", values.status);
@@ -587,6 +625,37 @@ function resetEntryForm() {
   els.entryForm.reset();
   els.entryFormTitle.textContent = "企業・選考を追加";
   els.saveEntryButton.textContent = "保存";
+}
+
+function renderFilterOptions() {
+  const selected = state.industryFilter;
+  const industries = Array.from(
+    new Set([...commonIndustries, ...state.entries.map((entry) => entry.industry).filter(Boolean)])
+  ).sort((a, b) => a.localeCompare(b, "ja"));
+
+  els.industryFilterInput.innerHTML = [
+    '<option value="all">すべて</option>',
+    ...industries.map((industry) => `<option value="${escapeAttribute(industry)}">${escapeHtml(industry)}</option>`)
+  ].join("");
+
+  if (selected !== "all" && industries.includes(selected)) {
+    els.industryFilterInput.value = selected;
+  } else {
+    state.industryFilter = "all";
+    els.industryFilterInput.value = "all";
+  }
+}
+
+function clearCompanyFilters() {
+  state.searchQuery = "";
+  state.industryFilter = "all";
+  state.deadlineFilter = "all";
+  state.priorityFilter = "all";
+  els.companySearchInput.value = "";
+  els.industryFilterInput.value = "all";
+  els.deadlineFilterInput.value = "all";
+  els.priorityFilterInput.value = "all";
+  renderCompanyList();
 }
 
 function loadLocalEntries() {
@@ -617,6 +686,7 @@ function toDbEntry(entry) {
     id: entry.id,
     user_id: state.session.user.id,
     company_name: entry.companyName,
+    industry: entry.industry,
     track_type: entry.trackType,
     status: entry.status,
     deadline: entry.deadline || null,
@@ -635,6 +705,7 @@ function fromDbEntry(row) {
   return normalizeEntry({
     id: row.id,
     companyName: row.company_name,
+    industry: row.industry || "",
     trackType: row.track_type,
     status: row.status,
     deadline: row.deadline || "",
@@ -653,6 +724,7 @@ function normalizeEntry(entry) {
   return {
     id: entry.id || createId(),
     companyName: entry.companyName || "",
+    industry: entry.industry || "",
     trackType: entry.trackType || "本選考",
     status: entry.status || "気になる",
     deadline: entry.deadline || "",
@@ -714,6 +786,49 @@ function getUpcomingEvents() {
     .sort((a, b) => a.eventDate.localeCompare(b.eventDate));
 }
 
+function matchesSearchQuery(entry) {
+  if (!state.searchQuery) return true;
+  const query = state.searchQuery.toLowerCase();
+  const target = [
+    entry.companyName,
+    entry.industry,
+    entry.trackType,
+    entry.status,
+    entry.priority,
+    entry.mypageUrl,
+    entry.esContent,
+    entry.interviewNotes,
+    entry.memo
+  ]
+    .join(" ")
+    .toLowerCase();
+  return target.includes(query);
+}
+
+function matchesIndustryFilter(entry) {
+  return state.industryFilter === "all" || entry.industry === state.industryFilter;
+}
+
+function matchesDeadlineFilter(entry) {
+  if (state.deadlineFilter === "all") return true;
+  if (state.deadlineFilter === "none") return !entry.deadline;
+  if (state.deadlineFilter === "hasDeadline") return Boolean(entry.deadline);
+  if (!entry.deadline) return false;
+
+  const today = startOfDay(new Date());
+  const target = startOfDay(new Date(`${entry.deadline}T00:00:00`));
+  const diff = (target - today) / 86400000;
+
+  if (state.deadlineFilter === "within7") return diff >= 0 && diff <= 7;
+  if (state.deadlineFilter === "within14") return diff >= 0 && diff <= 14;
+  if (state.deadlineFilter === "overdue") return diff < 0;
+  return true;
+}
+
+function matchesPriorityFilter(entry) {
+  return state.priorityFilter === "all" || entry.priority === state.priorityFilter;
+}
+
 function calendarItemsFor(dateKey) {
   const items = [];
   state.entries.forEach((entry) => {
@@ -742,6 +857,36 @@ function sortByClosestDate(a, b) {
   const aDate = a.eventDate || a.deadline || "9999-12-31";
   const bDate = b.eventDate || b.deadline || "9999-12-31";
   return aDate.localeCompare(bDate);
+}
+
+function sortCompanyEntries(a, b) {
+  if (state.deadlineFilter !== "all") {
+    const aDeadline = a.deadline || "9999-12-31";
+    const bDeadline = b.deadline || "9999-12-31";
+    return aDeadline.localeCompare(bDeadline);
+  }
+  return sortByClosestDate(a, b);
+}
+
+function companyIconText(companyName) {
+  const cleaned = String(companyName)
+    .replace(/^株式会社/, "")
+    .replace(/^有限会社/, "")
+    .replace(/^合同会社/, "")
+    .replace(/^Inc\.?\s*/i, "")
+    .replace(/^Co\.?\s*/i, "")
+    .trim();
+  const source = cleaned || companyName || "?";
+  return Array.from(source).slice(0, 2).join("").toUpperCase();
+}
+
+function companyColor(companyName) {
+  const text = String(companyName || "");
+  let hash = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = (hash * 31 + text.charCodeAt(index)) % 360;
+  }
+  return `hsl(${hash}, 72%, 42%)`;
 }
 
 function statusTag(status) {

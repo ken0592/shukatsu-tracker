@@ -293,6 +293,28 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.company-identity {
+  display: flex;
+  align-items: flex-start;
+  min-width: 0;
+  gap: 10px;
+}
+
+.company-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: var(--company-color, var(--blue));
+  color: #fff;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
 .card-actions {
   display: flex;
   flex-wrap: wrap;
@@ -391,6 +413,22 @@ h2 {
   flex-wrap: wrap;
   gap: 6px;
   justify-content: flex-end;
+}
+
+.search-controls {
+  display: grid;
+  grid-template-columns: minmax(220px, 2fr) repeat(3, minmax(120px, 1fr)) auto;
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfdff;
+}
+
+.search-controls label {
+  min-width: 0;
 }
 
 .filter-button,
@@ -636,6 +674,10 @@ textarea {
 
   .filter-row {
     justify-content: flex-start;
+  }
+
+  .search-controls {
+    grid-template-columns: 1fr;
   }
 
   .calendar-controls {

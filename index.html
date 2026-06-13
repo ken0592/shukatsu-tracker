@@ -110,6 +110,40 @@
                 <button class="filter-button" data-filter="本選考" type="button">本選考</button>
               </div>
             </div>
+            <div class="search-controls" aria-label="検索条件">
+              <label>
+                キーワード
+                <input id="companySearchInput" type="search" placeholder="企業名、業種、メモで検索" />
+              </label>
+              <label>
+                業種
+                <select id="industryFilterInput">
+                  <option value="all">すべて</option>
+                </select>
+              </label>
+              <label>
+                締切
+                <select id="deadlineFilterInput">
+                  <option value="all">すべて</option>
+                  <option value="within7">7日以内</option>
+                  <option value="within14">14日以内</option>
+                  <option value="overdue">期限切れ</option>
+                  <option value="hasDeadline">締切あり</option>
+                  <option value="none">締切なし</option>
+                </select>
+              </label>
+              <label>
+                志望度
+                <select id="priorityFilterInput">
+                  <option value="all">すべて</option>
+                  <option>高</option>
+                  <option>中</option>
+                  <option>低</option>
+                  <option>未定</option>
+                </select>
+              </label>
+              <button class="secondary-button" id="clearFiltersButton" type="button">条件クリア</button>
+            </div>
             <div class="company-list" id="companyList"></div>
           </article>
 
@@ -144,10 +178,30 @@
           <input id="companyNameInput" name="companyName" required placeholder="例: 株式会社サンプル" />
         </label>
 
-        <label>
-          企業マイページURL
-          <input id="mypageUrlInput" name="mypageUrl" type="url" placeholder="https://example.com/mypage" />
-        </label>
+        <div class="field-grid">
+          <label>
+            業種
+            <input id="industryInput" name="industry" list="industryOptions" placeholder="例: IT・通信" />
+          </label>
+
+          <label>
+            企業マイページURL
+            <input id="mypageUrlInput" name="mypageUrl" type="url" placeholder="https://example.com/mypage" />
+          </label>
+        </div>
+
+        <datalist id="industryOptions">
+          <option value="IT・通信"></option>
+          <option value="メーカー"></option>
+          <option value="商社"></option>
+          <option value="金融"></option>
+          <option value="コンサル"></option>
+          <option value="広告・メディア"></option>
+          <option value="人材"></option>
+          <option value="不動産・建設"></option>
+          <option value="インフラ"></option>
+          <option value="小売・サービス"></option>
+        </datalist>
 
         <div class="field-grid">
           <label>

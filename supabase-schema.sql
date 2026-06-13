@@ -2,6 +2,7 @@ create table if not exists public.entries (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   company_name text not null,
+  industry text not null default '',
   track_type text not null default '本選考',
   status text not null default '気になる',
   deadline date,
@@ -17,12 +18,16 @@ create table if not exists public.entries (
 );
 
 alter table public.entries
+  add column if not exists industry text not null default '',
   add column if not exists mypage_url text not null default '',
   add column if not exists es_content text not null default '',
   add column if not exists interview_notes text not null default '';
 
 create index if not exists entries_user_id_created_at_idx
   on public.entries (user_id, created_at desc);
+
+create index if not exists entries_user_id_industry_idx
+  on public.entries (user_id, industry);
 
 alter table public.entries enable row level security;
 
