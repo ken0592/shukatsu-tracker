@@ -244,6 +244,7 @@ async function handleEntrySubmit(event) {
     eventType: String(formData.get("eventType")),
     priority: String(formData.get("priority")),
     mypageId: String(formData.get("mypageId")).trim(),
+    officialUrl: String(formData.get("officialUrl")).trim(),
     mypageUrl: String(formData.get("mypageUrl")).trim(),
     esContent: String(formData.get("esContent")).trim(),
     interviewNotes: String(formData.get("interviewNotes")).trim(),
@@ -528,6 +529,7 @@ function renderCompanyList() {
             ${entry.eventDate ? `<span>${formatDate(entry.eventDate)} 予定</span>` : ""}
           </div>
           ${entry.mypageId ? `<div class="credential-line"><strong>マイページID</strong><span>${escapeHtml(entry.mypageId)}</span></div>` : ""}
+          ${entry.officialUrl ? `<a class="mypage-link" href="${escapeAttribute(entry.officialUrl)}" target="_blank" rel="noopener noreferrer">企業公式サイトを開く</a>` : ""}
           ${entry.mypageUrl ? `<a class="mypage-link" href="${escapeAttribute(entry.mypageUrl)}" target="_blank" rel="noopener noreferrer">企業マイページを開く</a>` : ""}
           ${entry.esContent ? noteBlock("ES", entry.esContent) : ""}
           ${entry.interviewNotes ? noteBlock("面接対策", entry.interviewNotes) : ""}
@@ -606,6 +608,7 @@ function fillEntryForm(entry) {
   setFormValue("companyName", entry ? values.companyName : "");
   setFormValue("industry", entry ? values.industry : "");
   setFormValue("mypageId", entry ? values.mypageId : "");
+  setFormValue("officialUrl", entry ? values.officialUrl : "");
   setFormValue("mypageUrl", entry ? values.mypageUrl : "");
   setFormValue("trackType", values.trackType);
   setFormValue("status", values.status);
@@ -691,6 +694,7 @@ function toDbEntry(entry) {
     company_name: entry.companyName,
     industry: entry.industry,
     mypage_id: entry.mypageId,
+    official_url: entry.officialUrl,
     track_type: entry.trackType,
     status: entry.status,
     deadline: entry.deadline || null,
@@ -711,6 +715,7 @@ function fromDbEntry(row) {
     companyName: row.company_name,
     industry: row.industry || "",
     mypageId: row.mypage_id || "",
+    officialUrl: row.official_url || "",
     trackType: row.track_type,
     status: row.status,
     deadline: row.deadline || "",
@@ -731,6 +736,7 @@ function normalizeEntry(entry) {
     companyName: entry.companyName || "",
     industry: entry.industry || "",
     mypageId: entry.mypageId || "",
+    officialUrl: entry.officialUrl || "",
     trackType: entry.trackType || "本選考",
     status: entry.status || "気になる",
     deadline: entry.deadline || "",
@@ -802,6 +808,7 @@ function matchesSearchQuery(entry) {
     entry.status,
     entry.priority,
     entry.mypageId,
+    entry.officialUrl,
     entry.mypageUrl,
     entry.esContent,
     entry.interviewNotes,
@@ -876,7 +883,7 @@ function sortCompanyEntries(a, b) {
 }
 
 function companyIconMarkup(entry) {
-  const logoUrl = companyFaviconUrl(entry.mypageUrl);
+  const logoUrl = companyFaviconUrl(entry.officialUrl || entry.mypageUrl);
   const logoImage = logoUrl
     ? `<img src="${escapeAttribute(logoUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`
     : "";
