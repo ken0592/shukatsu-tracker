@@ -7,7 +7,11 @@
 1. https://supabase.com/ を開く
 2. GitHubなどでログイン
 3. New projectを作る
-4. Project URLとanon public keyを控える
+4. Project Settings → APIを開く
+5. Project URLとanon public keyを控える
+
+`service_role` keyは絶対に使わないでください。
+ブラウザに入れてよいのは `anon public` keyだけです。
 
 ## 2. データベースを作る
 
@@ -18,7 +22,17 @@ SupabaseのSQL Editorで `supabase-schema.sql` の中身を実行します。
 すでに一度テーブルを作っている場合も、同じSQLをもう一度実行して大丈夫です。
 業種、企業公式サイトURL、企業アイコン画像URL、マイページID、企業マイページURL、ES内容、面接対策メモの列が追加されます。
 
-## 3. アプリに接続情報を入れる
+## 3. ログイン設定を確認する
+
+SupabaseのAuthentication → URL Configurationで、Vercelの公開URLを入れます。
+
+- Site URL: Vercelの公開URL
+- Redirect URLs: Vercelの公開URL
+
+友達にも使わせる場合は、Authentication → Providers → Emailが有効になっていることを確認します。
+メール確認をONにしている場合、ユーザーは届いたメールの確認リンクを押してからログインします。
+
+## 4. アプリに接続情報を入れる
 
 `config.js` を開いて、次の2つを入れます。
 
@@ -32,14 +46,16 @@ window.SHUKATSU_CONFIG = {
 anon public keyはブラウザに入れて使う公開用キーです。
 安全性は `supabase-schema.sql` のRLSルールで守ります。
 
-## 4. GitHubへ送る
+## 5. GitHubへ送る
 
 `outputs/push-simple.bat` を実行してGitHubへ送ります。
 VercelはGitHubの更新を見て自動で再公開します。
 
-## 5. 使い方
+## 6. 使い方
 
 公開URLを開くとログイン画面が出ます。
 ユーザーはメールアドレスとパスワードで登録・ログインします。
 
 同じアカウントでiPhoneとPCにログインすると、同じデータを見られます。
+
+すでに端末保存で入力したデータがある場合は、ログイン後に「端末データを移す」を押すとクラウドへ移せます。

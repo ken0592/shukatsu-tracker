@@ -30,6 +30,9 @@ Supabaseを設定すると、メールアドレスとパスワードでログイ
 ## Supabase同期
 
 設定手順は [SUPABASE_SETUP.md](./SUPABASE_SETUP.md) を見てください。
+Project URLとanon public keyを取得したら、`config.js` に設定します。
+
+他の人にも使わせる場合は、Supabaseを設定してから公開URLを渡します。ユーザーごとにメールアドレスとパスワードで登録し、自分のデータだけを保存します。
 
 ## Vercelで公開するとき
 
