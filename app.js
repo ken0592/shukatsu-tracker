@@ -4,6 +4,124 @@ const finishedStatuses = ["内定", "落選", "辞退", "参加済み"];
 const sampleCompanyNames = ["株式会社サンプル商事", "ミライテック株式会社", "東都キャリア株式会社"];
 const initialCalendarDate = new Date();
 const commonIndustries = ["IT・通信", "メーカー", "商社", "金融", "コンサル", "広告・メディア", "人材", "不動産・建設", "インフラ", "小売・サービス"];
+const quoteMonthDays = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+const quoteMessages = [
+  "小さく動いた人から、景色は変わりはじめる。",
+  "準備は不安をゼロにしない。不安の中で進む足場を作る。",
+  "比べるなら昨日の自分と比べればいい。",
+  "一社の結果で、自分の価値を決めなくていい。",
+  "迷った日は、次の一通だけ送ればいい。",
+  "面接は暗記大会ではない。自分の考えを届ける場だ。",
+  "強みは派手さではなく、続けてきたことの中にある。",
+  "締切を守る人は、それだけで信頼をひとつ積む。",
+  "落ちた企業より、次に会う企業へ目を向けよう。",
+  "言葉にできる経験は、もう武器になっている。",
+  "完璧なESより、伝わるESを出そう。",
+  "予定を見える化すると、心にも余白ができる。",
+  "質問する人は、前に進む準備ができている。",
+  "早く始めるより、止まらないことが強い。",
+  "志望動機は飾るものではない。つながりを見つけるものだ。",
+  "今日の一歩は、未来の自分への引き継ぎだ。",
+  "失敗は記録すれば、次の作戦になる。",
+  "緊張は本気の証拠。敵ではなく合図だ。",
+  "自分の言葉で話した時だけ、相手に温度が届く。",
+  "情報を集めるほど、選択は自分のものになる。",
+  "一人で抱えない人ほど、遠くまで進める。",
+  "できたことを数えよう。自信はそこから戻ってくる。",
+  "面接官も人間だ。会話をしに行こう。",
+  "予定が多い時ほど、睡眠を削らない。",
+  "企業研究は正解探しではなく、接点探しだ。",
+  "良い準備は、当日の自分を助ける味方になる。",
+  "言い切れないなら、まず書き出せばいい。",
+  "焦りは視野を狭くする。深呼吸して順番に片づけよう。",
+  "選考は通過点。人生の全部ではない。",
+  "昨日より少し具体的なら、それは前進だ。",
+  "返信ひとつにも、誠実さはにじむ。",
+  "自分の軸は、動きながら少しずつ見えてくる。",
+  "準備した人は、偶然を味方にしやすい。",
+  "悩んだ時間も、言葉にすれば経験になる。",
+  "予定表は未来の自分への応援メモだ。",
+  "ひとつ整えると、次のひとつが軽くなる。",
+  "合う会社を探すことは、自分を知ることでもある。",
+  "伝える内容より先に、伝える姿勢が届く。",
+  "やる気は待つものではない。手を動かすと戻ってくる。",
+  "今日の不安を、明日の準備に変えよう。",
+  "短いメモでも、面接前の自分を救う。",
+  "断られても、進んだ事実は消えない。",
+  "強い人は迷わない人ではなく、迷っても進む人だ。",
+  "誰かに相談することも、立派な作戦だ。",
+  "ESは自分の説明書ではなく、会話の入口だ。",
+  "本音を磨けば、志望理由は強くなる。",
+  "ひとつの内定より、納得できる選択を目指そう。",
+  "できない理由より、今日できる単位まで小さくしよう。",
+  "言葉が詰まったら、経験に戻ればいい。",
+  "企業を見る目は、数を見るほど育っていく。",
+  "背伸びはしても、自分を偽らなくていい。",
+  "記録する人は、同じ悩みに二度負けにくい。",
+  "良い縁は、準備した人の前に現れやすい。",
+  "休むことも、走り続けるための予定だ。",
+  "面接後の振り返りは、次の面接の味方になる。",
+  "焦って広げすぎたら、優先順位に戻ればいい。",
+  "自分の過去を丁寧に見ると、未来の候補が増える。",
+  "選ぶ勇気は、断る勇気と一緒に育つ。",
+  "準備は自信の代わりになる。",
+  "今日の小さな確認が、明日のミスを減らす。",
+  "通過した時も、落ちた時も、次の一手を決めよう。",
+  "就活は情報戦であり、体力戦であり、言葉の練習でもある。",
+  "最後まで残るのは、派手な才能より続ける力だ。",
+  "自分を雑に扱わない人は、選択も雑にしない。"
+];
+const quoteAuthors = [
+  "渋沢栄一",
+  "福沢諭吉",
+  "坂本龍馬",
+  "吉田松陰",
+  "夏目漱石",
+  "宮沢賢治",
+  "紫式部",
+  "津田梅子",
+  "新渡戸稲造",
+  "牧野富太郎",
+  "本田宗一郎",
+  "松下幸之助",
+  "稲盛和夫",
+  "岡本太郎",
+  "手塚治虫",
+  "黒澤明",
+  "孔子",
+  "老子",
+  "ソクラテス",
+  "プラトン",
+  "アリストテレス",
+  "レオナルド・ダ・ヴィンチ",
+  "ガリレオ・ガリレイ",
+  "アイザック・ニュートン",
+  "マリー・キュリー",
+  "アルベルト・アインシュタイン",
+  "トーマス・エジソン",
+  "ダーウィン",
+  "ヘレン・ケラー",
+  "ナイチンゲール",
+  "マザー・テレサ",
+  "ガンジー",
+  "ネルソン・マンデラ",
+  "リンカーン",
+  "ベンジャミン・フランクリン",
+  "キング牧師",
+  "ベートーヴェン",
+  "モーツァルト",
+  "ゲーテ",
+  "シェイクスピア",
+  "デカルト",
+  "パスカル",
+  "ニーチェ",
+  "チャーチル",
+  "ウォルト・ディズニー",
+  "野口英世",
+  "北里柴三郎",
+  "平塚らいてう"
+];
+const dailyQuotes = buildDailyQuotes();
 
 const appConfig = window.SHUKATSU_CONFIG || {};
 const hasCloudConfig = Boolean(appConfig.supabaseUrl && appConfig.supabaseAnonKey && window.supabase);
@@ -40,6 +158,7 @@ const els = {
   accountPanel: document.querySelector("#accountPanel"),
   localPanel: document.querySelector("#localPanel"),
   appContent: document.querySelector("#appContent"),
+  dailyQuote: document.querySelector("#dailyQuote"),
   authEmailInput: document.querySelector("#authEmailInput"),
   authPasswordInput: document.querySelector("#authPasswordInput"),
   authMessage: document.querySelector("#authMessage"),
@@ -398,12 +517,28 @@ async function updateCloudEntry(entry) {
 
 function render() {
   renderMode();
+  renderDailyQuote();
   renderSummary();
   renderDeadlineList();
   renderEventList();
   renderFilterOptions();
   renderCompanyList();
   renderCalendar();
+}
+
+function renderDailyQuote() {
+  const today = new Date();
+  const quote = getQuoteForDate(today);
+  els.dailyQuote.innerHTML = `
+    <div>
+      <p class="eyebrow">Today's Quote</p>
+      <h2>今日の偉人の格言</h2>
+    </div>
+    <figure>
+      <blockquote>「${escapeHtml(quote.message)}」</blockquote>
+      <figcaption>${formatQuoteDate(today)} ・ ${escapeHtml(quote.author)}</figcaption>
+    </figure>
+  `;
 }
 
 function renderMode() {
@@ -886,6 +1021,44 @@ function sortCompanyEntries(a, b) {
     return aDeadline.localeCompare(bDeadline);
   }
   return sortByClosestDate(a, b);
+}
+
+function buildDailyQuotes() {
+  const quotes = {};
+  let sequence = 0;
+
+  quoteMonthDays.forEach((daysInMonth, monthIndex) => {
+    const month = monthIndex + 1;
+    for (let day = 1; day <= daysInMonth; day += 1) {
+      const key = `${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      const message = quoteMessages[(sequence + month * 3 + day) % quoteMessages.length];
+      const author = quoteAuthors[(sequence * 5 + month + day) % quoteAuthors.length];
+      quotes[key] = {
+        message,
+        author: `${author}風`
+      };
+      sequence += 1;
+    }
+  });
+
+  quotes["01-10"] = {
+    message: "就活は団体戦",
+    author: "KEN AOKI"
+  };
+
+  return quotes;
+}
+
+function getQuoteForDate(date) {
+  return dailyQuotes[toMonthDayKey(date)] || dailyQuotes["01-01"];
+}
+
+function toMonthDayKey(date) {
+  return `${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function formatQuoteDate(date) {
+  return `${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
 function companyIconMarkup(entry) {
