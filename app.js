@@ -1517,19 +1517,24 @@ function statusTag(status) {
         ? "yellow"
         : "";
 
-  return `<span class="tag ${className}">${statusLabelMarkup(status)}</span>`;
+  const isMultiline = statusLabelParts(status).length > 1;
+  return `<span class="tag ${className} ${isMultiline ? "multiline" : ""}">${statusLabelMarkup(status)}</span>`;
 }
 
 function statusLabelMarkup(status) {
+  const parts = statusLabelParts(status);
+  if (parts.length <= 1) return escapeHtml(status);
+
+  return `<span class="status-label-multiline">${parts.map((part) => `<span>${escapeHtml(part)}</span>`).join("")}</span>`;
+}
+
+function statusLabelParts(status) {
   const partsByStatus = {
     "インターン選考通過": ["インターン", "選考通過"],
     "インターン参加決定": ["インターン", "参加決定"],
     "ES提出済み": ["ES", "提出済み"]
   };
-  const parts = partsByStatus[status];
-  if (!parts) return escapeHtml(status);
-
-  return parts.map((part) => `<span class="status-word">${escapeHtml(part)}</span>`).join("<wbr>");
+  return partsByStatus[status] || [status];
 }
 
 function noteBlock(title, value) {

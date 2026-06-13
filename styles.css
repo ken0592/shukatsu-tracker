@@ -413,7 +413,19 @@ h2 {
   white-space: normal;
 }
 
-.tag .status-word {
+.tag.multiline {
+  min-height: 34px;
+  padding: 4px 9px;
+  border-radius: 8px;
+}
+
+.tag .status-label-multiline {
+  display: inline-grid;
+  gap: 1px;
+  line-height: 1.15;
+}
+
+.tag .status-label-multiline span {
   white-space: nowrap;
 }
 
