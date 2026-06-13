@@ -299,6 +299,40 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.mypage-link {
+  width: max-content;
+  color: var(--blue);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.mypage-link:hover {
+  text-decoration: underline;
+}
+
+.note-block {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border-radius: 8px;
+  background: #f4f7fb;
+}
+
+.note-block strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.note-block p {
+  margin: 0;
+  color: #344054;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 .empty-state {
   padding: 18px;
   color: var(--muted);

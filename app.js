@@ -1,45 +1,7 @@
 const storageKey = "shukatsu-tracker-entries";
 const activeStatuses = ["気になる", "応募予定", "応募済み", "ES提出済み", "Webテスト", "一次面接", "二次面接", "最終面接", "結果待ち"];
 const finishedStatuses = ["内定", "落選", "辞退", "参加済み"];
-
-const sampleEntries = [
-  {
-    id: createId(),
-    companyName: "株式会社サンプル商事",
-    trackType: "本選考",
-    status: "一次面接",
-    deadline: nextDate(3),
-    eventDate: nextDate(6),
-    eventType: "面接",
-    priority: "高",
-    memo: "志望動機を深掘り。逆質問を3つ準備する。",
-    createdAt: new Date().toISOString()
-  },
-  {
-    id: createId(),
-    companyName: "ミライテック株式会社",
-    trackType: "インターン",
-    status: "ES提出済み",
-    deadline: nextDate(8),
-    eventDate: nextDate(12),
-    eventType: "説明会",
-    priority: "中",
-    memo: "冬インターン。事業内容と競合を調べる。",
-    createdAt: new Date().toISOString()
-  },
-  {
-    id: createId(),
-    companyName: "東都キャリア株式会社",
-    trackType: "早期選考",
-    status: "Webテスト",
-    deadline: nextDate(1),
-    eventDate: "",
-    eventType: "Webテスト",
-    priority: "高",
-    memo: "テスト期限が近い。今日中に受ける。",
-    createdAt: new Date().toISOString()
-  }
-];
+const sampleCompanyNames = ["株式会社サンプル商事", "ミライテック株式会社", "東都キャリア株式会社"];
 
 const appConfig = window.SHUKATSU_CONFIG || {};
 const hasCloudConfig = Boolean(appConfig.supabaseUrl && appConfig.supabaseAnonKey && window.supabase);
@@ -235,6 +197,9 @@ async function handleEntrySubmit(event) {
     eventDate: String(formData.get("eventDate")),
     eventType: String(formData.get("eventType")),
     priority: String(formData.get("priority")),
+    mypageUrl: String(formData.get("mypageUrl")).trim(),
+    esContent: String(formData.get("esContent")).trim(),
+    interviewNotes: String(formData.get("interviewNotes")).trim(),
     memo: String(formData.get("memo")).trim(),
     createdAt: new Date().toISOString()
   };
@@ -470,6 +435,9 @@ function renderCompanyList() {
             ${entry.deadline ? `<span>${formatDate(entry.deadline)} 締切</span>` : ""}
             ${entry.eventDate ? `<span>${formatDate(entry.eventDate)} 予定</span>` : ""}
           </div>
+          ${entry.mypageUrl ? `<a class="mypage-link" href="${escapeAttribute(entry.mypageUrl)}" target="_blank" rel="noopener noreferrer">企業マイページを開く</a>` : ""}
+          ${entry.esContent ? noteBlock("ES", entry.esContent) : ""}
+          ${entry.interviewNotes ? noteBlock("面接対策", entry.interviewNotes) : ""}
           ${entry.memo ? `<p class="memo">${escapeHtml(entry.memo)}</p>` : ""}
         </article>
       `;
@@ -514,7 +482,7 @@ function renderCalendar() {
 
 function loadLocalEntries() {
   const savedEntries = readSavedLocalEntries();
-  return savedEntries.length > 0 ? savedEntries : sampleEntries;
+  return savedEntries;
 }
 
 function readSavedLocalEntries() {
@@ -523,7 +491,9 @@ function readSavedLocalEntries() {
 
   try {
     const parsed = JSON.parse(saved);
-    return Array.isArray(parsed) ? parsed.map(normalizeEntry) : [];
+    return Array.isArray(parsed)
+      ? parsed.map(normalizeEntry).filter((entry) => !sampleCompanyNames.includes(entry.companyName))
+      : [];
   } catch {
     return [];
   }
@@ -544,6 +514,9 @@ function toDbEntry(entry) {
     event_date: entry.eventDate || null,
     event_type: entry.eventType,
     priority: entry.priority,
+    mypage_url: entry.mypageUrl,
+    es_content: entry.esContent,
+    interview_notes: entry.interviewNotes,
     memo: entry.memo,
     created_at: entry.createdAt || new Date().toISOString()
   };
@@ -559,6 +532,9 @@ function fromDbEntry(row) {
     eventDate: row.event_date || "",
     eventType: row.event_type,
     priority: row.priority,
+    mypageUrl: row.mypage_url || "",
+    esContent: row.es_content || "",
+    interviewNotes: row.interview_notes || "",
     memo: row.memo || "",
     createdAt: row.created_at
   });
@@ -574,6 +550,9 @@ function normalizeEntry(entry) {
     eventDate: entry.eventDate || "",
     eventType: entry.eventType || "面接",
     priority: entry.priority || "未定",
+    mypageUrl: entry.mypageUrl || "",
+    esContent: entry.esContent || "",
+    interviewNotes: entry.interviewNotes || "",
     memo: entry.memo || "",
     createdAt: entry.createdAt || new Date().toISOString()
   };
@@ -668,6 +647,16 @@ function statusTag(status) {
   return `<span class="tag ${className}">${escapeHtml(status)}</span>`;
 }
 
+function noteBlock(title, value) {
+  const preview = value.length > 160 ? `${value.slice(0, 160)}...` : value;
+  return `
+    <div class="note-block">
+      <strong>${escapeHtml(title)}</strong>
+      <p>${escapeHtml(preview)}</p>
+    </div>
+  `;
+}
+
 function emptyState(message) {
   return `<div class="empty-state">${message}</div>`;
 }
@@ -684,7 +673,9 @@ function nextDate(days) {
 
 function createId() {
   if (crypto.randomUUID) return crypto.randomUUID();
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (character) =>
+    (Number(character) ^ (Math.random() * 16) >> (Number(character) / 4)).toString(16)
+  );
 }
 
 function toDateInputValue(date) {
@@ -707,4 +698,8 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function escapeAttribute(value) {
+  return escapeHtml(value);
 }

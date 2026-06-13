@@ -8,10 +8,18 @@ create table if not exists public.entries (
   event_date date,
   event_type text not null default '面接',
   priority text not null default '未定',
+  mypage_url text not null default '',
+  es_content text not null default '',
+  interview_notes text not null default '',
   memo text not null default '',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.entries
+  add column if not exists mypage_url text not null default '',
+  add column if not exists es_content text not null default '',
+  add column if not exists interview_notes text not null default '';
 
 create index if not exists entries_user_id_created_at_idx
   on public.entries (user_id, created_at desc);

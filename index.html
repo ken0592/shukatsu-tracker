@@ -139,6 +139,11 @@
           <input id="companyNameInput" name="companyName" required placeholder="例: 株式会社サンプル" />
         </label>
 
+        <label>
+          企業マイページURL
+          <input id="mypageUrlInput" name="mypageUrl" type="url" placeholder="https://example.com/mypage" />
+        </label>
+
         <div class="field-grid">
           <label>
             種類
@@ -210,8 +215,18 @@
         </div>
 
         <label>
-          メモ
-          <textarea id="memoInput" name="memo" rows="4" placeholder="志望理由、面接メモ、気になることなど"></textarea>
+          ESの内容
+          <textarea id="esContentInput" name="esContent" rows="5" placeholder="提出したES、志望動機、ガクチカ、自己PRなど"></textarea>
+        </label>
+
+        <label>
+          面接対策メモ
+          <textarea id="interviewNotesInput" name="interviewNotes" rows="5" placeholder="想定質問、逆質問、面接で話すこと、振り返りなど"></textarea>
+        </label>
+
+        <label>
+          その他メモ
+          <textarea id="memoInput" name="memo" rows="4" placeholder="企業研究、連絡履歴、気になることなど"></textarea>
         </label>
 
         <div class="form-actions">
