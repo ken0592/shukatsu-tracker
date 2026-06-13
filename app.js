@@ -1127,7 +1127,7 @@ function getEntryCelebration(entry, existingEntry) {
 
   if (entry.status === "インターン選考通過") {
     return {
-      title: "インターン選考通過！",
+      title: ["インターン", "選考通過！"],
       message: `${entry.companyName}のインターン選考通過、おめでとう。次もこの勢いでいこう。`,
       bubble: "通過！",
       mood: "normal"
@@ -1136,7 +1136,7 @@ function getEntryCelebration(entry, existingEntry) {
 
   if (entry.status === "インターン参加決定") {
     return {
-      title: "インターン参加決定！",
+      title: ["インターン", "参加決定！"],
       message: `${entry.companyName}のインターン参加決定、おめでとう。ここから一気にチャンスを広げよう。`,
       bubble: "参加決定！",
       mood: "normal"
@@ -1145,7 +1145,7 @@ function getEntryCelebration(entry, existingEntry) {
 
   if (entry.trackType === "インターン") {
     return {
-      title: "インターン選考通過！",
+      title: ["インターン", "選考通過！"],
       message: `${entry.companyName}のインターン選考通過、おめでとう。次もこの勢いでいこう。`,
       bubble: "通過！",
       mood: "normal"
@@ -1162,7 +1162,7 @@ function getEntryCelebration(entry, existingEntry) {
 
 function showCelebration(entry, celebration) {
   setMascotImage(celebration.mood || "normal");
-  els.celebrationTitle.textContent = celebration.title;
+  renderCelebrationTitle(celebration.title);
   els.celebrationMessage.textContent = celebration.message;
   createConfetti(celebration.mood);
   els.celebrationOverlay.classList.toggle("is-rejection", celebration.mood === "angry");
@@ -1175,6 +1175,13 @@ function showCelebration(entry, celebration) {
   window.clearTimeout(mascotState.celebrationTimer);
   mascotState.celebrationTimer = window.setTimeout(closeCelebration, 9000);
   showToast(celebration.toast || `${entry.companyName}、おめでとう！`);
+}
+
+function renderCelebrationTitle(title) {
+  const lines = Array.isArray(title) ? title : [title];
+  els.celebrationTitle.innerHTML = lines
+    .map((line) => `<span class="celebration-title-line">${escapeHtml(line)}</span>`)
+    .join("");
 }
 
 function closeCelebration() {
