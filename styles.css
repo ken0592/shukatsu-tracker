@@ -664,6 +664,176 @@ button:disabled {
   background: rgba(15, 23, 42, 0.45);
 }
 
+.mascot {
+  --face: 1;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 35;
+  width: 86px;
+  height: 86px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  filter: drop-shadow(0 14px 22px rgba(18, 38, 63, 0.22));
+  transform: translate3d(28px, 140px, 0);
+  will-change: transform;
+}
+
+.mascot img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  border-radius: 22px;
+  background: #fff8ee;
+  object-fit: cover;
+  transform: scaleX(var(--face, 1));
+  transition: box-shadow 180ms ease, filter 180ms ease;
+}
+
+.mascot.facing-left {
+  --face: -1;
+}
+
+.mascot:hover img,
+.mascot.is-celebrating img {
+  box-shadow: 0 0 0 4px rgba(250, 204, 21, 0.35), 0 16px 34px rgba(217, 119, 6, 0.28);
+  filter: saturate(1.12);
+}
+
+.mascot.is-celebrating img {
+  animation: mascotParty 520ms ease-in-out infinite alternate;
+}
+
+.mascot-bubble {
+  position: absolute;
+  right: 70%;
+  top: -8px;
+  width: max-content;
+  max-width: 180px;
+  padding: 8px 10px;
+  border: 1px solid #ffd56b;
+  border-radius: 999px;
+  background: #fff8db;
+  color: #92400e;
+  font-size: 12px;
+  font-weight: 800;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(6px) scale(0.94);
+  transition: opacity 160ms ease, transform 160ms ease;
+  white-space: nowrap;
+}
+
+.mascot.show-bubble .mascot-bubble {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.celebration-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  padding: 18px;
+  background:
+    radial-gradient(circle at 20% 18%, rgba(250, 204, 21, 0.48), transparent 24%),
+    radial-gradient(circle at 82% 24%, rgba(244, 114, 182, 0.5), transparent 24%),
+    radial-gradient(circle at 48% 88%, rgba(96, 165, 250, 0.46), transparent 28%),
+    rgba(15, 23, 42, 0.64);
+  backdrop-filter: blur(8px);
+}
+
+.celebration-overlay[hidden] {
+  display: none !important;
+}
+
+.celebration-card {
+  position: relative;
+  z-index: 2;
+  width: min(620px, 100%);
+  padding: clamp(22px, 4vw, 34px);
+  border: 3px solid rgba(250, 204, 21, 0.95);
+  border-radius: 8px;
+  background: linear-gradient(145deg, #fffdf4 0%, #ffffff 48%, #fff1f2 100%);
+  box-shadow: 0 30px 90px rgba(15, 23, 42, 0.35), 0 0 46px rgba(250, 204, 21, 0.42);
+  text-align: center;
+  animation: celebrationPop 520ms cubic-bezier(0.2, 1.35, 0.24, 1) both;
+}
+
+.celebration-card::before,
+.celebration-card::after {
+  position: absolute;
+  inset: 12px;
+  z-index: -1;
+  border: 1px dashed rgba(217, 119, 6, 0.42);
+  border-radius: 8px;
+  content: "";
+}
+
+.celebration-card::after {
+  inset: -10px;
+  border-color: rgba(244, 114, 182, 0.38);
+}
+
+.celebration-character {
+  width: min(220px, 46vw);
+  aspect-ratio: 1;
+  border: 3px solid #fff;
+  border-radius: 28px;
+  background: #fff8ee;
+  object-fit: cover;
+  box-shadow: 0 20px 44px rgba(217, 119, 6, 0.25);
+  animation: mascotParty 560ms ease-in-out infinite alternate;
+}
+
+.celebration-card h2 {
+  margin-top: 8px;
+  color: #be123c;
+  font-size: clamp(34px, 7vw, 66px);
+  line-height: 1.02;
+  text-shadow: 0 3px 0 #fde68a, 0 10px 24px rgba(190, 18, 60, 0.22);
+}
+
+.celebration-card p:not(.eyebrow) {
+  max-width: 480px;
+  margin: 14px auto 20px;
+  color: #4b5563;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.7;
+}
+
+.celebration-confetti {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.celebration-confetti span {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: 10px;
+  height: 16px;
+  border-radius: 3px;
+  opacity: 0.94;
+  transform: translate3d(0, 0, 0) rotate(0deg);
+  animation: confettiFall linear forwards;
+}
+
+.celebration-confetti .spark {
+  width: 16px;
+  height: 16px;
+  border-radius: 0;
+  clip-path: polygon(50% 0%, 60% 36%, 100% 50%, 60% 64%, 50% 100%, 40% 64%, 0% 50%, 40% 36%);
+}
+
 .toast {
   position: fixed;
   right: 18px;
@@ -675,6 +845,35 @@ button:disabled {
   background: #172033;
   color: #fff;
   box-shadow: 0 18px 60px rgba(18, 38, 63, 0.22);
+}
+
+@keyframes mascotParty {
+  from {
+    transform: scaleX(var(--face, 1)) translateY(0) rotate(-4deg) scale(1);
+  }
+
+  to {
+    transform: scaleX(var(--face, 1)) translateY(-8px) rotate(5deg) scale(1.08);
+  }
+}
+
+@keyframes celebrationPop {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.82) rotate(-2deg);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotate(0);
+  }
+}
+
+@keyframes confettiFall {
+  to {
+    opacity: 0;
+    transform: translate3d(var(--drift), var(--fall), 0) rotate(var(--spin));
+  }
 }
 
 .entry-form {
@@ -783,6 +982,16 @@ textarea {
   .calendar-dot {
     font-size: 10px;
   }
+
+  .mascot {
+    width: 72px;
+    height: 72px;
+  }
+
+  .mascot-bubble {
+    right: 54%;
+    max-width: 150px;
+  }
 }
 
 @media (max-width: 460px) {
@@ -814,5 +1023,18 @@ textarea {
 
   .panel {
     padding: 14px;
+  }
+
+  .celebration-card {
+    padding: 20px 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mascot.is-celebrating img,
+  .celebration-card,
+  .celebration-character,
+  .celebration-confetti span {
+    animation: none !important;
   }
 }

@@ -1,4 +1,4 @@
-const cacheName = "shukatsu-tracker-v14";
+const cacheName = "shukatsu-tracker-v15";
 const assets = [
   "./",
   "./index.html",
@@ -6,7 +6,8 @@ const assets = [
   "./quotes.js",
   "./app.js",
   "./manifest.json",
-  "./icon.svg"
+  "./icon.svg",
+  "./assets/mascot.png"
 ];
 
 self.addEventListener("install", (event) => {

@@ -1,6 +1,7 @@
 const storageKey = "shukatsu-tracker-entries";
-const activeStatuses = ["気になる", "応募予定", "応募済み", "ES提出済み", "Webテスト", "一次面接", "二次面接", "最終面接", "結果待ち"];
+const activeStatuses = ["気になる", "応募予定", "応募済み", "ES提出済み", "Webテスト", "一次面接", "二次面接", "最終面接", "結果待ち", "選考通過", "インターン選考通過", "インターン参加決定"];
 const finishedStatuses = ["内定", "落選", "辞退", "参加済み"];
+const celebrationStatuses = ["内定", "選考通過", "インターン選考通過", "インターン参加決定"];
 const sampleCompanyNames = ["株式会社サンプル商事", "ミライテック株式会社", "東都キャリア株式会社"];
 const initialCalendarDate = new Date();
 const commonIndustries = ["IT・通信", "メーカー", "商社", "金融", "コンサル", "広告・メディア", "人材", "不動産・建設", "インフラ", "小売・サービス","製薬"];
@@ -70,7 +71,27 @@ const els = {
   priorityFilterInput: document.querySelector("#priorityFilterInput"),
   clearFiltersButton: document.querySelector("#clearFiltersButton"),
   filterButtons: document.querySelectorAll(".filter-button"),
+  mascot: document.querySelector("#mascot"),
+  mascotBubble: document.querySelector("#mascotBubble"),
+  celebrationOverlay: document.querySelector("#celebrationOverlay"),
+  celebrationConfetti: document.querySelector("#celebrationConfetti"),
+  celebrationTitle: document.querySelector("#celebrationTitle"),
+  celebrationMessage: document.querySelector("#celebrationMessage"),
+  closeCelebrationButton: document.querySelector("#closeCelebrationButton"),
   toast: document.querySelector("#toast")
+};
+
+const mascotState = {
+  x: 28,
+  y: 140,
+  vx: 0.075,
+  vy: 0.055,
+  lastTime: 0,
+  nextTurnAt: 0,
+  animationId: null,
+  bubbleTimer: null,
+  celebrationTimer: null,
+  reducedMotion: window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)").matches : false
 };
 
 bindEvents();
@@ -99,6 +120,11 @@ function bindEvents() {
   els.signOutButton.addEventListener("click", handleSignOut);
   els.refreshButton.addEventListener("click", loadCloudEntries);
   els.importLocalButton.addEventListener("click", handleImportLocalEntries);
+  els.mascot.addEventListener("click", () => showMascotBubble("応援してる！"));
+  els.closeCelebrationButton.addEventListener("click", closeCelebration);
+  els.celebrationOverlay.addEventListener("click", (event) => {
+    if (event.target === els.celebrationOverlay) closeCelebration();
+  });
   els.prevCalendarButton.addEventListener("click", () => moveCalendarMonth(-1));
   els.nextCalendarButton.addEventListener("click", () => moveCalendarMonth(1));
   els.todayCalendarButton.addEventListener("click", resetCalendarMonth);
@@ -142,6 +168,8 @@ function bindEvents() {
 }
 
 async function init() {
+  initMascot();
+
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
       navigator.serviceWorker.register("./service-worker.js").catch(() => {});
@@ -262,6 +290,8 @@ async function handleEntrySubmit(event) {
     return;
   }
 
+  const celebration = getEntryCelebration(entry, existingEntry);
+
   if (state.mode === "cloud") {
     if (!state.session) {
       showToast("ログインすると保存できます。");
@@ -287,7 +317,11 @@ async function handleEntrySubmit(event) {
   resetEntryForm();
   els.entryDialog.close();
   render();
-  showToast(existingEntry ? "更新しました。" : "保存しました。");
+  if (celebration) {
+    showCelebration(entry, celebration);
+  } else {
+    showToast(existingEntry ? "更新しました。" : "保存しました。");
+  }
 }
 
 function handleEditEntry(id) {
@@ -803,6 +837,181 @@ function setAuthMessage(message) {
   els.authMessage.textContent = message;
 }
 
+function initMascot() {
+  const size = getMascotSize();
+  mascotState.x = Math.max(14, window.innerWidth - size - 28);
+  mascotState.y = Math.max(86, Math.min(window.innerHeight - size - 18, 150));
+  applyMascotPosition();
+
+  window.addEventListener("resize", clampMascotPosition);
+
+  if (!mascotState.reducedMotion) {
+    mascotState.animationId = window.requestAnimationFrame(moveMascot);
+  }
+}
+
+function moveMascot(timestamp) {
+  if (!mascotState.lastTime) mascotState.lastTime = timestamp;
+  const delta = Math.min(timestamp - mascotState.lastTime, 32);
+  mascotState.lastTime = timestamp;
+
+  if (timestamp > mascotState.nextTurnAt) {
+    setMascotVelocity();
+    mascotState.nextTurnAt = timestamp + 1800 + Math.random() * 2600;
+  }
+
+  const bounds = getMascotBounds();
+  mascotState.x += mascotState.vx * delta;
+  mascotState.y += mascotState.vy * delta;
+
+  if (mascotState.x <= bounds.minX || mascotState.x >= bounds.maxX) {
+    mascotState.vx *= -1;
+    mascotState.x = Math.min(Math.max(mascotState.x, bounds.minX), bounds.maxX);
+  }
+
+  if (mascotState.y <= bounds.minY || mascotState.y >= bounds.maxY) {
+    mascotState.vy *= -1;
+    mascotState.y = Math.min(Math.max(mascotState.y, bounds.minY), bounds.maxY);
+  }
+
+  applyMascotPosition();
+  mascotState.animationId = window.requestAnimationFrame(moveMascot);
+}
+
+function setMascotVelocity() {
+  const speed = document.body.classList.contains("is-celebrating")
+    ? 0.13 + Math.random() * 0.04
+    : 0.045 + Math.random() * 0.055;
+  const angle = Math.random() * Math.PI * 2;
+  mascotState.vx = Math.cos(angle) * speed;
+  mascotState.vy = Math.sin(angle) * speed;
+  if (Math.abs(mascotState.vx) < 0.025) mascotState.vx += mascotState.vx < 0 ? -0.035 : 0.035;
+  if (Math.abs(mascotState.vy) < 0.025) mascotState.vy += mascotState.vy < 0 ? -0.035 : 0.035;
+}
+
+function clampMascotPosition() {
+  const bounds = getMascotBounds();
+  mascotState.x = Math.min(Math.max(mascotState.x, bounds.minX), bounds.maxX);
+  mascotState.y = Math.min(Math.max(mascotState.y, bounds.minY), bounds.maxY);
+  applyMascotPosition();
+}
+
+function getMascotBounds() {
+  const size = getMascotSize();
+  return {
+    minX: 10,
+    minY: 74,
+    maxX: Math.max(10, window.innerWidth - size - 10),
+    maxY: Math.max(74, window.innerHeight - size - 10)
+  };
+}
+
+function getMascotSize() {
+  return els.mascot.getBoundingClientRect().width || 86;
+}
+
+function applyMascotPosition() {
+  els.mascot.style.transform = `translate3d(${mascotState.x}px, ${mascotState.y}px, 0)`;
+  els.mascot.classList.toggle("facing-left", mascotState.vx < 0);
+}
+
+function getEntryCelebration(entry, existingEntry) {
+  if (!celebrationStatuses.includes(entry.status)) return null;
+  if (existingEntry && existingEntry.status === entry.status) return null;
+
+  if (entry.status === "内定") {
+    return {
+      title: "内定おめでとう！！！",
+      message: `${entry.companyName}、本当におめでとう。ここまで積み上げた準備と粘り、ちゃんと届いた。`,
+      bubble: "内定だー！"
+    };
+  }
+
+  if (entry.status === "インターン選考通過") {
+    return {
+      title: "インターン選考通過！",
+      message: `${entry.companyName}のインターン選考通過、おめでとう。次もこの勢いでいこう。`,
+      bubble: "通過！"
+    };
+  }
+
+  if (entry.status === "インターン参加決定") {
+    return {
+      title: "インターン参加決定！",
+      message: `${entry.companyName}のインターン参加決定、おめでとう。ここから一気にチャンスを広げよう。`,
+      bubble: "参加決定！"
+    };
+  }
+
+  if (entry.trackType === "インターン") {
+    return {
+      title: "インターン選考通過！",
+      message: `${entry.companyName}のインターン選考通過、おめでとう。次もこの勢いでいこう。`,
+      bubble: "通過！"
+    };
+  }
+
+  return {
+    title: "選考通過おめでとう！",
+    message: `${entry.companyName}の選考通過、おめでとう。次のステージに進んだ。`,
+    bubble: "通過した！"
+  };
+}
+
+function showCelebration(entry, celebration) {
+  els.celebrationTitle.textContent = celebration.title;
+  els.celebrationMessage.textContent = celebration.message;
+  createConfetti();
+  els.celebrationOverlay.hidden = false;
+  document.body.classList.add("is-celebrating");
+  els.mascot.classList.add("is-celebrating");
+  showMascotBubble(celebration.bubble);
+  setMascotVelocity();
+
+  window.clearTimeout(mascotState.celebrationTimer);
+  mascotState.celebrationTimer = window.setTimeout(closeCelebration, 9000);
+  showToast(`${entry.companyName}、おめでとう！`);
+}
+
+function closeCelebration() {
+  els.celebrationOverlay.hidden = true;
+  els.celebrationConfetti.textContent = "";
+  document.body.classList.remove("is-celebrating");
+  els.mascot.classList.remove("is-celebrating");
+  window.clearTimeout(mascotState.celebrationTimer);
+}
+
+function createConfetti() {
+  const colors = ["#facc15", "#fb7185", "#60a5fa", "#34d399", "#f97316", "#a78bfa", "#ffffff"];
+  const fragment = document.createDocumentFragment();
+  els.celebrationConfetti.textContent = "";
+
+  for (let index = 0; index < 110; index += 1) {
+    const piece = document.createElement("span");
+    piece.style.setProperty("--x", `${Math.random() * 100}vw`);
+    piece.style.setProperty("--y", `${-12 - Math.random() * 32}vh`);
+    piece.style.setProperty("--fall", `${72 + Math.random() * 40}vh`);
+    piece.style.setProperty("--drift", `${-90 + Math.random() * 180}px`);
+    piece.style.setProperty("--spin", `${180 + Math.random() * 720}deg`);
+    piece.style.animationDelay = `${Math.random() * 0.9}s`;
+    piece.style.animationDuration = `${2.6 + Math.random() * 1.8}s`;
+    piece.style.background = colors[index % colors.length];
+    if (index % 9 === 0) piece.className = "spark";
+    fragment.append(piece);
+  }
+
+  els.celebrationConfetti.append(fragment);
+}
+
+function showMascotBubble(message) {
+  els.mascotBubble.textContent = message;
+  els.mascot.classList.add("show-bubble");
+  window.clearTimeout(mascotState.bubbleTimer);
+  mascotState.bubbleTimer = window.setTimeout(() => {
+    els.mascot.classList.remove("show-bubble");
+  }, 2600);
+}
+
 function showToast(message) {
   els.toast.textContent = message;
   els.toast.hidden = false;
@@ -1083,7 +1292,7 @@ function companyColor(companyName) {
 function statusTag(status) {
   const className = ["落選", "辞退"].includes(status)
     ? "red"
-    : ["内定", "参加済み"].includes(status)
+    : ["内定", "参加済み", "選考通過", "インターン選考通過", "インターン参加決定"].includes(status)
       ? "green"
       : ["結果待ち", "Webテスト"].includes(status)
         ? "yellow"
