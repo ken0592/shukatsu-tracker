@@ -243,6 +243,7 @@ async function handleEntrySubmit(event) {
     eventDate: String(formData.get("eventDate")),
     eventType: String(formData.get("eventType")),
     priority: String(formData.get("priority")),
+    mypageId: String(formData.get("mypageId")).trim(),
     mypageUrl: String(formData.get("mypageUrl")).trim(),
     esContent: String(formData.get("esContent")).trim(),
     interviewNotes: String(formData.get("interviewNotes")).trim(),
@@ -526,6 +527,7 @@ function renderCompanyList() {
             ${entry.deadline ? `<span>${formatDate(entry.deadline)} 締切</span>` : ""}
             ${entry.eventDate ? `<span>${formatDate(entry.eventDate)} 予定</span>` : ""}
           </div>
+          ${entry.mypageId ? `<div class="credential-line"><strong>マイページID</strong><span>${escapeHtml(entry.mypageId)}</span></div>` : ""}
           ${entry.mypageUrl ? `<a class="mypage-link" href="${escapeAttribute(entry.mypageUrl)}" target="_blank" rel="noopener noreferrer">企業マイページを開く</a>` : ""}
           ${entry.esContent ? noteBlock("ES", entry.esContent) : ""}
           ${entry.interviewNotes ? noteBlock("面接対策", entry.interviewNotes) : ""}
@@ -603,6 +605,7 @@ function fillEntryForm(entry) {
   const values = normalizeEntry(entry || {});
   setFormValue("companyName", entry ? values.companyName : "");
   setFormValue("industry", entry ? values.industry : "");
+  setFormValue("mypageId", entry ? values.mypageId : "");
   setFormValue("mypageUrl", entry ? values.mypageUrl : "");
   setFormValue("trackType", values.trackType);
   setFormValue("status", values.status);
@@ -687,6 +690,7 @@ function toDbEntry(entry) {
     user_id: state.session.user.id,
     company_name: entry.companyName,
     industry: entry.industry,
+    mypage_id: entry.mypageId,
     track_type: entry.trackType,
     status: entry.status,
     deadline: entry.deadline || null,
@@ -706,6 +710,7 @@ function fromDbEntry(row) {
     id: row.id,
     companyName: row.company_name,
     industry: row.industry || "",
+    mypageId: row.mypage_id || "",
     trackType: row.track_type,
     status: row.status,
     deadline: row.deadline || "",
@@ -725,6 +730,7 @@ function normalizeEntry(entry) {
     id: entry.id || createId(),
     companyName: entry.companyName || "",
     industry: entry.industry || "",
+    mypageId: entry.mypageId || "",
     trackType: entry.trackType || "本選考",
     status: entry.status || "気になる",
     deadline: entry.deadline || "",
@@ -795,6 +801,7 @@ function matchesSearchQuery(entry) {
     entry.trackType,
     entry.status,
     entry.priority,
+    entry.mypageId,
     entry.mypageUrl,
     entry.esContent,
     entry.interviewNotes,

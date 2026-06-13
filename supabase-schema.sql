@@ -3,6 +3,7 @@ create table if not exists public.entries (
   user_id uuid not null references auth.users(id) on delete cascade,
   company_name text not null,
   industry text not null default '',
+  mypage_id text not null default '',
   track_type text not null default '本選考',
   status text not null default '気になる',
   deadline date,
@@ -19,6 +20,7 @@ create table if not exists public.entries (
 
 alter table public.entries
   add column if not exists industry text not null default '',
+  add column if not exists mypage_id text not null default '',
   add column if not exists mypage_url text not null default '',
   add column if not exists es_content text not null default '',
   add column if not exists interview_notes text not null default '';

@@ -378,6 +378,27 @@ h2 {
   text-decoration: underline;
 }
 
+.credential-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: #344054;
+  font-size: 14px;
+}
+
+.credential-line strong {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.credential-line span {
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: #eef3fa;
+  overflow-wrap: anywhere;
+}
+
 .note-block {
   display: grid;
   gap: 4px;
