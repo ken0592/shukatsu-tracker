@@ -1517,7 +1517,19 @@ function statusTag(status) {
         ? "yellow"
         : "";
 
-  return `<span class="tag ${className}">${escapeHtml(status)}</span>`;
+  return `<span class="tag ${className}">${statusLabelMarkup(status)}</span>`;
+}
+
+function statusLabelMarkup(status) {
+  const partsByStatus = {
+    "インターン選考通過": ["インターン", "選考通過"],
+    "インターン参加決定": ["インターン", "参加決定"],
+    "ES提出済み": ["ES", "提出済み"]
+  };
+  const parts = partsByStatus[status];
+  if (!parts) return escapeHtml(status);
+
+  return parts.map((part) => `<span class="status-word">${escapeHtml(part)}</span>`).join("<wbr>");
 }
 
 function noteBlock(title, value) {
