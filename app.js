@@ -2,6 +2,7 @@ const storageKey = "shukatsu-tracker-entries";
 const activeStatuses = ["気になる", "応募予定", "応募済み", "ES提出済み", "Webテスト", "一次面接", "二次面接", "最終面接", "結果待ち"];
 const finishedStatuses = ["内定", "落選", "辞退", "参加済み"];
 const sampleCompanyNames = ["株式会社サンプル商事", "ミライテック株式会社", "東都キャリア株式会社"];
+const initialCalendarDate = new Date();
 
 const appConfig = window.SHUKATSU_CONFIG || {};
 const hasCloudConfig = Boolean(appConfig.supabaseUrl && appConfig.supabaseAnonKey && window.supabase);
@@ -14,7 +15,9 @@ const state = {
   filter: "all",
   mode: hasCloudConfig ? "cloud" : "local",
   session: null,
-  loading: true
+  loading: true,
+  calendarYear: initialCalendarDate.getFullYear(),
+  calendarMonth: initialCalendarDate.getMonth()
 };
 
 const els = {
@@ -46,6 +49,9 @@ const els = {
   companyList: document.querySelector("#companyList"),
   calendarGrid: document.querySelector("#calendarGrid"),
   calendarMonthLabel: document.querySelector("#calendarMonthLabel"),
+  prevCalendarButton: document.querySelector("#prevCalendarButton"),
+  nextCalendarButton: document.querySelector("#nextCalendarButton"),
+  todayCalendarButton: document.querySelector("#todayCalendarButton"),
   filterButtons: document.querySelectorAll(".filter-button"),
   toast: document.querySelector("#toast")
 };
@@ -79,6 +85,9 @@ function bindEvents() {
   els.signOutButton.addEventListener("click", handleSignOut);
   els.refreshButton.addEventListener("click", loadCloudEntries);
   els.importLocalButton.addEventListener("click", handleImportLocalEntries);
+  els.prevCalendarButton.addEventListener("click", () => moveCalendarMonth(-1));
+  els.nextCalendarButton.addEventListener("click", () => moveCalendarMonth(1));
+  els.todayCalendarButton.addEventListener("click", resetCalendarMonth);
 
   els.filterButtons.forEach((button) => {
     button.addEventListener("click", () => {
@@ -446,9 +455,9 @@ function renderCompanyList() {
 }
 
 function renderCalendar() {
-  const today = new Date();
-  const year = today.getFullYear();
-  const month = today.getMonth();
+  const year = state.calendarYear;
+  const month = state.calendarMonth;
+  const todayKey = toDateInputValue(new Date());
   const monthStart = new Date(year, month, 1);
   const monthEnd = new Date(year, month + 1, 0);
   const firstDay = monthStart.getDay();
@@ -464,13 +473,14 @@ function renderCalendar() {
 
   for (let day = 1; day <= daysInMonth; day += 1) {
     const dateKey = toDateInputValue(new Date(year, month, day));
+    const cellClass = dateKey === todayKey ? "calendar-cell today" : "calendar-cell";
     const dots = calendarItemsFor(dateKey)
       .slice(0, 3)
       .map((item) => `<span class="calendar-dot ${item.kind}">${escapeHtml(item.label)}</span>`)
       .join("");
 
     cells.push(`
-      <div class="calendar-cell">
+      <div class="${cellClass}">
         <span class="calendar-date">${day}</span>
         ${dots}
       </div>
@@ -478,6 +488,20 @@ function renderCalendar() {
   }
 
   els.calendarGrid.innerHTML = cells.join("");
+}
+
+function moveCalendarMonth(delta) {
+  const nextMonth = new Date(state.calendarYear, state.calendarMonth + delta, 1);
+  state.calendarYear = nextMonth.getFullYear();
+  state.calendarMonth = nextMonth.getMonth();
+  renderCalendar();
+}
+
+function resetCalendarMonth() {
+  const today = new Date();
+  state.calendarYear = today.getFullYear();
+  state.calendarMonth = today.getMonth();
+  renderCalendar();
 }
 
 function loadLocalEntries() {

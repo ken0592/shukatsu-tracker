@@ -226,6 +226,44 @@ h2 {
   white-space: nowrap;
 }
 
+.calendar-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.calendar-controls span {
+  min-width: 92px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.calendar-nav-button,
+.calendar-today-button {
+  min-height: 32px;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.calendar-nav-button {
+  padding: 0 10px;
+  color: var(--blue-dark);
+  background: #e8f0ff;
+}
+
+.calendar-today-button {
+  padding: 0 12px;
+  color: var(--text);
+  background: #eef3fa;
+}
+
 .item-list,
 .company-list {
   display: grid;
@@ -438,6 +476,11 @@ button:disabled {
   background: #fff;
 }
 
+.calendar-cell.today {
+  background: #f0f6ff;
+  box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.26);
+}
+
 .calendar-cell:nth-child(7n),
 .calendar-weekday:nth-child(7n) {
   border-right: 0;
@@ -576,6 +619,10 @@ textarea {
   }
 
   .filter-row {
+    justify-content: flex-start;
+  }
+
+  .calendar-controls {
     justify-content: flex-start;
   }
 

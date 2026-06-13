@@ -116,7 +116,12 @@
           <article class="panel calendar-panel">
             <div class="panel-heading">
               <h2>カレンダーまとめ</h2>
-              <span id="calendarMonthLabel"></span>
+              <div class="calendar-controls" aria-label="カレンダー操作">
+                <button class="calendar-nav-button" id="prevCalendarButton" type="button">前月</button>
+                <span id="calendarMonthLabel"></span>
+                <button class="calendar-nav-button" id="nextCalendarButton" type="button">翌月</button>
+                <button class="calendar-today-button" id="todayCalendarButton" type="button">今月</button>
+              </div>
             </div>
             <div class="calendar" id="calendarGrid"></div>
           </article>
