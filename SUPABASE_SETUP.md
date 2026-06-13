@@ -8,10 +8,10 @@
 2. GitHubなどでログイン
 3. New projectを作る
 4. Project Settings → APIを開く
-5. Project URLとanon public keyを控える
+5. Project URLとPublishable keyまたはanon public keyを控える
 
 `service_role` keyは絶対に使わないでください。
-ブラウザに入れてよいのは `anon public` keyだけです。
+ブラウザに入れてよいのは `Publishable key` または `anon public` keyだけです。
 
 ## 2. データベースを作る
 
@@ -43,7 +43,7 @@ window.SHUKATSU_CONFIG = {
 };
 ```
 
-anon public keyはブラウザに入れて使う公開用キーです。
+Publishable keyまたはanon public keyはブラウザに入れて使う公開用キーです。
 安全性は `supabase-schema.sql` のRLSルールで守ります。
 
 ## 5. GitHubへ送る
