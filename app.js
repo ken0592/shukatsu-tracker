@@ -506,7 +506,7 @@ function renderCompanyList() {
         <article class="company-card">
           <div class="company-title-row">
             <div class="company-identity">
-              <div class="company-icon" style="--company-color: ${companyColor(entry.companyName)}">${escapeHtml(companyIconText(entry.companyName))}</div>
+              ${companyIconMarkup(entry)}
               <div>
                 <strong>${escapeHtml(entry.companyName)}</strong>
                 <div class="meta-row">
@@ -873,6 +873,32 @@ function sortCompanyEntries(a, b) {
     return aDeadline.localeCompare(bDeadline);
   }
   return sortByClosestDate(a, b);
+}
+
+function companyIconMarkup(entry) {
+  const logoUrl = companyFaviconUrl(entry.mypageUrl);
+  const logoImage = logoUrl
+    ? `<img src="${escapeAttribute(logoUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`
+    : "";
+
+  return `
+    <div class="company-icon" style="--company-color: ${companyColor(entry.companyName)}">
+      ${logoImage}
+      <span>${escapeHtml(companyIconText(entry.companyName))}</span>
+    </div>
+  `;
+}
+
+function companyFaviconUrl(mypageUrl) {
+  if (!mypageUrl) return "";
+
+  try {
+    const url = new URL(mypageUrl);
+    if (!["http:", "https:"].includes(url.protocol)) return "";
+    return `${url.origin}/favicon.ico`;
+  } catch {
+    return "";
+  }
 }
 
 function companyIconText(companyName) {
