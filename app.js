@@ -66,6 +66,9 @@ const els = {
   signUpButton: document.querySelector("#signUpButton"),
   refreshButton: document.querySelector("#refreshButton"),
   importLocalButton: document.querySelector("#importLocalButton"),
+  exportBackupButton: document.querySelector("#exportBackupButton"),
+  importBackupButton: document.querySelector("#importBackupButton"),
+  importBackupInput: document.querySelector("#importBackupInput"),
   authForm: document.querySelector("#authForm"),
   authPanel: document.querySelector("#authPanel"),
   accountPanel: document.querySelector("#accountPanel"),
@@ -179,6 +182,9 @@ function bindEvents() {
   els.signOutButton.addEventListener("click", handleSignOut);
   els.refreshButton.addEventListener("click", loadCloudData);
   els.importLocalButton.addEventListener("click", handleImportLocalEntries);
+  els.exportBackupButton.addEventListener("click", handleExportBackup);
+  els.importBackupButton.addEventListener("click", () => els.importBackupInput.click());
+  els.importBackupInput.addEventListener("change", handleImportBackup);
   els.mascot.addEventListener("click", () => {
     if (mascotState.didDrag) {
       mascotState.didDrag = false;
@@ -774,6 +780,106 @@ function updateTemplateBodyCount() {
   els.templateBodyCount.textContent = formatCharCount(els.templateBodyInput.value);
 }
 
+function handleExportBackup() {
+  const backup = {
+    app: "shukatsu-tracker",
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    mode: state.mode,
+    entries: state.entries.map(normalizeEntry),
+    templates: state.templates.map(normalizeTemplate)
+  };
+  const date = new Date();
+  const filename = `shukatsu-backup-${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}.json`;
+  downloadTextFile(filename, JSON.stringify(backup, null, 2), "application/json");
+  showToast("バックアップを書き出しました。");
+}
+
+async function handleImportBackup(event) {
+  const file = event.target.files?.[0];
+  event.target.value = "";
+  if (!file) return;
+
+  let backup;
+  try {
+    backup = JSON.parse(await file.text());
+  } catch {
+    showToast("バックアップファイルを読めませんでした。");
+    return;
+  }
+
+  if (!isValidBackup(backup)) {
+    showToast("就活管理のバックアップファイルではありません。");
+    return;
+  }
+
+  const shouldImport = window.confirm("バックアップを復元しますか？同じデータは上書きし、新しいデータは追加します。");
+  if (!shouldImport) return;
+
+  const entries = backup.entries.map(normalizeEntry);
+  const templates = backup.templates.map(normalizeTemplate);
+
+  if (state.mode === "cloud") {
+    if (!state.session) {
+      showToast("ログインすると復元できます。");
+      return;
+    }
+
+    const entryPayload = entries.map(toDbEntry);
+    const templatePayload = templates.map(toDbTemplate);
+    if (entryPayload.length > 0) {
+      const { error } = await supabaseClient.from("entries").upsert(entryPayload, { onConflict: "id" });
+      if (error) {
+        showToast(error.message);
+        return;
+      }
+    }
+    if (templatePayload.length > 0) {
+      const { error } = await supabaseClient.from("es_templates").upsert(templatePayload, { onConflict: "id" });
+      if (error) {
+        showToast(error.message);
+        return;
+      }
+    }
+    await loadCloudData();
+  } else {
+    state.entries = mergeById(state.entries, entries).map(normalizeEntry);
+    state.templates = mergeById(state.templates, templates).map(normalizeTemplate);
+    saveLocalEntries(state.entries);
+    saveLocalTemplates(state.templates);
+    render();
+  }
+
+  showToast("バックアップを復元しました。");
+}
+
+function isValidBackup(value) {
+  return Boolean(
+    value &&
+    value.app === "shukatsu-tracker" &&
+    Array.isArray(value.entries) &&
+    Array.isArray(value.templates)
+  );
+}
+
+function mergeById(currentItems, importedItems) {
+  const merged = new Map(currentItems.map((item) => [item.id, item]));
+  importedItems.forEach((item) => merged.set(item.id, item));
+  return Array.from(merged.values());
+}
+
+function downloadTextFile(filename, content, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
 async function handleImportLocalEntries() {
   const localEntries = readSavedLocalEntries();
   if (localEntries.length === 0 || !state.session) return;
@@ -912,6 +1018,8 @@ function renderMode() {
   els.localPanel.hidden = state.mode !== "local";
   els.appContent.hidden = waitingForLogin;
   els.openFormButton.disabled = waitingForLogin || state.loading;
+  els.exportBackupButton.disabled = waitingForLogin || state.loading;
+  els.importBackupButton.disabled = waitingForLogin || state.loading;
   els.signOutButton.hidden = state.mode !== "cloud" || !state.session;
   els.importLocalButton.hidden = state.mode !== "cloud" || !state.session || readSavedLocalEntries().length === 0;
 
@@ -1774,6 +1882,10 @@ function getMascotHelpAnswer(question) {
 
   if (text.includes("同期") || text.includes("スマホ") || text.includes("iphone") || text.includes("ログイン") || text.includes("supabase")) {
     return "同じメールアドレスとパスワードでログインすると、PCとiPhoneで同じデータを見られます。新規登録後は確認メールを押してからログインしてください。";
+  }
+
+  if (text.includes("バックアップ") || text.includes("復元") || text.includes("引き継") || text.includes("移行")) {
+    return "画面上部の「バックアップ」でJSONファイルを書き出せます。別のPCや同じアプリで「復元」を押してそのファイルを選ぶと、企業データとESの型を読み込めます。";
   }
 
   if (text.includes("アイコン") || text.includes("ロゴ")) {
