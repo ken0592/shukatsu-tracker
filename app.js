@@ -16,6 +16,7 @@ const state = {
   mode: hasCloudConfig ? "cloud" : "local",
   session: null,
   loading: true,
+  editingId: null,
   calendarYear: initialCalendarDate.getFullYear(),
   calendarMonth: initialCalendarDate.getMonth()
 };
@@ -41,6 +42,8 @@ const els = {
   syncStatus: document.querySelector("#syncStatus"),
   entryDialog: document.querySelector("#entryDialog"),
   entryForm: document.querySelector("#entryForm"),
+  entryFormTitle: document.querySelector("#entryFormTitle"),
+  saveEntryButton: document.querySelector("#saveEntryButton"),
   deadlineCount: document.querySelector("#deadlineCount"),
   eventCount: document.querySelector("#eventCount"),
   activeCount: document.querySelector("#activeCount"),
@@ -66,14 +69,11 @@ function bindEvents() {
       return;
     }
 
-    if (typeof els.entryDialog.showModal === "function") {
-      els.entryDialog.showModal();
-    } else {
-      els.entryDialog.setAttribute("open", "");
-    }
+    openEntryDialog();
   });
 
   els.closeFormButton.addEventListener("click", () => {
+    resetEntryForm();
     els.entryDialog.close();
   });
 
@@ -98,6 +98,12 @@ function bindEvents() {
   });
 
   document.addEventListener("click", (event) => {
+    const editButton = event.target.closest("[data-edit-id]");
+    if (editButton) {
+      handleEditEntry(editButton.dataset.editId);
+      return;
+    }
+
     const button = event.target.closest("[data-delete-id]");
     if (!button) return;
     handleDeleteEntry(button.dataset.deleteId);
@@ -197,8 +203,11 @@ async function handleSignOut() {
 async function handleEntrySubmit(event) {
   event.preventDefault();
   const formData = new FormData(els.entryForm);
+  const existingEntry = state.editingId
+    ? state.entries.find((entry) => entry.id === state.editingId)
+    : null;
   const entry = {
-    id: createId(),
+    id: existingEntry?.id || createId(),
     companyName: String(formData.get("companyName")).trim(),
     trackType: String(formData.get("trackType")),
     status: String(formData.get("status")),
@@ -210,7 +219,7 @@ async function handleEntrySubmit(event) {
     esContent: String(formData.get("esContent")).trim(),
     interviewNotes: String(formData.get("interviewNotes")).trim(),
     memo: String(formData.get("memo")).trim(),
-    createdAt: new Date().toISOString()
+    createdAt: existingEntry?.createdAt || new Date().toISOString()
   };
 
   if (!entry.companyName) {
@@ -224,18 +233,36 @@ async function handleEntrySubmit(event) {
       return;
     }
 
-    const saved = await createCloudEntry(entry);
+    const saved = existingEntry ? await updateCloudEntry(entry) : await createCloudEntry(entry);
     if (!saved) return;
-    state.entries.unshift(saved);
+    if (existingEntry) {
+      state.entries = state.entries.map((item) => (item.id === saved.id ? saved : item));
+    } else {
+      state.entries.unshift(saved);
+    }
   } else {
-    state.entries.unshift(entry);
+    if (existingEntry) {
+      state.entries = state.entries.map((item) => (item.id === entry.id ? entry : item));
+    } else {
+      state.entries.unshift(entry);
+    }
     saveLocalEntries(state.entries);
   }
 
-  els.entryForm.reset();
+  resetEntryForm();
   els.entryDialog.close();
   render();
-  showToast("保存しました。");
+  showToast(existingEntry ? "更新しました。" : "保存しました。");
+}
+
+function handleEditEntry(id) {
+  const entry = state.entries.find((item) => item.id === id);
+  if (!entry) {
+    showToast("編集するデータが見つかりません。");
+    return;
+  }
+
+  openEntryDialog(entry);
 }
 
 async function handleDeleteEntry(id) {
@@ -252,6 +279,10 @@ async function handleDeleteEntry(id) {
 
   state.entries = state.entries.filter((entry) => entry.id !== id);
   if (state.mode === "local") saveLocalEntries(state.entries);
+  if (state.editingId === id) {
+    resetEntryForm();
+    els.entryDialog.close();
+  }
   render();
 }
 
@@ -273,6 +304,7 @@ async function handleClearEntries() {
   state.entries = [];
   if (state.mode === "local") saveLocalEntries(state.entries);
   render();
+  resetEntryForm();
   els.entryDialog.close();
   showToast("削除しました。");
 }
@@ -316,6 +348,16 @@ async function loadCloudEntries() {
 
 async function createCloudEntry(entry) {
   const { data, error } = await supabaseClient.from("entries").insert(toDbEntry(entry)).select("*").single();
+  if (error) {
+    showToast(error.message);
+    return null;
+  }
+  return fromDbEntry(data);
+}
+
+async function updateCloudEntry(entry) {
+  const { id, user_id, created_at, ...changes } = toDbEntry(entry);
+  const { data, error } = await supabaseClient.from("entries").update(changes).eq("id", id).select("*").single();
   if (error) {
     showToast(error.message);
     return null;
@@ -437,7 +479,10 @@ function renderCompanyList() {
                 <span>志望度 ${escapeHtml(entry.priority)}</span>
               </div>
             </div>
-            <button class="delete-button" data-delete-id="${entry.id}" type="button">削除</button>
+            <div class="card-actions">
+              <button class="edit-button" data-edit-id="${entry.id}" type="button">編集</button>
+              <button class="delete-button" data-delete-id="${entry.id}" type="button">削除</button>
+            </div>
           </div>
           <div class="meta-row">
             ${statusTag(entry.status)}
@@ -502,6 +547,46 @@ function resetCalendarMonth() {
   state.calendarYear = today.getFullYear();
   state.calendarMonth = today.getMonth();
   renderCalendar();
+}
+
+function openEntryDialog(entry = null) {
+  state.editingId = entry?.id || null;
+  els.entryFormTitle.textContent = entry ? "企業・選考を編集" : "企業・選考を追加";
+  els.saveEntryButton.textContent = entry ? "更新" : "保存";
+  fillEntryForm(entry);
+
+  if (typeof els.entryDialog.showModal === "function") {
+    els.entryDialog.showModal();
+  } else {
+    els.entryDialog.setAttribute("open", "");
+  }
+}
+
+function fillEntryForm(entry) {
+  const values = normalizeEntry(entry || {});
+  setFormValue("companyName", entry ? values.companyName : "");
+  setFormValue("mypageUrl", entry ? values.mypageUrl : "");
+  setFormValue("trackType", values.trackType);
+  setFormValue("status", values.status);
+  setFormValue("deadline", entry ? values.deadline : "");
+  setFormValue("eventDate", entry ? values.eventDate : "");
+  setFormValue("eventType", values.eventType);
+  setFormValue("priority", values.priority);
+  setFormValue("esContent", entry ? values.esContent : "");
+  setFormValue("interviewNotes", entry ? values.interviewNotes : "");
+  setFormValue("memo", entry ? values.memo : "");
+}
+
+function setFormValue(name, value) {
+  const field = els.entryForm.elements.namedItem(name);
+  if (field) field.value = value;
+}
+
+function resetEntryForm() {
+  state.editingId = null;
+  els.entryForm.reset();
+  els.entryFormTitle.textContent = "企業・選考を追加";
+  els.saveEntryButton.textContent = "保存";
 }
 
 function loadLocalEntries() {

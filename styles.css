@@ -293,6 +293,13 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
 .meta-row {
   display: flex;
   flex-wrap: wrap;
@@ -390,6 +397,7 @@ h2 {
 .secondary-button,
 .primary-button,
 .icon-button,
+.edit-button,
 .delete-button {
   min-height: 38px;
   border: 0;
@@ -436,6 +444,14 @@ button:disabled {
   color: var(--text);
   font-size: 22px;
   line-height: 1;
+}
+
+.edit-button {
+  min-height: 32px;
+  padding: 0 10px;
+  color: var(--blue-dark);
+  background: #e8f0ff;
+  font-size: 13px;
 }
 
 .delete-button {
