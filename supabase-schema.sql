@@ -48,23 +48,27 @@ drop policy if exists "Users can delete own entries" on public.entries;
 create policy "Users can read own entries"
   on public.entries
   for select
-  using (auth.uid() = user_id);
+  to authenticated
+  using (auth.uid() is not null and auth.uid() = user_id);
 
 create policy "Users can insert own entries"
   on public.entries
   for insert
-  with check (auth.uid() = user_id);
+  to authenticated
+  with check (auth.uid() is not null and auth.uid() = user_id);
 
 create policy "Users can update own entries"
   on public.entries
   for update
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  to authenticated
+  using (auth.uid() is not null and auth.uid() = user_id)
+  with check (auth.uid() is not null and auth.uid() = user_id);
 
 create policy "Users can delete own entries"
   on public.entries
   for delete
-  using (auth.uid() = user_id);
+  to authenticated
+  using (auth.uid() is not null and auth.uid() = user_id);
 
 create table if not exists public.es_templates (
   id uuid primary key default gen_random_uuid(),
@@ -89,23 +93,27 @@ drop policy if exists "Users can delete own templates" on public.es_templates;
 create policy "Users can read own templates"
   on public.es_templates
   for select
-  using (auth.uid() = user_id);
+  to authenticated
+  using (auth.uid() is not null and auth.uid() = user_id);
 
 create policy "Users can insert own templates"
   on public.es_templates
   for insert
-  with check (auth.uid() = user_id);
+  to authenticated
+  with check (auth.uid() is not null and auth.uid() = user_id);
 
 create policy "Users can update own templates"
   on public.es_templates
   for update
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  to authenticated
+  using (auth.uid() is not null and auth.uid() = user_id)
+  with check (auth.uid() is not null and auth.uid() = user_id);
 
 create policy "Users can delete own templates"
   on public.es_templates
   for delete
-  using (auth.uid() = user_id);
+  to authenticated
+  using (auth.uid() is not null and auth.uid() = user_id);
 
 create or replace function public.set_updated_at()
 returns trigger
