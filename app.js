@@ -89,8 +89,7 @@ const mascotState = {
   vx: 0.075,
   vy: 0.055,
   lastTime: 0,
-  nextTurnAt: 0,
-  animationId: null,
+  wanderTimer: null,
   bubbleTimer: null,
   celebrationTimer: null,
   reducedMotion: window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)").matches : false
@@ -876,15 +875,13 @@ function setAuthMessage(message) {
 
 function initMascot() {
   bindMascotImageFallbacks();
-  const size = getMascotSize();
-  mascotState.x = Math.max(14, window.innerWidth - size - 28);
-  mascotState.y = Math.max(86, Math.min(window.innerHeight - size - 18, 150));
+  placeMascotAtHome();
   applyMascotPosition();
 
   window.addEventListener("resize", clampMascotPosition);
 
   if (!mascotState.reducedMotion) {
-    mascotState.animationId = window.requestAnimationFrame(moveMascot);
+    mascotState.wanderTimer = window.setInterval(wanderMascotNearHome, 5600);
   }
 }
 
@@ -897,43 +894,31 @@ function bindMascotImageFallbacks() {
   });
 }
 
-function moveMascot(timestamp) {
-  if (!mascotState.lastTime) mascotState.lastTime = timestamp;
-  const delta = Math.min(timestamp - mascotState.lastTime, 32);
-  mascotState.lastTime = timestamp;
-
-  if (timestamp > mascotState.nextTurnAt) {
-    setMascotVelocity();
-    mascotState.nextTurnAt = timestamp + 1800 + Math.random() * 2600;
-  }
-
+function placeMascotAtHome() {
   const bounds = getMascotBounds();
-  mascotState.x += mascotState.vx * delta;
-  mascotState.y += mascotState.vy * delta;
+  mascotState.x = bounds.maxX - 14;
+  mascotState.y = bounds.maxY - 16;
+}
 
-  if (mascotState.x <= bounds.minX || mascotState.x >= bounds.maxX) {
-    mascotState.vx *= -1;
-    mascotState.x = Math.min(Math.max(mascotState.x, bounds.minX), bounds.maxX);
-  }
+function wanderMascotNearHome() {
+  const bounds = getMascotBounds();
+  const previousX = mascotState.x;
+  const xRange = Math.min(180, Math.max(0, bounds.maxX - bounds.minX));
+  const yRange = Math.min(130, Math.max(0, bounds.maxY - bounds.minY));
 
-  if (mascotState.y <= bounds.minY || mascotState.y >= bounds.maxY) {
-    mascotState.vy *= -1;
-    mascotState.y = Math.min(Math.max(mascotState.y, bounds.minY), bounds.maxY);
-  }
-
+  mascotState.x = bounds.maxX - 12 - Math.random() * xRange;
+  mascotState.y = bounds.maxY - 14 - Math.random() * yRange;
+  mascotState.vx = mascotState.x < previousX ? -1 : 1;
   applyMascotPosition();
-  mascotState.animationId = window.requestAnimationFrame(moveMascot);
 }
 
 function setMascotVelocity() {
-  const speed = document.body.classList.contains("is-celebrating")
-    ? 0.13 + Math.random() * 0.04
-    : 0.045 + Math.random() * 0.055;
-  const angle = Math.random() * Math.PI * 2;
-  mascotState.vx = Math.cos(angle) * speed;
-  mascotState.vy = Math.sin(angle) * speed;
-  if (Math.abs(mascotState.vx) < 0.025) mascotState.vx += mascotState.vx < 0 ? -0.035 : 0.035;
-  if (Math.abs(mascotState.vy) < 0.025) mascotState.vy += mascotState.vy < 0 ? -0.035 : 0.035;
+  const previousX = mascotState.x;
+  const bounds = getMascotBounds();
+  mascotState.x = bounds.maxX - 8 - Math.random() * Math.min(120, bounds.maxX - bounds.minX);
+  mascotState.y = bounds.maxY - 8 - Math.random() * Math.min(110, bounds.maxY - bounds.minY);
+  mascotState.vx = mascotState.x < previousX ? -1 : 1;
+  applyMascotPosition();
 }
 
 function clampMascotPosition() {

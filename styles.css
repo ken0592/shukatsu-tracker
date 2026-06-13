@@ -670,14 +670,15 @@ button:disabled {
   top: 0;
   left: 0;
   z-index: 70;
-  width: 96px;
-  height: 96px;
+  width: 84px;
+  height: 84px;
   border: 0;
   padding: 0;
   background: transparent;
   cursor: pointer;
-  filter: drop-shadow(0 14px 22px rgba(18, 38, 63, 0.22));
+  filter: drop-shadow(0 12px 18px rgba(18, 38, 63, 0.2));
   transform: translate3d(28px, 140px, 0);
+  transition: transform 1400ms cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;
 }
 
@@ -695,8 +696,8 @@ button:disabled {
   position: absolute;
   inset: 0;
   border: 2px solid rgba(255, 255, 255, 0.9);
-  border-radius: 24px;
-  font-size: 42px;
+  border-radius: 999px;
+  font-size: 38px;
 }
 
 .mascot img {
@@ -704,12 +705,18 @@ button:disabled {
   display: block;
   width: 100%;
   height: 100%;
-  border: 2px solid rgba(255, 255, 255, 0.9);
-  border-radius: 22px;
+  border: 3px solid rgba(255, 255, 255, 0.95);
+  border-radius: 999px;
   background: #fff8ee;
+  clip-path: circle(49% at 50% 50%);
   object-fit: cover;
+  box-shadow: 0 0 0 3px rgba(250, 204, 21, 0.18), 0 10px 22px rgba(217, 119, 6, 0.2);
   transform: scaleX(var(--face, 1));
   transition: box-shadow 180ms ease, filter 180ms ease;
+}
+
+.mascot:not(.is-celebrating) img {
+  animation: mascotIdle 3600ms ease-in-out infinite;
 }
 
 .mascot img[hidden],
@@ -723,7 +730,7 @@ button:disabled {
 
 .mascot:hover img,
 .mascot.is-celebrating img {
-  box-shadow: 0 0 0 4px rgba(250, 204, 21, 0.35), 0 16px 34px rgba(217, 119, 6, 0.28);
+  box-shadow: 0 0 0 5px rgba(250, 204, 21, 0.28), 0 16px 34px rgba(217, 119, 6, 0.28);
   filter: saturate(1.12);
 }
 
@@ -893,6 +900,17 @@ button:disabled {
 
   to {
     transform: scaleX(var(--face, 1)) translateY(-8px) rotate(5deg) scale(1.08);
+  }
+}
+
+@keyframes mascotIdle {
+  0%,
+  100% {
+    transform: scaleX(var(--face, 1)) translateY(0) rotate(-1deg);
+  }
+
+  50% {
+    transform: scaleX(var(--face, 1)) translateY(-6px) rotate(2deg);
   }
 }
 
