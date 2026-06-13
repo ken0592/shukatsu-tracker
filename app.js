@@ -245,6 +245,7 @@ async function handleEntrySubmit(event) {
     priority: String(formData.get("priority")),
     mypageId: String(formData.get("mypageId")).trim(),
     officialUrl: String(formData.get("officialUrl")).trim(),
+    logoUrl: String(formData.get("logoUrl")).trim(),
     mypageUrl: String(formData.get("mypageUrl")).trim(),
     esContent: String(formData.get("esContent")).trim(),
     interviewNotes: String(formData.get("interviewNotes")).trim(),
@@ -609,6 +610,7 @@ function fillEntryForm(entry) {
   setFormValue("industry", entry ? values.industry : "");
   setFormValue("mypageId", entry ? values.mypageId : "");
   setFormValue("officialUrl", entry ? values.officialUrl : "");
+  setFormValue("logoUrl", entry ? values.logoUrl : "");
   setFormValue("mypageUrl", entry ? values.mypageUrl : "");
   setFormValue("trackType", values.trackType);
   setFormValue("status", values.status);
@@ -695,6 +697,7 @@ function toDbEntry(entry) {
     industry: entry.industry,
     mypage_id: entry.mypageId,
     official_url: entry.officialUrl,
+    logo_url: entry.logoUrl,
     track_type: entry.trackType,
     status: entry.status,
     deadline: entry.deadline || null,
@@ -716,6 +719,7 @@ function fromDbEntry(row) {
     industry: row.industry || "",
     mypageId: row.mypage_id || "",
     officialUrl: row.official_url || "",
+    logoUrl: row.logo_url || "",
     trackType: row.track_type,
     status: row.status,
     deadline: row.deadline || "",
@@ -737,6 +741,7 @@ function normalizeEntry(entry) {
     industry: entry.industry || "",
     mypageId: entry.mypageId || "",
     officialUrl: entry.officialUrl || "",
+    logoUrl: entry.logoUrl || "",
     trackType: entry.trackType || "本選考",
     status: entry.status || "気になる",
     deadline: entry.deadline || "",
@@ -809,6 +814,7 @@ function matchesSearchQuery(entry) {
     entry.priority,
     entry.mypageId,
     entry.officialUrl,
+    entry.logoUrl,
     entry.mypageUrl,
     entry.esContent,
     entry.interviewNotes,
@@ -883,9 +889,9 @@ function sortCompanyEntries(a, b) {
 }
 
 function companyIconMarkup(entry) {
-  const logoUrl = companyFaviconUrl(entry.officialUrl || entry.mypageUrl);
-  const logoImage = logoUrl
-    ? `<img src="${escapeAttribute(logoUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`
+  const logoSources = companyLogoSources(entry);
+  const logoImage = logoSources.length > 0
+    ? `<img src="${escapeAttribute(logoSources[0])}" data-logo-index="0" data-logo-sources="${escapeAttribute(JSON.stringify(logoSources))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="useNextLogoSource(this)">`
     : "";
 
   return `
@@ -896,16 +902,102 @@ function companyIconMarkup(entry) {
   `;
 }
 
-function companyFaviconUrl(mypageUrl) {
-  if (!mypageUrl) return "";
+function useNextLogoSource(image) {
+  let sources = [];
+  try {
+    sources = JSON.parse(image.dataset.logoSources || "[]");
+  } catch {
+    sources = [];
+  }
+
+  const nextIndex = Number(image.dataset.logoIndex || "0") + 1;
+  if (nextIndex < sources.length) {
+    image.dataset.logoIndex = String(nextIndex);
+    image.src = sources[nextIndex];
+    return;
+  }
+
+  image.remove();
+}
+
+function companyLogoSources(entry) {
+  const sources = [];
+  const manualLogo = normalizeExternalUrl(entry.logoUrl);
+  const officialUrl = parseExternalUrl(entry.officialUrl);
+  const mypageUrl = parseExternalUrl(entry.mypageUrl);
+
+  if (manualLogo) sources.push(manualLogo);
+  if (officialUrl) {
+    addDomainLogoSources(sources, officialUrl.hostname);
+  }
+
+  if (mypageUrl) {
+    recruitingLogoDomains(mypageUrl.hostname).forEach((domain) => addDomainLogoSources(sources, domain));
+  }
+
+  if (officialUrl) {
+    addOriginIconSources(sources, officialUrl.origin);
+  }
+
+  if (mypageUrl) {
+    addDomainLogoSources(sources, mypageUrl.hostname);
+    addOriginIconSources(sources, mypageUrl.origin);
+  }
+
+  return Array.from(new Set(sources));
+}
+
+function addDomainLogoSources(sources, hostname) {
+  const domain = normalizeHostname(hostname);
+  if (!domain) return;
+
+  sources.push(`https://logo.clearbit.com/${domain}`);
+  sources.push(`https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=128`);
+}
+
+function addOriginIconSources(sources, origin) {
+  if (!origin) return;
+  sources.push(`${origin}/apple-touch-icon.png`);
+  sources.push(`${origin}/favicon.svg`);
+  sources.push(`${origin}/favicon.ico`);
+}
+
+function recruitingLogoDomains(hostname) {
+  const domain = normalizeHostname(hostname);
+  if (!domain) return [];
+
+  if (domain.endsWith(".snar.jp")) {
+    const slug = domain.split(".")[0];
+    if (!slug || slug === "www") return [];
+    return [`${slug}.com`, `${slug}.co.jp`, `${slug}.jp`];
+  }
+
+  return [];
+}
+
+function normalizeExternalUrl(value) {
+  const rawValue = String(value || "").trim();
+  if (!rawValue) return "";
 
   try {
-    const url = new URL(mypageUrl);
+    const url = new URL(rawValue);
     if (!["http:", "https:"].includes(url.protocol)) return "";
-    return `${url.origin}/favicon.ico`;
+    return url.href;
   } catch {
     return "";
   }
+}
+
+function parseExternalUrl(value) {
+  const normalized = normalizeExternalUrl(value);
+  return normalized ? new URL(normalized) : null;
+}
+
+function normalizeHostname(hostname) {
+  return String(hostname || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^www\./, "");
 }
 
 function companyIconText(companyName) {

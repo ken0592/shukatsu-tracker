@@ -5,6 +5,7 @@ create table if not exists public.entries (
   industry text not null default '',
   mypage_id text not null default '',
   official_url text not null default '',
+  logo_url text not null default '',
   track_type text not null default '本選考',
   status text not null default '気になる',
   deadline date,
@@ -23,6 +24,7 @@ alter table public.entries
   add column if not exists industry text not null default '',
   add column if not exists mypage_id text not null default '',
   add column if not exists official_url text not null default '',
+  add column if not exists logo_url text not null default '',
   add column if not exists mypage_url text not null default '',
   add column if not exists es_content text not null default '',
   add column if not exists interview_notes text not null default '';
