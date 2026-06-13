@@ -778,6 +778,14 @@ button:disabled {
   backdrop-filter: blur(8px);
 }
 
+.celebration-overlay.is-rejection {
+  background:
+    radial-gradient(circle at 18% 20%, rgba(248, 113, 113, 0.58), transparent 25%),
+    radial-gradient(circle at 82% 24%, rgba(251, 146, 60, 0.5), transparent 24%),
+    radial-gradient(circle at 48% 88%, rgba(250, 204, 21, 0.42), transparent 28%),
+    rgba(69, 10, 10, 0.68);
+}
+
 .celebration-overlay[hidden] {
   display: none !important;
 }
@@ -810,6 +818,20 @@ button:disabled {
   border-color: rgba(244, 114, 182, 0.38);
 }
 
+.celebration-overlay.is-rejection .celebration-card {
+  border-color: rgba(239, 68, 68, 0.95);
+  background: linear-gradient(145deg, #fff7ed 0%, #ffffff 48%, #fee2e2 100%);
+  box-shadow: 0 30px 90px rgba(69, 10, 10, 0.35), 0 0 48px rgba(239, 68, 68, 0.42);
+}
+
+.celebration-overlay.is-rejection .celebration-card::before {
+  border-color: rgba(185, 28, 28, 0.42);
+}
+
+.celebration-overlay.is-rejection .celebration-card::after {
+  border-color: rgba(251, 146, 60, 0.42);
+}
+
 .celebration-character {
   width: min(270px, 58vw);
   aspect-ratio: 0.86;
@@ -819,6 +841,10 @@ button:disabled {
   object-fit: contain;
   filter: drop-shadow(0 20px 30px rgba(217, 119, 6, 0.28));
   animation: mascotParty 560ms ease-in-out infinite alternate;
+}
+
+.celebration-overlay.is-rejection .celebration-character {
+  filter: drop-shadow(0 20px 30px rgba(185, 28, 28, 0.32)) saturate(1.1);
 }
 
 .celebration-character-fallback {
@@ -842,6 +868,11 @@ button:disabled {
   font-size: clamp(34px, 7vw, 66px);
   line-height: 1.02;
   text-shadow: 0 3px 0 #fde68a, 0 10px 24px rgba(190, 18, 60, 0.22);
+}
+
+.celebration-overlay.is-rejection .celebration-card h2 {
+  color: #991b1b;
+  text-shadow: 0 3px 0 #fed7aa, 0 10px 24px rgba(153, 27, 27, 0.26);
 }
 
 .celebration-card p:not(.eyebrow) {

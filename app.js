@@ -2,12 +2,32 @@ const storageKey = "shukatsu-tracker-entries";
 const activeStatuses = ["気になる", "応募予定", "応募済み", "ES提出済み", "Webテスト", "一次面接", "二次面接", "最終面接", "結果待ち", "選考通過", "インターン選考通過", "インターン参加決定"];
 const finishedStatuses = ["内定", "落選", "辞退", "参加済み"];
 const celebrationStatuses = ["内定", "選考通過", "インターン選考通過", "インターン参加決定"];
+const rejectionStatuses = ["落選"];
 const sampleCompanyNames = ["株式会社サンプル商事", "ミライテック株式会社", "東都キャリア株式会社"];
 const initialCalendarDate = new Date();
 const commonIndustries = ["IT・通信", "メーカー", "商社", "金融", "コンサル", "広告・メディア", "人材", "不動産・建設", "インフラ", "小売・サービス","製薬"];
 const quoteMonthDays = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 const quoteEntries = window.SHUKATSU_DAILY_QUOTES || [];
 const dailyQuotes = buildDailyQuotes();
+const defaultMascotImage = "./assets/mascot-summer-smile.png";
+const mascotImageVariants = {
+  spring: {
+    normal: ["./assets/mascot-spring-open.png", "./assets/mascot-spring-smile.png"],
+    angry: "./assets/mascot-spring-angry.png"
+  },
+  summer: {
+    normal: ["./assets/mascot-summer-open.png", "./assets/mascot-summer-smile.png"],
+    angry: "./assets/mascot-summer-angry.png"
+  },
+  autumn: {
+    normal: ["./assets/mascot-autumn-open.png", "./assets/mascot-autumn-smile.png"],
+    angry: "./assets/mascot-autumn-angry.png"
+  },
+  winter: {
+    normal: ["./assets/mascot-winter-open.png", "./assets/mascot-winter-smile.png"],
+    angry: "./assets/mascot-winter-angry.png"
+  }
+};
 
 ensureMascotDom();
 
@@ -177,7 +197,7 @@ function ensureMascotDom() {
     mascot.setAttribute("aria-label", "応援キャラクター");
     mascot.innerHTML = `
       <span class="mascot-fallback" aria-hidden="true">祝</span>
-      <img src="./assets/mascot-cutout.png" alt="" />
+      <img src="${getMascotImageSrc()}" alt="" />
       <span class="mascot-bubble" id="mascotBubble">今日もいける！</span>
     `;
     document.body.append(mascot);
@@ -192,7 +212,7 @@ function ensureMascotDom() {
       <div class="celebration-confetti" id="celebrationConfetti" aria-hidden="true"></div>
       <section class="celebration-card" role="dialog" aria-modal="true" aria-labelledby="celebrationTitle">
         <span class="celebration-character-fallback" aria-hidden="true">祝</span>
-        <img class="celebration-character" src="./assets/mascot-cutout.png" alt="" />
+        <img class="celebration-character" src="${getMascotImageSrc()}" alt="" />
         <p class="eyebrow">Congratulations</p>
         <h2 id="celebrationTitle">おめでとう！</h2>
         <p id="celebrationMessage">ここまでの積み重ね、ちゃんと届いた。</p>
@@ -875,6 +895,7 @@ function setAuthMessage(message) {
 
 function initMascot() {
   bindMascotImageFallbacks();
+  setMascotImage("normal");
   placeMascotAtHome();
   applyMascotPosition();
 
@@ -883,6 +904,31 @@ function initMascot() {
   if (!mascotState.reducedMotion) {
     mascotState.wanderTimer = window.setInterval(wanderMascotNearHome, 5600);
   }
+}
+
+function setMascotImage(mood = "normal") {
+  const src = getMascotImageSrc(mood);
+  document.querySelectorAll(".mascot img, .celebration-character").forEach((image) => {
+    image.hidden = false;
+    image.src = src;
+    image.closest(".mascot, .celebration-card")?.classList.remove("image-missing");
+  });
+}
+
+function getMascotImageSrc(mood = "normal") {
+  const seasonImages = mascotImageVariants[getCurrentSeason()] || mascotImageVariants.summer;
+  if (mood === "angry") return seasonImages.angry || defaultMascotImage;
+
+  const candidates = seasonImages.normal || [defaultMascotImage];
+  return candidates[Math.floor(Math.random() * candidates.length)] || defaultMascotImage;
+}
+
+function getCurrentSeason() {
+  const month = new Date().getMonth() + 1;
+  if (month >= 3 && month <= 5) return "spring";
+  if (month >= 6 && month <= 8) return "summer";
+  if (month >= 9 && month <= 11) return "autumn";
+  return "winter";
 }
 
 function bindMascotImageFallbacks() {
@@ -952,14 +998,25 @@ function applyMascotPosition() {
 }
 
 function getEntryCelebration(entry, existingEntry) {
-  if (!celebrationStatuses.includes(entry.status)) return null;
+  if (!celebrationStatuses.includes(entry.status) && !rejectionStatuses.includes(entry.status)) return null;
   if (existingEntry && existingEntry.status === entry.status) return null;
+
+  if (entry.status === "落選") {
+    return {
+      title: "なんて見る目のない企業なの！！",
+      message: `${entry.companyName}はここで切り替え。もっと合う企業に、こっちから会いにいこう。`,
+      bubble: "見る目ない！",
+      mood: "angry",
+      toast: `${entry.companyName}、見る目ない！`
+    };
+  }
 
   if (entry.status === "内定") {
     return {
       title: "内定おめでとう！！！",
       message: `${entry.companyName}、本当におめでとう。ここまで積み上げた準備と粘り、ちゃんと届いた。`,
-      bubble: "内定だー！"
+      bubble: "内定だー！",
+      mood: "normal"
     };
   }
 
@@ -967,7 +1024,8 @@ function getEntryCelebration(entry, existingEntry) {
     return {
       title: "インターン選考通過！",
       message: `${entry.companyName}のインターン選考通過、おめでとう。次もこの勢いでいこう。`,
-      bubble: "通過！"
+      bubble: "通過！",
+      mood: "normal"
     };
   }
 
@@ -975,7 +1033,8 @@ function getEntryCelebration(entry, existingEntry) {
     return {
       title: "インターン参加決定！",
       message: `${entry.companyName}のインターン参加決定、おめでとう。ここから一気にチャンスを広げよう。`,
-      bubble: "参加決定！"
+      bubble: "参加決定！",
+      mood: "normal"
     };
   }
 
@@ -983,21 +1042,25 @@ function getEntryCelebration(entry, existingEntry) {
     return {
       title: "インターン選考通過！",
       message: `${entry.companyName}のインターン選考通過、おめでとう。次もこの勢いでいこう。`,
-      bubble: "通過！"
+      bubble: "通過！",
+      mood: "normal"
     };
   }
 
   return {
     title: "選考通過おめでとう！",
     message: `${entry.companyName}の選考通過、おめでとう。次のステージに進んだ。`,
-    bubble: "通過した！"
+    bubble: "通過した！",
+    mood: "normal"
   };
 }
 
 function showCelebration(entry, celebration) {
+  setMascotImage(celebration.mood || "normal");
   els.celebrationTitle.textContent = celebration.title;
   els.celebrationMessage.textContent = celebration.message;
-  createConfetti();
+  createConfetti(celebration.mood);
+  els.celebrationOverlay.classList.toggle("is-rejection", celebration.mood === "angry");
   els.celebrationOverlay.hidden = false;
   document.body.classList.add("is-celebrating");
   els.mascot.classList.add("is-celebrating");
@@ -1006,19 +1069,23 @@ function showCelebration(entry, celebration) {
 
   window.clearTimeout(mascotState.celebrationTimer);
   mascotState.celebrationTimer = window.setTimeout(closeCelebration, 9000);
-  showToast(`${entry.companyName}、おめでとう！`);
+  showToast(celebration.toast || `${entry.companyName}、おめでとう！`);
 }
 
 function closeCelebration() {
   els.celebrationOverlay.hidden = true;
   els.celebrationConfetti.textContent = "";
+  els.celebrationOverlay.classList.remove("is-rejection");
   document.body.classList.remove("is-celebrating");
   els.mascot.classList.remove("is-celebrating");
   window.clearTimeout(mascotState.celebrationTimer);
+  setMascotImage("normal");
 }
 
-function createConfetti() {
-  const colors = ["#facc15", "#fb7185", "#60a5fa", "#34d399", "#f97316", "#a78bfa", "#ffffff"];
+function createConfetti(mood = "normal") {
+  const colors = mood === "angry"
+    ? ["#ef4444", "#f97316", "#facc15", "#7f1d1d", "#ffffff"]
+    : ["#facc15", "#fb7185", "#60a5fa", "#34d399", "#f97316", "#a78bfa", "#ffffff"];
   const fragment = document.createDocumentFragment();
   els.celebrationConfetti.textContent = "";
 

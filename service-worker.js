@@ -1,4 +1,4 @@
-const cacheName = "shukatsu-tracker-v18";
+const cacheName = "shukatsu-tracker-v19";
 const assets = [
   "./",
   "./index.html",
@@ -8,7 +8,19 @@ const assets = [
   "./manifest.json",
   "./icon.svg",
   "./assets/mascot.png",
-  "./assets/mascot-cutout.png"
+  "./assets/mascot-cutout.png",
+  "./assets/mascot-spring-open.png",
+  "./assets/mascot-spring-smile.png",
+  "./assets/mascot-spring-angry.png",
+  "./assets/mascot-summer-open.png",
+  "./assets/mascot-summer-smile.png",
+  "./assets/mascot-summer-angry.png",
+  "./assets/mascot-autumn-open.png",
+  "./assets/mascot-autumn-smile.png",
+  "./assets/mascot-autumn-angry.png",
+  "./assets/mascot-winter-open.png",
+  "./assets/mascot-winter-smile.png",
+  "./assets/mascot-winter-angry.png"
 ];
 
 self.addEventListener("install", (event) => {
