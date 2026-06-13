@@ -669,9 +669,9 @@ button:disabled {
   position: fixed;
   top: 0;
   left: 0;
-  z-index: 35;
-  width: 86px;
-  height: 86px;
+  z-index: 70;
+  width: 96px;
+  height: 96px;
   border: 0;
   padding: 0;
   background: transparent;
@@ -681,7 +681,26 @@ button:disabled {
   will-change: transform;
 }
 
+.mascot-fallback,
+.celebration-character-fallback {
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 35% 25%, #fff7ad, #f59e0b 62%, #b45309);
+  color: #fff;
+  font-weight: 900;
+  text-shadow: 0 2px 0 rgba(120, 53, 15, 0.36);
+}
+
+.mascot-fallback {
+  position: absolute;
+  inset: 0;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  border-radius: 24px;
+  font-size: 42px;
+}
+
 .mascot img {
+  position: relative;
   display: block;
   width: 100%;
   height: 100%;
@@ -691,6 +710,11 @@ button:disabled {
   object-fit: cover;
   transform: scaleX(var(--face, 1));
   transition: box-shadow 180ms ease, filter 180ms ease;
+}
+
+.mascot img[hidden],
+.celebration-character[hidden] {
+  display: none;
 }
 
 .mascot.facing-left {
@@ -789,6 +813,21 @@ button:disabled {
   object-fit: cover;
   box-shadow: 0 20px 44px rgba(217, 119, 6, 0.25);
   animation: mascotParty 560ms ease-in-out infinite alternate;
+}
+
+.celebration-character-fallback {
+  display: none;
+  width: min(220px, 46vw);
+  aspect-ratio: 1;
+  margin: 0 auto;
+  border: 3px solid #fff;
+  border-radius: 28px;
+  font-size: clamp(72px, 20vw, 132px);
+  box-shadow: 0 20px 44px rgba(217, 119, 6, 0.25);
+}
+
+.celebration-card.image-missing .celebration-character-fallback {
+  display: grid;
 }
 
 .celebration-card h2 {

@@ -317,6 +317,7 @@
 
     <div class="toast" id="toast" role="status" hidden></div>
     <button class="mascot" id="mascot" type="button" aria-label="応援キャラクター">
+      <span class="mascot-fallback" aria-hidden="true">祝</span>
       <img src="./assets/mascot.png" alt="" />
       <span class="mascot-bubble" id="mascotBubble">今日もいける！</span>
     </button>
@@ -324,6 +325,7 @@
     <div class="celebration-overlay" id="celebrationOverlay" hidden>
       <div class="celebration-confetti" id="celebrationConfetti" aria-hidden="true"></div>
       <section class="celebration-card" role="dialog" aria-modal="true" aria-labelledby="celebrationTitle">
+        <span class="celebration-character-fallback" aria-hidden="true">祝</span>
         <img class="celebration-character" src="./assets/mascot.png" alt="" />
         <p class="eyebrow">Congratulations</p>
         <h2 id="celebrationTitle">おめでとう！</h2>

@@ -9,6 +9,8 @@ const quoteMonthDays = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 const quoteEntries = window.SHUKATSU_DAILY_QUOTES || [];
 const dailyQuotes = buildDailyQuotes();
 
+ensureMascotDom();
+
 const appConfig = window.SHUKATSU_CONFIG || {};
 const hasCloudConfig = Boolean(appConfig.supabaseUrl && appConfig.supabaseAnonKey && window.supabase);
 const supabaseClient = hasCloudConfig
@@ -165,6 +167,41 @@ function bindEvents() {
     if (!button) return;
     handleDeleteEntry(button.dataset.deleteId);
   });
+}
+
+function ensureMascotDom() {
+  if (!document.querySelector("#mascot")) {
+    const mascot = document.createElement("button");
+    mascot.className = "mascot";
+    mascot.id = "mascot";
+    mascot.type = "button";
+    mascot.setAttribute("aria-label", "応援キャラクター");
+    mascot.innerHTML = `
+      <span class="mascot-fallback" aria-hidden="true">祝</span>
+      <img src="./assets/mascot.png" alt="" />
+      <span class="mascot-bubble" id="mascotBubble">今日もいける！</span>
+    `;
+    document.body.append(mascot);
+  }
+
+  if (!document.querySelector("#celebrationOverlay")) {
+    const overlay = document.createElement("div");
+    overlay.className = "celebration-overlay";
+    overlay.id = "celebrationOverlay";
+    overlay.hidden = true;
+    overlay.innerHTML = `
+      <div class="celebration-confetti" id="celebrationConfetti" aria-hidden="true"></div>
+      <section class="celebration-card" role="dialog" aria-modal="true" aria-labelledby="celebrationTitle">
+        <span class="celebration-character-fallback" aria-hidden="true">祝</span>
+        <img class="celebration-character" src="./assets/mascot.png" alt="" />
+        <p class="eyebrow">Congratulations</p>
+        <h2 id="celebrationTitle">おめでとう！</h2>
+        <p id="celebrationMessage">ここまでの積み重ね、ちゃんと届いた。</p>
+        <button class="primary-button" id="closeCelebrationButton" type="button">よし、次へ</button>
+      </section>
+    `;
+    document.body.append(overlay);
+  }
 }
 
 async function init() {
@@ -838,6 +875,7 @@ function setAuthMessage(message) {
 }
 
 function initMascot() {
+  bindMascotImageFallbacks();
   const size = getMascotSize();
   mascotState.x = Math.max(14, window.innerWidth - size - 28);
   mascotState.y = Math.max(86, Math.min(window.innerHeight - size - 18, 150));
@@ -848,6 +886,15 @@ function initMascot() {
   if (!mascotState.reducedMotion) {
     mascotState.animationId = window.requestAnimationFrame(moveMascot);
   }
+}
+
+function bindMascotImageFallbacks() {
+  document.querySelectorAll(".mascot img, .celebration-character").forEach((image) => {
+    image.addEventListener("error", () => {
+      image.hidden = true;
+      image.closest(".mascot, .celebration-card")?.classList.add("image-missing");
+    });
+  });
 }
 
 function moveMascot(timestamp) {
