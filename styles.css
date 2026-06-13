@@ -556,6 +556,15 @@ button:disabled {
   background: var(--blue-dark);
 }
 
+.primary-button.needs-attention {
+  background: #f97316;
+  box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.18);
+}
+
+.primary-button.needs-attention:hover {
+  background: #c2410c;
+}
+
 .secondary-button {
   padding: 0 14px;
   color: var(--text);
@@ -675,11 +684,18 @@ button:disabled {
   border: 0;
   padding: 0;
   background: transparent;
-  cursor: pointer;
+  cursor: grab;
   filter: drop-shadow(0 12px 18px rgba(18, 38, 63, 0.2));
   transform: translate3d(28px, 140px, 0);
   transition: transform 1800ms cubic-bezier(0.22, 1, 0.36, 1);
+  touch-action: none;
+  user-select: none;
   will-change: transform;
+}
+
+.mascot.is-dragging {
+  cursor: grabbing;
+  transition: none;
 }
 
 .mascot-fallback,

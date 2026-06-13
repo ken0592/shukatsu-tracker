@@ -1,4 +1,5 @@
 const storageKey = "shukatsu-tracker-entries";
+const mascotPositionKey = "shukatsu-tracker-mascot-position";
 const activeStatuses = ["気になる", "応募予定", "応募済み", "ES提出済み", "Webテスト", "一次面接", "二次面接", "最終面接", "結果待ち", "選考通過", "インターン選考通過", "インターン参加決定"];
 const finishedStatuses = ["内定", "落選", "辞退", "参加済み"];
 const celebrationStatuses = ["内定", "選考通過", "インターン選考通過", "インターン参加決定"];
@@ -112,6 +113,13 @@ const mascotState = {
   wanderTimer: null,
   bubbleTimer: null,
   celebrationTimer: null,
+  isDragging: false,
+  didDrag: false,
+  dragOffsetX: 0,
+  dragOffsetY: 0,
+  dragStartX: 0,
+  dragStartY: 0,
+  hasCustomPosition: false,
   reducedMotion: window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)").matches : false
 };
 
@@ -141,7 +149,13 @@ function bindEvents() {
   els.signOutButton.addEventListener("click", handleSignOut);
   els.refreshButton.addEventListener("click", loadCloudEntries);
   els.importLocalButton.addEventListener("click", handleImportLocalEntries);
-  els.mascot.addEventListener("click", () => showMascotBubble("応援してる！"));
+  els.mascot.addEventListener("click", () => {
+    if (mascotState.didDrag) {
+      mascotState.didDrag = false;
+      return;
+    }
+    showMascotBubble("応援してる！");
+  });
   els.closeCelebrationButton.addEventListener("click", closeCelebration);
   els.celebrationOverlay.addEventListener("click", (event) => {
     if (event.target === els.celebrationOverlay) closeCelebration();
@@ -270,6 +284,7 @@ async function handleSignIn() {
   if (!credentials) return;
 
   setAuthBusy(true);
+  highlightSignInButton(false);
   setAuthMessage("ログイン中です...");
   const { error } = await supabaseClient.auth.signInWithPassword(credentials);
   setAuthBusy(false);
@@ -288,6 +303,7 @@ async function handleSignUp() {
   if (!credentials) return;
 
   setAuthBusy(true);
+  highlightSignInButton(false);
   setAuthMessage("登録中です...");
   const { data, error } = await supabaseClient.auth.signUp(credentials);
   setAuthBusy(false);
@@ -303,7 +319,8 @@ async function handleSignUp() {
     return;
   }
 
-  setAuthMessage("確認メールを送りました。メール内のリンクを押してからログインしてください。");
+  highlightSignInButton(true);
+  setAuthMessage("確認メールを送りました。メールのリンクを押したあと、この画面で「確認後にログイン」を押してください。");
 }
 
 async function handleSignOut() {
@@ -312,6 +329,7 @@ async function handleSignOut() {
     showToast(error.message);
     return;
   }
+  highlightSignInButton(false);
   showToast("ログアウトしました。");
 }
 
@@ -892,10 +910,18 @@ function setAuthMessage(message) {
   els.authMessage.textContent = message;
 }
 
+function highlightSignInButton(shouldHighlight) {
+  els.signInButton.classList.toggle("needs-attention", shouldHighlight);
+  els.signInButton.textContent = shouldHighlight ? "確認後にログイン" : "ログイン";
+}
+
 function initMascot() {
   bindMascotImageFallbacks();
+  bindMascotDrag();
   setMascotImage("normal");
-  placeMascotAtHome();
+  if (!loadMascotPosition()) {
+    placeMascotAtHome();
+  }
   applyMascotPosition();
 
   window.addEventListener("resize", clampMascotPosition);
@@ -903,6 +929,55 @@ function initMascot() {
   if (!mascotState.reducedMotion) {
     mascotState.wanderTimer = window.setInterval(wanderMascotNearHome, 9000);
   }
+}
+
+function bindMascotDrag() {
+  els.mascot.addEventListener("pointerdown", handleMascotPointerDown);
+  els.mascot.addEventListener("pointermove", handleMascotPointerMove);
+  els.mascot.addEventListener("pointerup", handleMascotPointerUp);
+  els.mascot.addEventListener("pointercancel", handleMascotPointerUp);
+}
+
+function handleMascotPointerDown(event) {
+  if (event.pointerType === "mouse" && event.button !== 0) return;
+
+  const rect = els.mascot.getBoundingClientRect();
+  mascotState.isDragging = true;
+  mascotState.didDrag = false;
+  mascotState.dragOffsetX = event.clientX - rect.left;
+  mascotState.dragOffsetY = event.clientY - rect.top;
+  mascotState.dragStartX = event.clientX;
+  mascotState.dragStartY = event.clientY;
+  els.mascot.classList.add("is-dragging");
+  els.mascot.setPointerCapture?.(event.pointerId);
+  event.preventDefault();
+}
+
+function handleMascotPointerMove(event) {
+  if (!mascotState.isDragging) return;
+
+  const distance = Math.hypot(event.clientX - mascotState.dragStartX, event.clientY - mascotState.dragStartY);
+  if (distance > 4) mascotState.didDrag = true;
+
+  const bounds = getMascotBounds();
+  const previousX = mascotState.x;
+  mascotState.x = clampNumber(event.clientX - mascotState.dragOffsetX, bounds.minX, bounds.maxX);
+  mascotState.y = clampNumber(event.clientY - mascotState.dragOffsetY, bounds.minY, bounds.maxY);
+  mascotState.vx = mascotState.x < previousX ? -1 : 1;
+  mascotState.hasCustomPosition = true;
+  applyMascotPosition();
+  event.preventDefault();
+}
+
+function handleMascotPointerUp(event) {
+  if (!mascotState.isDragging) return;
+
+  mascotState.isDragging = false;
+  els.mascot.classList.remove("is-dragging");
+  if (els.mascot.hasPointerCapture?.(event.pointerId)) {
+    els.mascot.releasePointerCapture(event.pointerId);
+  }
+  if (mascotState.didDrag) saveMascotPosition();
 }
 
 function setMascotImage(mood = "normal") {
@@ -946,6 +1021,8 @@ function placeMascotAtHome() {
 }
 
 function wanderMascotNearHome() {
+  if (mascotState.isDragging || mascotState.hasCustomPosition) return;
+
   const bounds = getMascotBounds();
   const previousX = mascotState.x;
   const xRange = Math.min(40, Math.max(0, bounds.maxX - bounds.minX));
@@ -958,6 +1035,11 @@ function wanderMascotNearHome() {
 }
 
 function setMascotVelocity() {
+  if (mascotState.hasCustomPosition) {
+    clampMascotPosition();
+    return;
+  }
+
   const previousX = mascotState.x;
   const bounds = getMascotBounds();
   mascotState.x = bounds.maxX - Math.random() * Math.min(52, bounds.maxX - bounds.minX);
@@ -971,6 +1053,7 @@ function clampMascotPosition() {
   mascotState.x = Math.min(Math.max(mascotState.x, bounds.minX), bounds.maxX);
   mascotState.y = Math.min(Math.max(mascotState.y, bounds.minY), bounds.maxY);
   applyMascotPosition();
+  if (mascotState.hasCustomPosition) saveMascotPosition();
 }
 
 function getMascotBounds() {
@@ -994,6 +1077,29 @@ function getMascotSize() {
 function applyMascotPosition() {
   els.mascot.style.transform = `translate3d(${mascotState.x}px, ${mascotState.y}px, 0)`;
   els.mascot.classList.toggle("facing-left", mascotState.vx < 0);
+}
+
+function loadMascotPosition() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(mascotPositionKey) || "null");
+    if (!saved || !Number.isFinite(saved.x) || !Number.isFinite(saved.y)) return false;
+
+    const bounds = getMascotBounds();
+    mascotState.x = clampNumber(saved.x, bounds.minX, bounds.maxX);
+    mascotState.y = clampNumber(saved.y, bounds.minY, bounds.maxY);
+    mascotState.hasCustomPosition = true;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function saveMascotPosition() {
+  try {
+    localStorage.setItem(mascotPositionKey, JSON.stringify({ x: mascotState.x, y: mascotState.y }));
+  } catch {
+    // 保存できない環境でも、ドラッグ自体はその場で使えるようにする。
+  }
 }
 
 function getEntryCelebration(entry, existingEntry) {
@@ -1456,6 +1562,10 @@ function formatDate(value) {
   if (!value) return "";
   const date = new Date(`${value}T00:00:00`);
   return `${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+function clampNumber(value, min, max) {
+  return Math.min(Math.max(value, min), max);
 }
 
 function escapeHtml(value) {
