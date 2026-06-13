@@ -901,7 +901,7 @@ function initMascot() {
   window.addEventListener("resize", clampMascotPosition);
 
   if (!mascotState.reducedMotion) {
-    mascotState.wanderTimer = window.setInterval(wanderMascotNearHome, 5600);
+    mascotState.wanderTimer = window.setInterval(wanderMascotNearHome, 9000);
   }
 }
 
@@ -941,18 +941,18 @@ function bindMascotImageFallbacks() {
 
 function placeMascotAtHome() {
   const bounds = getMascotBounds();
-  mascotState.x = bounds.maxX - 14;
-  mascotState.y = bounds.maxY - 16;
+  mascotState.x = bounds.maxX - 4;
+  mascotState.y = bounds.maxY - 4;
 }
 
 function wanderMascotNearHome() {
   const bounds = getMascotBounds();
   const previousX = mascotState.x;
-  const xRange = Math.min(180, Math.max(0, bounds.maxX - bounds.minX));
-  const yRange = Math.min(130, Math.max(0, bounds.maxY - bounds.minY));
+  const xRange = Math.min(40, Math.max(0, bounds.maxX - bounds.minX));
+  const yRange = Math.min(28, Math.max(0, bounds.maxY - bounds.minY));
 
-  mascotState.x = bounds.maxX - 12 - Math.random() * xRange;
-  mascotState.y = bounds.maxY - 14 - Math.random() * yRange;
+  mascotState.x = bounds.maxX - Math.random() * xRange;
+  mascotState.y = bounds.maxY - Math.random() * yRange;
   mascotState.vx = mascotState.x < previousX ? -1 : 1;
   applyMascotPosition();
 }
@@ -960,8 +960,8 @@ function wanderMascotNearHome() {
 function setMascotVelocity() {
   const previousX = mascotState.x;
   const bounds = getMascotBounds();
-  mascotState.x = bounds.maxX - 8 - Math.random() * Math.min(120, bounds.maxX - bounds.minX);
-  mascotState.y = bounds.maxY - 8 - Math.random() * Math.min(110, bounds.maxY - bounds.minY);
+  mascotState.x = bounds.maxX - Math.random() * Math.min(52, bounds.maxX - bounds.minX);
+  mascotState.y = bounds.maxY - Math.random() * Math.min(36, bounds.maxY - bounds.minY);
   mascotState.vx = mascotState.x < previousX ? -1 : 1;
   applyMascotPosition();
 }
@@ -978,8 +978,8 @@ function getMascotBounds() {
   return {
     minX: 10,
     minY: 74,
-    maxX: Math.max(10, window.innerWidth - size.width - 10),
-    maxY: Math.max(74, window.innerHeight - size.height - 10)
+    maxX: Math.max(10, window.innerWidth - size.width - 18),
+    maxY: Math.max(74, window.innerHeight - size.height - 72)
   };
 }
 

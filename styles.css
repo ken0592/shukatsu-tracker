@@ -670,15 +670,15 @@ button:disabled {
   top: 0;
   left: 0;
   z-index: 70;
-  width: 112px;
-  height: 132px;
+  width: 96px;
+  height: 113px;
   border: 0;
   padding: 0;
   background: transparent;
   cursor: pointer;
   filter: drop-shadow(0 12px 18px rgba(18, 38, 63, 0.2));
   transform: translate3d(28px, 140px, 0);
-  transition: transform 1400ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 1800ms cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;
 }
 
@@ -940,7 +940,7 @@ button:disabled {
   }
 
   50% {
-    transform: scaleX(var(--face, 1)) translateY(-6px) rotate(2deg);
+    transform: scaleX(var(--face, 1)) translateY(-3px) rotate(1deg);
   }
 }
 
@@ -1071,8 +1071,8 @@ textarea {
   }
 
   .mascot {
-    width: 90px;
-    height: 106px;
+    width: 76px;
+    height: 90px;
   }
 
   .mascot-bubble {
