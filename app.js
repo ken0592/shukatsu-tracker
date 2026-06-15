@@ -1,6 +1,7 @@
 const storageKey = "shukatsu-tracker-entries";
 const templateStorageKey = "shukatsu-tracker-templates";
 const mascotPositionKey = "shukatsu-tracker-mascot-position";
+const companyViewModeStorageKey = "shukatsu-tracker-company-view-mode";
 const activeStatuses = ["気になる", "応募予定", "応募済み", "ES提出済み", "Webテスト", "一次面接", "二次面接", "最終面接", "結果待ち", "選考通過", "インターン選考通過", "インターン参加決定"];
 const finishedStatuses = ["内定", "落選", "辞退", "参加済み"];
 const celebrationStatuses = ["内定", "選考通過", "インターン選考通過", "インターン参加決定"];
@@ -47,6 +48,7 @@ const state = {
   industryFilter: "all",
   deadlineFilter: "all",
   priorityFilter: "all",
+  companyViewMode: localStorage.getItem(companyViewModeStorageKey) === "compact" ? "compact" : "normal",
   mode: hasCloudConfig ? "cloud" : "local",
   session: null,
   loading: true,
@@ -121,6 +123,7 @@ const els = {
   priorityFilterInput: document.querySelector("#priorityFilterInput"),
   clearFiltersButton: document.querySelector("#clearFiltersButton"),
   filterButtons: document.querySelectorAll(".filter-button"),
+  viewModeButtons: document.querySelectorAll(".view-button"),
   mascot: document.querySelector("#mascot"),
   mascotBubble: document.querySelector("#mascotBubble"),
   celebrationOverlay: document.querySelector("#celebrationOverlay"),
@@ -154,6 +157,15 @@ const mascotState = {
   dragStartY: 0,
   hasCustomPosition: false,
   reducedMotion: window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)").matches : false
+};
+
+const esDragState = {
+  card: null,
+  pointerId: null,
+  startX: 0,
+  startY: 0,
+  longPressTimer: null,
+  isDragging: false
 };
 
 bindEvents();
@@ -212,6 +224,10 @@ function bindEvents() {
     ensureDetailHasEsItem();
     updateDetailEsCharCounts();
   });
+  els.detailEsList.addEventListener("pointerdown", handleEsReorderPointerDown);
+  els.detailEsList.addEventListener("pointermove", handleEsReorderPointerMove);
+  els.detailEsList.addEventListener("pointerup", finishEsReorder);
+  els.detailEsList.addEventListener("pointercancel", cancelEsReorder);
   els.templateForm.addEventListener("submit", handleTemplateSubmit);
   els.templateBodyInput.addEventListener("input", updateTemplateBodyCount);
   els.resetTemplateButton.addEventListener("click", resetTemplateForm);
@@ -241,6 +257,12 @@ function bindEvents() {
       state.filter = button.dataset.filter;
       els.filterButtons.forEach((item) => item.classList.toggle("active", item === button));
       renderCompanyList();
+    });
+  });
+
+  els.viewModeButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      setCompanyViewMode(button.dataset.viewMode);
     });
   });
 
@@ -577,7 +599,10 @@ function esEditorCard(item) {
   return `
     <article class="es-editor-card" data-es-id="${escapeAttribute(value.id)}">
       <div class="es-card-heading">
-        <strong>ES質問</strong>
+        <div class="es-card-title">
+          <button class="es-drag-handle" data-es-drag-handle type="button" aria-label="長押ししてES質問を並べ替え">並べ替え</button>
+          <strong>ES質問</strong>
+        </div>
         <button class="delete-button" data-es-delete type="button">削除</button>
       </div>
       <label>
@@ -614,6 +639,96 @@ function collectDetailEsItems() {
       answer: card.querySelector("[data-es-answer]")?.value.trim() || ""
     }))
     .filter((item) => item.question || item.answer);
+}
+
+function handleEsReorderPointerDown(event) {
+  const handle = event.target.closest("[data-es-drag-handle]");
+  if (!handle) return;
+
+  const card = handle.closest(".es-editor-card");
+  if (!card) return;
+
+  cancelEsReorder();
+  esDragState.card = card;
+  esDragState.pointerId = event.pointerId;
+  esDragState.startX = event.clientX;
+  esDragState.startY = event.clientY;
+  esDragState.longPressTimer = window.setTimeout(startEsReorder, event.pointerType === "mouse" ? 160 : 320);
+  card.classList.add("is-reorder-pending");
+  els.detailEsList.setPointerCapture?.(event.pointerId);
+  event.preventDefault();
+}
+
+function handleEsReorderPointerMove(event) {
+  if (!esDragState.card || esDragState.pointerId !== event.pointerId) return;
+
+  const moved = Math.hypot(event.clientX - esDragState.startX, event.clientY - esDragState.startY);
+  if (!esDragState.isDragging && moved > 24) {
+    cancelEsReorder();
+    return;
+  }
+
+  if (!esDragState.isDragging) return;
+
+  const nextCard = findEsCardAfterPointer(event.clientY);
+  if (nextCard) {
+    els.detailEsList.insertBefore(esDragState.card, nextCard);
+  } else {
+    els.detailEsList.appendChild(esDragState.card);
+  }
+  event.preventDefault();
+}
+
+function startEsReorder() {
+  if (!esDragState.card) return;
+
+  esDragState.isDragging = true;
+  esDragState.card.classList.remove("is-reorder-pending");
+  esDragState.card.classList.add("is-reordering");
+  els.detailEsList.classList.add("is-reordering-list");
+}
+
+function finishEsReorder(event) {
+  if (!esDragState.card || esDragState.pointerId !== event.pointerId) return;
+
+  const wasDragging = esDragState.isDragging;
+  resetEsReorderState(event.pointerId);
+  if (wasDragging) showToast("ESの順番を入れ替えました。");
+}
+
+function cancelEsReorder(event = null) {
+  if (!esDragState.card) return;
+  resetEsReorderState(event?.pointerId);
+}
+
+function resetEsReorderState(pointerId = null) {
+  window.clearTimeout(esDragState.longPressTimer);
+  esDragState.card?.classList.remove("is-reorder-pending", "is-reordering");
+  els.detailEsList.classList.remove("is-reordering-list");
+  if (pointerId !== null && els.detailEsList.hasPointerCapture?.(pointerId)) {
+    els.detailEsList.releasePointerCapture(pointerId);
+  }
+  esDragState.card = null;
+  esDragState.pointerId = null;
+  esDragState.startX = 0;
+  esDragState.startY = 0;
+  esDragState.longPressTimer = null;
+  esDragState.isDragging = false;
+}
+
+function findEsCardAfterPointer(pointerY) {
+  const cards = Array.from(els.detailEsList.querySelectorAll(".es-editor-card:not(.is-reordering)"));
+  return cards.reduce(
+    (closest, card) => {
+      const rect = card.getBoundingClientRect();
+      const offset = pointerY - rect.top - rect.height / 2;
+      if (offset < 0 && offset > closest.offset) {
+        return { offset, card };
+      }
+      return closest;
+    },
+    { offset: Number.NEGATIVE_INFINITY, card: null }
+  ).card;
 }
 
 async function handleDetailSubmit(event) {
@@ -1095,6 +1210,7 @@ function renderEventList() {
 }
 
 function renderCompanyList() {
+  const isCompact = state.companyViewMode === "compact";
   const entries = state.entries
     .filter(matchesListFilter)
     .filter(matchesSearchQuery)
@@ -1103,8 +1219,25 @@ function renderCompanyList() {
     .filter(matchesPriorityFilter)
     .sort(sortCompanyEntries);
 
+  updateCompanyViewButtons();
+  els.companyList.classList.toggle("compact-view", isCompact);
+
   if (entries.length === 0) {
     els.companyList.innerHTML = emptyState("条件に合う企業がありません。内定・落選の企業も「全部」または「結果済み」に残ります。");
+    return;
+  }
+
+  if (isCompact) {
+    els.companyList.innerHTML = entries
+      .map((entry) => {
+        return `
+          <button class="company-compact-card" data-detail-id="${escapeAttribute(entry.id)}" type="button" title="${escapeAttribute(entry.companyName)}の詳細を開く">
+            ${companyIconMarkup(entry)}
+            <span>${escapeHtml(entry.companyName)}</span>
+          </button>
+        `;
+      })
+      .join("");
     return;
   }
 
@@ -1146,6 +1279,19 @@ function renderCompanyList() {
       `;
     })
     .join("");
+}
+
+function setCompanyViewMode(viewMode) {
+  state.companyViewMode = viewMode === "compact" ? "compact" : "normal";
+  localStorage.setItem(companyViewModeStorageKey, state.companyViewMode);
+  updateCompanyViewButtons();
+  renderCompanyList();
+}
+
+function updateCompanyViewButtons() {
+  els.viewModeButtons.forEach((button) => {
+    button.classList.toggle("active", button.dataset.viewMode === state.companyViewMode);
+  });
 }
 
 function renderTemplateList() {
@@ -1523,11 +1669,8 @@ function initMascot() {
   }
   applyMascotPosition();
 
-  window.addEventListener("resize", clampMascotPosition);
-
-  if (!mascotState.reducedMotion) {
-    mascotState.wanderTimer = window.setInterval(wanderMascotNearHome, 9000);
-  }
+  window.addEventListener("resize", handleMascotResize);
+  updateMascotWander();
 }
 
 function bindMascotDrag() {
@@ -1631,6 +1774,24 @@ function wanderMascotNearHome() {
   mascotState.y = bounds.maxY - Math.random() * yRange;
   mascotState.vx = mascotState.x < previousX ? -1 : 1;
   applyMascotPosition();
+}
+
+function handleMascotResize() {
+  clampMascotPosition();
+  updateMascotWander();
+}
+
+function updateMascotWander() {
+  window.clearInterval(mascotState.wanderTimer);
+  mascotState.wanderTimer = null;
+
+  if (mascotState.reducedMotion || isSmallScreen()) return;
+
+  mascotState.wanderTimer = window.setInterval(wanderMascotNearHome, 12000);
+}
+
+function isSmallScreen() {
+  return window.matchMedia ? window.matchMedia("(max-width: 760px)").matches : window.innerWidth <= 760;
 }
 
 function setMascotVelocity() {
@@ -1869,7 +2030,7 @@ function getMascotHelpAnswer(question) {
   const text = question.toLowerCase();
 
   if (text.includes("es") || text.includes("ガクチカ") || text.includes("自己pr") || text.includes("文字") || text.includes("質問")) {
-    return "企業カードの「詳細」を押すと、ESを質問欄と回答欄に分けて大きく編集できます。回答欄の下に文字数も自動で出ます。";
+    return "企業カードの「詳細」を押すと、ESを質問欄と回答欄に分けて大きく編集できます。ESカード上部の「並べ替え」を長押しすると、質問の順番も変えられます。";
   }
 
   if (text.includes("型") || text.includes("テンプレ") || text.includes("使い回") || text.includes("使いまわ")) {
