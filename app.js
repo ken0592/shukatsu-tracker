@@ -52,6 +52,7 @@ const state = {
   mode: hasCloudConfig ? "cloud" : "local",
   session: null,
   loading: true,
+  cloudSortOrderAvailable: true,
   editingId: null,
   detailEditingId: null,
   editingTemplateId: null,
@@ -95,6 +96,8 @@ const els = {
   addEsItemButton: document.querySelector("#addEsItemButton"),
   detailTemplateSelect: document.querySelector("#detailTemplateSelect"),
   insertTemplateButton: document.querySelector("#insertTemplateButton"),
+  copyTemplateButton: document.querySelector("#copyTemplateButton"),
+  detailEsSearchInput: document.querySelector("#detailEsSearchInput"),
   detailInterviewNotesInput: document.querySelector("#detailInterviewNotesInput"),
   detailMemoInput: document.querySelector("#detailMemoInput"),
   openBasicEditButton: document.querySelector("#openBasicEditButton"),
@@ -168,6 +171,16 @@ const esDragState = {
   isDragging: false
 };
 
+const companyDragState = {
+  card: null,
+  pointerId: null,
+  startX: 0,
+  startY: 0,
+  longPressTimer: null,
+  isDragging: false,
+  suppressClick: false
+};
+
 bindEvents();
 init();
 
@@ -214,9 +227,34 @@ function bindEvents() {
   els.companyDetailForm.addEventListener("submit", handleDetailSubmit);
   els.addEsItemButton.addEventListener("click", () => addDetailEsItem());
   els.insertTemplateButton.addEventListener("click", insertSelectedTemplateIntoDetail);
+  els.copyTemplateButton.addEventListener("click", copySelectedTemplate);
   els.openBasicEditButton.addEventListener("click", handleOpenBasicEditFromDetail);
-  els.detailEsList.addEventListener("input", updateDetailEsCharCounts);
+  els.detailEsList.addEventListener("input", handleDetailEsInput);
   els.detailEsList.addEventListener("click", (event) => {
+    const variantTab = event.target.closest("[data-es-variant-tab]");
+    if (variantTab) {
+      selectEsVariant(variantTab.closest(".es-editor-card"), variantTab.dataset.esVariantTab);
+      return;
+    }
+
+    const addVariantButton = event.target.closest("[data-es-add-variant]");
+    if (addVariantButton) {
+      addEsVariant(addVariantButton.closest(".es-editor-card"));
+      return;
+    }
+
+    const deleteVariantButton = event.target.closest("[data-es-delete-variant]");
+    if (deleteVariantButton) {
+      deleteEsVariant(deleteVariantButton.closest(".es-editor-card"));
+      return;
+    }
+
+    const toggleButton = event.target.closest("[data-es-toggle]");
+    if (toggleButton) {
+      toggleEsCard(toggleButton.closest(".es-editor-card"));
+      return;
+    }
+
     const deleteButton = event.target.closest("[data-es-delete]");
     if (!deleteButton) return;
     const card = deleteButton.closest(".es-editor-card");
@@ -228,6 +266,11 @@ function bindEvents() {
   els.detailEsList.addEventListener("pointermove", handleEsReorderPointerMove);
   els.detailEsList.addEventListener("pointerup", finishEsReorder);
   els.detailEsList.addEventListener("pointercancel", cancelEsReorder);
+  els.detailEsSearchInput.addEventListener("input", filterDetailEsCards);
+  els.companyList.addEventListener("pointerdown", handleCompanyReorderPointerDown);
+  els.companyList.addEventListener("pointermove", handleCompanyReorderPointerMove);
+  els.companyList.addEventListener("pointerup", finishCompanyReorder);
+  els.companyList.addEventListener("pointercancel", cancelCompanyReorder);
   els.templateForm.addEventListener("submit", handleTemplateSubmit);
   els.templateBodyInput.addEventListener("input", updateTemplateBodyCount);
   els.resetTemplateButton.addEventListener("click", resetTemplateForm);
@@ -267,6 +310,13 @@ function bindEvents() {
   });
 
   document.addEventListener("click", (event) => {
+    if (companyDragState.suppressClick) {
+      companyDragState.suppressClick = false;
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
     const detailButton = event.target.closest("[data-detail-id]");
     if (detailButton) {
       openCompanyDetail(detailButton.dataset.detailId);
@@ -276,6 +326,12 @@ function bindEvents() {
     const templateEditButton = event.target.closest("[data-template-edit-id]");
     if (templateEditButton) {
       handleEditTemplate(templateEditButton.dataset.templateEditId);
+      return;
+    }
+
+    const templateCopyButton = event.target.closest("[data-template-copy-id]");
+    if (templateCopyButton) {
+      copyTemplateById(templateCopyButton.dataset.templateCopyId);
       return;
     }
 
@@ -456,7 +512,8 @@ async function handleEntrySubmit(event) {
     esItems: existingEntry?.esItems?.length ? existingEntry.esItems : normalizeEsItems([], esContent),
     interviewNotes: String(formData.get("interviewNotes")).trim(),
     memo: String(formData.get("memo")).trim(),
-    createdAt: existingEntry?.createdAt || new Date().toISOString()
+    createdAt: existingEntry?.createdAt || new Date().toISOString(),
+    sortOrder: Number.isFinite(existingEntry?.sortOrder) ? existingEntry.sortOrder : nextCompanySortOrder()
   };
 
   if (!entry.companyName) {
@@ -570,6 +627,7 @@ function openCompanyDetail(id) {
   ].filter(Boolean).join(" ・ ");
   els.detailInterviewNotesInput.value = values.interviewNotes;
   els.detailMemoInput.value = values.memo;
+  els.detailEsSearchInput.value = "";
   renderDetailEsItems(values.esItems.length > 0 ? values.esItems : [createEsItem()]);
   renderTemplateOptions();
 
@@ -583,6 +641,7 @@ function openCompanyDetail(id) {
 function closeCompanyDetail() {
   state.detailEditingId = null;
   els.companyDetailForm.reset();
+  els.detailEsSearchInput.value = "";
   els.detailEsList.textContent = "";
   els.companyDetailDialog.close();
 }
@@ -590,30 +649,67 @@ function closeCompanyDetail() {
 function renderDetailEsItems(items) {
   els.detailEsList.innerHTML = items.map(esEditorCard).join("");
   updateDetailEsCharCounts();
+  filterDetailEsCards();
 }
 
 function esEditorCard(item) {
-  const value = createEsItem(item.question, item.answer);
-  value.id = item.id || value.id;
+  const value = normalizeEsItem(item);
+  const title = esItemTitle(value);
+  const activeVariant = getActiveEsVariant(value);
+  const activeVariantId = activeVariant?.id || value.variants[0]?.id || "";
+  const tabs = value.variants
+    .map((variant) => {
+      const active = variant.id === activeVariantId;
+      return `
+        <button class="es-variant-tab ${active ? "active" : ""}" data-es-variant-tab="${escapeAttribute(variant.id)}" type="button">
+          ${escapeHtml(esVariantTitle(variant))}
+        </button>
+      `;
+    })
+    .join("");
+  const panes = value.variants
+    .map((variant) => {
+      const active = variant.id === activeVariantId;
+      return `
+        <div class="es-variant-pane" data-es-variant-id="${escapeAttribute(variant.id)}" ${active ? "" : "hidden"}>
+          <label>
+            回答の見出し
+            <input data-es-variant-label value="${escapeAttribute(variant.label)}" placeholder="例: 400字 / 600字 / 一次面接用" />
+          </label>
+          <label>
+            回答
+            <textarea class="es-answer-input" data-es-answer rows="9" placeholder="回答をここに書く">${escapeHtml(variant.answer)}</textarea>
+            <span class="char-count" data-es-count>${formatCharCount(variant.answer)}</span>
+          </label>
+        </div>
+      `;
+    })
+    .join("");
 
   return `
-    <article class="es-editor-card" data-es-id="${escapeAttribute(value.id)}">
+    <article class="es-editor-card" data-es-id="${escapeAttribute(value.id)}" data-active-variant-id="${escapeAttribute(activeVariantId)}">
       <div class="es-card-heading">
         <div class="es-card-title">
           <button class="es-drag-handle" data-es-drag-handle type="button" aria-label="長押ししてES質問を並べ替え">並べ替え</button>
-          <strong>ES質問</strong>
+          <button class="es-title-button" data-es-toggle type="button" aria-expanded="false">
+            <strong data-es-title>${escapeHtml(title)}</strong>
+            <span data-es-title-meta>${escapeHtml(esItemMeta(value))}</span>
+          </button>
         </div>
         <button class="delete-button" data-es-delete type="button">削除</button>
       </div>
-      <label>
-        質問
-        <input class="es-question-input" data-es-question value="${escapeAttribute(value.question)}" placeholder="例: 学生時代に力を入れたことを教えてください。" />
-      </label>
-      <label>
-        回答
-        <textarea class="es-answer-input" data-es-answer rows="9" placeholder="回答をここに書く">${escapeHtml(value.answer)}</textarea>
-        <span class="char-count" data-es-count>0字</span>
-      </label>
+      <div class="es-card-body" data-es-body hidden>
+        <label>
+          質問
+          <input class="es-question-input" data-es-question value="${escapeAttribute(value.question)}" placeholder="例: 学生時代に力を入れたことを教えてください。" />
+        </label>
+        <div class="es-variant-toolbar">
+          <div class="es-variant-tabs" data-es-variant-tabs>${tabs}</div>
+          <button class="secondary-button small-button" data-es-add-variant type="button">＋ 字数別回答</button>
+        </div>
+        <div class="es-variant-panes">${panes}</div>
+        <button class="delete-button subtle-delete" data-es-delete-variant type="button">この回答だけ削除</button>
+      </div>
     </article>
   `;
 }
@@ -621,8 +717,9 @@ function esEditorCard(item) {
 function addDetailEsItem(item = createEsItem()) {
   els.detailEsList.insertAdjacentHTML("beforeend", esEditorCard(item));
   updateDetailEsCharCounts();
-  const lastAnswer = els.detailEsList.querySelector(".es-editor-card:last-child [data-es-answer]");
-  lastAnswer?.focus();
+  const lastCard = els.detailEsList.querySelector(".es-editor-card:last-child");
+  setEsCardExpanded(lastCard, true);
+  lastCard?.querySelector("[data-es-question]")?.focus();
 }
 
 function ensureDetailHasEsItem() {
@@ -633,12 +730,125 @@ function ensureDetailHasEsItem() {
 
 function collectDetailEsItems() {
   return Array.from(els.detailEsList.querySelectorAll(".es-editor-card"))
-    .map((card) => ({
-      id: card.dataset.esId || createId(),
-      question: card.querySelector("[data-es-question]")?.value.trim() || "",
-      answer: card.querySelector("[data-es-answer]")?.value.trim() || ""
+    .map(collectEsItemFromCard)
+    .filter((item) => item.question || item.variants.some((variant) => variant.label || variant.answer));
+}
+
+function collectEsItemFromCard(card) {
+  const variants = Array.from(card.querySelectorAll("[data-es-variant-id]"))
+    .map((pane) => ({
+      id: pane.dataset.esVariantId || createId(),
+      label: pane.querySelector("[data-es-variant-label]")?.value.trim() || "",
+      answer: pane.querySelector("[data-es-answer]")?.value.trim() || ""
     }))
-    .filter((item) => item.question || item.answer);
+    .filter((variant) => variant.label || variant.answer);
+
+  const normalized = normalizeEsItem({
+    id: card.dataset.esId || createId(),
+    question: card.querySelector("[data-es-question]")?.value.trim() || "",
+    variants,
+    activeVariantId: card.dataset.activeVariantId || variants[0]?.id || ""
+  });
+  return normalized;
+}
+
+function toggleEsCard(card) {
+  if (!card) return;
+  const body = card.querySelector("[data-es-body]");
+  setEsCardExpanded(card, body?.hidden);
+}
+
+function setEsCardExpanded(card, expanded) {
+  if (!card) return;
+  const body = card.querySelector("[data-es-body]");
+  const toggle = card.querySelector("[data-es-toggle]");
+  if (!body || !toggle) return;
+  body.hidden = !expanded;
+  toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+  card.classList.toggle("is-open", expanded);
+}
+
+function selectEsVariant(card, variantId) {
+  if (!card || !variantId) return;
+  card.dataset.activeVariantId = variantId;
+  card.querySelectorAll("[data-es-variant-tab]").forEach((tab) => {
+    tab.classList.toggle("active", tab.dataset.esVariantTab === variantId);
+  });
+  card.querySelectorAll("[data-es-variant-id]").forEach((pane) => {
+    pane.hidden = pane.dataset.esVariantId !== variantId;
+  });
+  updateEsCardSummary(card);
+}
+
+function addEsVariant(card) {
+  if (!card) return;
+  const item = collectEsItemFromCard(card);
+  const variant = createEsVariant(`${item.variants.length + 1}案`, "");
+  item.variants.push(variant);
+  item.activeVariantId = variant.id;
+  replaceEsCard(card, item, true);
+  const replacement = els.detailEsList.querySelector(`[data-es-id="${cssEscape(item.id)}"]`);
+  replacement?.querySelector(`[data-es-variant-id="${cssEscape(variant.id)}"] [data-es-variant-label]`)?.focus();
+}
+
+function deleteEsVariant(card) {
+  if (!card) return;
+  const item = collectEsItemFromCard(card);
+  if (item.variants.length <= 1) {
+    showToast("回答は最低1つ残します。");
+    return;
+  }
+
+  item.variants = item.variants.filter((variant) => variant.id !== card.dataset.activeVariantId);
+  item.activeVariantId = item.variants[0]?.id || "";
+  replaceEsCard(card, item, true);
+  showToast("この回答だけ削除しました。");
+}
+
+function replaceEsCard(card, item, expanded) {
+  const html = esEditorCard(item);
+  card.insertAdjacentHTML("afterend", html);
+  const replacement = card.nextElementSibling;
+  card.remove();
+  setEsCardExpanded(replacement, expanded);
+  updateDetailEsCharCounts();
+  filterDetailEsCards();
+}
+
+function handleDetailEsInput(event) {
+  const card = event.target.closest(".es-editor-card");
+  updateDetailEsCharCounts();
+  if (card) updateEsCardSummary(card);
+  filterDetailEsCards();
+}
+
+function updateEsCardSummary(card) {
+  if (!card) return;
+  const item = collectEsItemFromCard(card);
+  const title = card.querySelector("[data-es-title]");
+  const meta = card.querySelector("[data-es-title-meta]");
+  if (title) title.textContent = esItemTitle(item);
+  if (meta) meta.textContent = esItemMeta(item);
+  card.querySelectorAll("[data-es-variant-tab]").forEach((tab) => {
+    const variant = item.variants.find((candidate) => candidate.id === tab.dataset.esVariantTab);
+    if (variant) tab.textContent = esVariantTitle(variant);
+  });
+}
+
+function filterDetailEsCards() {
+  const query = normalizeSearchText(els.detailEsSearchInput.value);
+  els.detailEsList.querySelectorAll(".es-editor-card").forEach((card) => {
+    if (!query) {
+      card.hidden = false;
+      return;
+    }
+    const item = collectEsItemFromCard(card);
+    const haystack = normalizeSearchText([
+      item.question,
+      ...item.variants.flatMap((variant) => [variant.label, variant.answer, `${countCharacters(variant.answer)}字`])
+    ].join(" "));
+    card.hidden = !haystack.includes(query);
+  });
 }
 
 function handleEsReorderPointerDown(event) {
@@ -670,12 +880,14 @@ function handleEsReorderPointerMove(event) {
 
   if (!esDragState.isDragging) return;
 
-  const nextCard = findEsCardAfterPointer(event.clientY);
-  if (nextCard) {
-    els.detailEsList.insertBefore(esDragState.card, nextCard);
-  } else {
-    els.detailEsList.appendChild(esDragState.card);
-  }
+  const nextCard = findCardAfterPointer(els.detailEsList, ".es-editor-card:not(.is-reordering)", esDragState.card, event.clientX, event.clientY);
+  animateListReorder(els.detailEsList, ".es-editor-card", () => {
+    if (nextCard) {
+      els.detailEsList.insertBefore(esDragState.card, nextCard);
+    } else {
+      els.detailEsList.appendChild(esDragState.card);
+    }
+  });
   event.preventDefault();
 }
 
@@ -716,19 +928,153 @@ function resetEsReorderState(pointerId = null) {
   esDragState.isDragging = false;
 }
 
-function findEsCardAfterPointer(pointerY) {
-  const cards = Array.from(els.detailEsList.querySelectorAll(".es-editor-card:not(.is-reordering)"));
-  return cards.reduce(
-    (closest, card) => {
-      const rect = card.getBoundingClientRect();
-      const offset = pointerY - rect.top - rect.height / 2;
-      if (offset < 0 && offset > closest.offset) {
-        return { offset, card };
-      }
-      return closest;
-    },
-    { offset: Number.NEGATIVE_INFINITY, card: null }
-  ).card;
+function handleCompanyReorderPointerDown(event) {
+  const handle = event.target.closest("[data-company-reorder-handle]");
+  if (!handle) return;
+
+  const card = handle.closest("[data-company-card]");
+  if (!card) return;
+
+  cancelCompanyReorder();
+  companyDragState.card = card;
+  companyDragState.pointerId = event.pointerId;
+  companyDragState.startX = event.clientX;
+  companyDragState.startY = event.clientY;
+  companyDragState.longPressTimer = window.setTimeout(startCompanyReorder, event.pointerType === "mouse" ? 140 : 300);
+  card.classList.add("is-reorder-pending");
+  els.companyList.setPointerCapture?.(event.pointerId);
+}
+
+function handleCompanyReorderPointerMove(event) {
+  if (!companyDragState.card || companyDragState.pointerId !== event.pointerId) return;
+
+  const moved = Math.hypot(event.clientX - companyDragState.startX, event.clientY - companyDragState.startY);
+  if (!companyDragState.isDragging && moved > 24) {
+    cancelCompanyReorder(event);
+    return;
+  }
+
+  if (!companyDragState.isDragging) return;
+
+  const nextCard = findCardAfterPointer(els.companyList, "[data-company-card]:not(.is-reordering)", companyDragState.card, event.clientX, event.clientY);
+  animateListReorder(els.companyList, "[data-company-card]", () => {
+    if (nextCard) {
+      els.companyList.insertBefore(companyDragState.card, nextCard);
+    } else {
+      els.companyList.appendChild(companyDragState.card);
+    }
+  });
+  event.preventDefault();
+}
+
+function startCompanyReorder() {
+  if (!companyDragState.card) return;
+
+  companyDragState.isDragging = true;
+  companyDragState.suppressClick = true;
+  companyDragState.card.classList.remove("is-reorder-pending");
+  companyDragState.card.classList.add("is-reordering");
+  els.companyList.classList.add("is-reordering-list");
+}
+
+async function finishCompanyReorder(event) {
+  if (!companyDragState.card || companyDragState.pointerId !== event.pointerId) return;
+
+  const wasDragging = companyDragState.isDragging;
+  resetCompanyReorderState(event.pointerId);
+  if (wasDragging) {
+    await persistCompanyOrderFromDom();
+    showToast("企業の順番を入れ替えました。");
+  }
+}
+
+function cancelCompanyReorder(event = null) {
+  if (!companyDragState.card) return;
+  resetCompanyReorderState(event?.pointerId);
+}
+
+function resetCompanyReorderState(pointerId = null) {
+  window.clearTimeout(companyDragState.longPressTimer);
+  companyDragState.card?.classList.remove("is-reorder-pending", "is-reordering");
+  els.companyList.classList.remove("is-reordering-list");
+  if (pointerId !== null && els.companyList.hasPointerCapture?.(pointerId)) {
+    els.companyList.releasePointerCapture(pointerId);
+  }
+  companyDragState.card = null;
+  companyDragState.pointerId = null;
+  companyDragState.startX = 0;
+  companyDragState.startY = 0;
+  companyDragState.longPressTimer = null;
+  companyDragState.isDragging = false;
+}
+
+function findCardAfterPointer(container, selector, activeCard, pointerX, pointerY) {
+  const cards = Array.from(container.querySelectorAll(selector))
+    .filter((card) => card !== activeCard && !card.hidden)
+    .map((card) => ({ card, rect: card.getBoundingClientRect() }))
+    .sort((a, b) => a.rect.top - b.rect.top || a.rect.left - b.rect.left);
+
+  return cards.find(({ rect }) => pointerY < rect.top + rect.height / 2 || (pointerY < rect.bottom && pointerX < rect.left + rect.width / 2))?.card || null;
+}
+
+function animateListReorder(container, selector, mutate) {
+  const items = Array.from(container.querySelectorAll(selector));
+  const first = new Map(items.map((item) => [item, item.getBoundingClientRect()]));
+  mutate();
+  Array.from(container.querySelectorAll(selector)).forEach((item) => {
+    const before = first.get(item);
+    if (!before) return;
+    const after = item.getBoundingClientRect();
+    const deltaX = before.left - after.left;
+    const deltaY = before.top - after.top;
+    if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) return;
+
+    item.style.transition = "none";
+    item.style.transform = `translate3d(${deltaX}px, ${deltaY}px, 0)`;
+    requestAnimationFrame(() => {
+      item.style.transition = "transform 220ms cubic-bezier(.2,.8,.2,1)";
+      item.style.transform = "";
+      window.setTimeout(() => {
+        item.style.transition = "";
+      }, 240);
+    });
+  });
+}
+
+async function persistCompanyOrderFromDom() {
+  const visibleIds = Array.from(els.companyList.querySelectorAll("[data-company-card]")).map((card) => card.dataset.companyId);
+  if (visibleIds.length === 0) return;
+
+  const visibleSet = new Set(visibleIds);
+  const currentOrder = [...state.entries].sort(sortCompanyEntries).map((entry) => entry.id);
+  let visibleIndex = 0;
+  const nextOrder = currentOrder.map((id) => (visibleSet.has(id) ? visibleIds[visibleIndex++] : id));
+  const rank = new Map(nextOrder.map((id, index) => [id, index]));
+
+  state.entries = state.entries.map((entry) => ({
+    ...entry,
+    sortOrder: rank.has(entry.id) ? rank.get(entry.id) : entry.sortOrder
+  }));
+
+  if (state.mode === "local") {
+    saveLocalEntries(state.entries);
+    return;
+  }
+
+  if (state.mode === "cloud" && state.session && state.cloudSortOrderAvailable) {
+    await saveCloudCompanyOrder();
+  }
+}
+
+async function saveCloudCompanyOrder() {
+  const results = await Promise.all(
+    state.entries.map((entry) => supabaseClient.from("entries").update({ sort_order: entry.sortOrder }).eq("id", entry.id))
+  );
+  const error = results.find((result) => result.error)?.error;
+  if (!error) return;
+
+  state.cloudSortOrderAvailable = false;
+  showToast("SupabaseのSQLを更新すると、企業の並び順も端末間で保存できます。");
 }
 
 async function handleDetailSubmit(event) {
@@ -776,9 +1122,12 @@ function handleOpenBasicEditFromDetail() {
 
 function updateDetailEsCharCounts() {
   els.detailEsList.querySelectorAll(".es-editor-card").forEach((card) => {
-    const answer = card.querySelector("[data-es-answer]");
-    const count = card.querySelector("[data-es-count]");
-    if (count) count.textContent = formatCharCount(answer?.value || "");
+    card.querySelectorAll("[data-es-variant-id]").forEach((pane) => {
+      const answer = pane.querySelector("[data-es-answer]");
+      const count = pane.querySelector("[data-es-count]");
+      if (count) count.textContent = formatCharCount(answer?.value || "");
+    });
+    updateEsCardSummary(card);
   });
 }
 
@@ -796,12 +1145,31 @@ function insertSelectedTemplateIntoDetail() {
     card = els.detailEsList.querySelector(".es-editor-card:last-child");
   }
 
-  const answer = card.querySelector("[data-es-answer]");
+  setEsCardExpanded(card, true);
+  let answer = card.querySelector(`[data-es-variant-id="${cssEscape(card.dataset.activeVariantId)}"] [data-es-answer]`);
+  if (!answer) answer = card.querySelector("[data-es-answer]");
   const current = answer.value.trimEnd();
   answer.value = current ? `${current}\n\n${template.body}` : template.body;
   answer.focus();
   updateDetailEsCharCounts();
   showToast("型を回答に入れました。");
+}
+
+async function copySelectedTemplate() {
+  const template = state.templates.find((item) => item.id === els.detailTemplateSelect.value);
+  if (!template) {
+    showToast("コピーする型を選んでください。");
+    return;
+  }
+  const copied = await copyTextToClipboard(template.body);
+  showToast(copied ? "型をコピーしました。回答欄に貼り付けできます。" : "コピーできませんでした。本文を選択してコピーしてください。");
+}
+
+async function copyTemplateById(templateId) {
+  const template = state.templates.find((item) => item.id === templateId);
+  if (!template) return;
+  const copied = await copyTextToClipboard(template.body);
+  showToast(copied ? "型をコピーしました。" : "コピーできませんでした。本文を選択してコピーしてください。");
 }
 
 async function handleTemplateSubmit(event) {
@@ -1231,7 +1599,7 @@ function renderCompanyList() {
     els.companyList.innerHTML = entries
       .map((entry) => {
         return `
-          <button class="company-compact-card" data-detail-id="${escapeAttribute(entry.id)}" type="button" title="${escapeAttribute(entry.companyName)}の詳細を開く">
+          <button class="company-compact-card" data-company-card data-company-id="${escapeAttribute(entry.id)}" data-company-reorder-handle data-detail-id="${escapeAttribute(entry.id)}" type="button" title="${escapeAttribute(entry.companyName)}の詳細を開く">
             ${companyIconMarkup(entry)}
             <span>${escapeHtml(entry.companyName)}</span>
           </button>
@@ -1244,7 +1612,7 @@ function renderCompanyList() {
   els.companyList.innerHTML = entries
     .map((entry) => {
       return `
-        <article class="company-card">
+        <article class="company-card" data-company-card data-company-id="${escapeAttribute(entry.id)}">
           <div class="company-title-row">
             <div class="company-identity">
               ${companyIconMarkup(entry)}
@@ -1259,6 +1627,7 @@ function renderCompanyList() {
               </div>
             </div>
             <div class="card-actions">
+              <button class="reorder-button" data-company-reorder-handle type="button">並べ替え</button>
               <button class="detail-button" data-detail-id="${entry.id}" type="button">詳細</button>
               <button class="edit-button" data-edit-id="${entry.id}" type="button">編集</button>
               <button class="delete-button" data-delete-id="${entry.id}" type="button">削除</button>
@@ -1311,6 +1680,7 @@ function renderTemplateList() {
               <strong>${escapeHtml(template.title)}</strong>
             </div>
             <div class="template-card-actions">
+              <button class="detail-button" data-template-copy-id="${template.id}" type="button">コピー</button>
               <button class="edit-button" data-template-edit-id="${template.id}" type="button">編集</button>
               <button class="delete-button" data-template-delete-id="${template.id}" type="button">削除</button>
             </div>
@@ -1543,7 +1913,8 @@ function fromDbEntry(row) {
     esItems: row.es_items || [],
     interviewNotes: row.interview_notes || "",
     memo: row.memo || "",
-    createdAt: row.created_at
+    createdAt: row.created_at,
+    sortOrder: Number(row.sort_order)
   });
 }
 
@@ -1566,14 +1937,26 @@ function normalizeEntry(entry) {
     esItems: normalizeEsItems(entry.esItems, entry.esContent || ""),
     interviewNotes: entry.interviewNotes || "",
     memo: entry.memo || "",
-    createdAt: entry.createdAt || new Date().toISOString()
+    createdAt: entry.createdAt || new Date().toISOString(),
+    sortOrder: Number.isFinite(Number(entry.sortOrder)) ? Number(entry.sortOrder) : Number.NaN
   };
 }
 
 function createEsItem(question = "", answer = "") {
+  const variant = createEsVariant("", answer);
   return {
     id: createId(),
     question: String(question || ""),
+    answer: String(answer || ""),
+    variants: [variant],
+    activeVariantId: variant.id
+  };
+}
+
+function createEsVariant(label = "", answer = "") {
+  return {
+    id: createId(),
+    label: String(label || ""),
     answer: String(answer || "")
   };
 }
@@ -1581,18 +1964,69 @@ function createEsItem(question = "", answer = "") {
 function normalizeEsItems(items, legacyContent = "") {
   const normalized = Array.isArray(items)
     ? items
-        .map((item) => ({
-          id: item.id || createId(),
-          question: String(item.question || ""),
-          answer: String(item.answer || "")
-        }))
-        .filter((item) => item.question.trim() || item.answer.trim())
+        .map(normalizeEsItem)
+        .filter((item) => item.question.trim() || item.variants.some((variant) => variant.label.trim() || variant.answer.trim()))
     : [];
 
   if (normalized.length > 0) return normalized;
 
   const legacyAnswer = String(legacyContent || "").trim();
   return legacyAnswer ? [createEsItem("", legacyAnswer)] : [];
+}
+
+function normalizeEsItem(item = {}) {
+  const variants = normalizeEsVariants(item.variants, item.answer);
+  const activeVariantId = variants.some((variant) => variant.id === item.activeVariantId)
+    ? item.activeVariantId
+    : variants[0]?.id || "";
+  const activeVariant = variants.find((variant) => variant.id === activeVariantId) || variants[0];
+
+  return {
+    id: item.id || createId(),
+    question: String(item.question || ""),
+    answer: activeVariant?.answer || "",
+    variants,
+    activeVariantId
+  };
+}
+
+function normalizeEsVariants(variants, legacyAnswer = "") {
+  const normalized = Array.isArray(variants)
+    ? variants
+        .map((variant) => ({
+          id: variant.id || createId(),
+          label: String(variant.label || ""),
+          answer: String(variant.answer || "")
+        }))
+        .filter((variant) => variant.label.trim() || variant.answer.trim())
+    : [];
+
+  if (normalized.length > 0) return normalized;
+  return [createEsVariant("", legacyAnswer || "")];
+}
+
+function getActiveEsVariant(item) {
+  return item.variants.find((variant) => variant.id === item.activeVariantId) || item.variants[0] || createEsVariant();
+}
+
+function esItemTitle(item) {
+  const question = String(item.question || "").trim();
+  if (question) return question;
+  const answer = getActiveEsVariant(item).answer.trim();
+  if (answer) return `${answer.slice(0, 32)}${answer.length > 32 ? "..." : ""}`;
+  return "未入力のES質問";
+}
+
+function esItemMeta(item) {
+  const active = getActiveEsVariant(item);
+  return `${item.variants.length}パターン / ${formatCharCount(active.answer)}`;
+}
+
+function esVariantTitle(variant) {
+  const label = String(variant.label || "").trim();
+  if (label) return label;
+  const characters = countCharacters(variant.answer);
+  return characters > 0 ? `${characters}字` : "未入力";
 }
 
 function normalizeTemplate(template) {
@@ -2030,11 +2464,11 @@ function getMascotHelpAnswer(question) {
   const text = question.toLowerCase();
 
   if (text.includes("es") || text.includes("ガクチカ") || text.includes("自己pr") || text.includes("文字") || text.includes("質問")) {
-    return "企業カードの「詳細」を押すと、ESを質問欄と回答欄に分けて大きく編集できます。ESカード上部の「並べ替え」を長押しすると、質問の順番も変えられます。";
+    return "企業カードの「詳細」を押すと、ESを質問ごとに管理できます。同じ質問に400字版・600字版など複数回答を保存でき、検索欄で質問や文字数から探せます。";
   }
 
   if (text.includes("型") || text.includes("テンプレ") || text.includes("使い回") || text.includes("使いまわ")) {
-    return "画面の「ES・ガクチカの型」によく使う文章を保存できます。企業詳細の「保存した型を使う」から回答欄へ入れられます。";
+    return "画面の「ES・ガクチカの型」によく使う文章を保存できます。企業詳細で型を選んで「型をコピー」を押すと、回答欄へ貼り付けられます。";
   }
 
   if (text.includes("締切") || text.includes("予定") || text.includes("カレンダー") || text.includes("面接")) {
@@ -2086,7 +2520,10 @@ function matchesSearchQuery(entry) {
     entry.logoUrl,
     entry.mypageUrl,
     entry.esContent,
-    ...normalizeEsItems(entry.esItems, entry.esContent).flatMap((item) => [item.question, item.answer]),
+    ...normalizeEsItems(entry.esItems, entry.esContent).flatMap((item) => [
+      item.question,
+      ...item.variants.flatMap((variant) => [variant.label, variant.answer, `${countCharacters(variant.answer)}字`])
+    ]),
     entry.interviewNotes,
     entry.memo
   ]
@@ -2161,12 +2598,21 @@ function sortByClosestDate(a, b) {
 }
 
 function sortCompanyEntries(a, b) {
+  const aOrder = Number.isFinite(a.sortOrder) ? a.sortOrder : Number.MAX_SAFE_INTEGER;
+  const bOrder = Number.isFinite(b.sortOrder) ? b.sortOrder : Number.MAX_SAFE_INTEGER;
+  if (aOrder !== bOrder) return aOrder - bOrder;
+
   if (state.deadlineFilter !== "all") {
     const aDeadline = a.deadline || "9999-12-31";
     const bDeadline = b.deadline || "9999-12-31";
     return aDeadline.localeCompare(bDeadline);
   }
   return sortByClosestDate(a, b);
+}
+
+function nextCompanySortOrder() {
+  const orders = state.entries.map((entry) => entry.sortOrder).filter(Number.isFinite);
+  return orders.length > 0 ? Math.max(...orders) + 1 : Number.NaN;
 }
 
 function buildDailyQuotes() {
@@ -2374,13 +2820,17 @@ function esPreviewBlock(entry) {
   if (items.length === 0) return "";
 
   const first = items[0];
-  const previewSource = first.question || first.answer;
+  const previewSource = first.question || getActiveEsVariant(first).answer;
   const preview = previewSource.length > 150 ? `${previewSource.slice(0, 150)}...` : previewSource;
-  const totalCharacters = items.reduce((sum, item) => sum + countCharacters(item.answer), 0);
+  const totalPatterns = items.reduce((sum, item) => sum + item.variants.length, 0);
+  const totalCharacters = items.reduce(
+    (sum, item) => sum + item.variants.reduce((variantSum, variant) => variantSum + countCharacters(variant.answer), 0),
+    0
+  );
 
   return `
     <div class="note-block es-preview">
-      <strong>ES ${items.length}問 / 回答 ${totalCharacters}字</strong>
+      <strong>ES ${items.length}問 / 回答 ${totalPatterns}パターン / 合計 ${totalCharacters}字</strong>
       <p>${escapeHtml(preview)}</p>
     </div>
   `;
@@ -2393,7 +2843,12 @@ function entryEsText(entry) {
 
 function esItemsToLegacyText(items) {
   return normalizeEsItems(items)
-    .map((item) => [item.question ? `Q. ${item.question}` : "", item.answer].filter(Boolean).join("\n"))
+    .map((item) => {
+      const answers = item.variants
+        .map((variant) => [`【${esVariantTitle(variant)}】`, variant.answer].filter(Boolean).join("\n"))
+        .join("\n\n");
+      return [item.question ? `Q. ${item.question}` : "", answers].filter(Boolean).join("\n");
+    })
     .join("\n\n");
 }
 
@@ -2451,6 +2906,43 @@ function formatDate(value) {
 
 function clampNumber(value, min, max) {
   return Math.min(Math.max(value, min), max);
+}
+
+function normalizeSearchText(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function cssEscape(value) {
+  if (window.CSS?.escape) return CSS.escape(String(value || ""));
+  return String(value || "").replaceAll('"', '\\"').replaceAll("\\", "\\\\");
+}
+
+async function copyTextToClipboard(text) {
+  const value = String(text || "");
+  if (!value) {
+    showToast("コピーする文章がありません。");
+    return false;
+  }
+
+  try {
+    if (navigator.clipboard?.writeText && window.isSecureContext) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+
+    const textarea = document.createElement("textarea");
+    textarea.value = value;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
+    document.body.append(textarea);
+    textarea.select();
+    const copied = document.execCommand("copy");
+    textarea.remove();
+    return copied;
+  } catch {
+    return false;
+  }
 }
 
 function escapeHtml(value) {
