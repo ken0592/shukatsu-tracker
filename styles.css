@@ -395,19 +395,58 @@ h2 {
   display: flex;
   align-items: center;
   min-width: 0;
-  gap: 8px;
+  gap: 4px;
   min-height: 58px;
-  padding: 8px;
+  padding: 6px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fbfdff;
   color: var(--text);
   text-align: left;
+}
+
+.company-compact-main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
   cursor: pointer;
 }
 
+.company-compact-main span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compact-reorder-button {
+  flex: 0 0 28px;
+  width: 28px;
+  min-height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: #eef3fa;
+  color: var(--muted);
+  cursor: grab;
+  font-weight: 900;
+  touch-action: none;
+  user-select: none;
+}
+
+.compact-reorder-button:active {
+  cursor: grabbing;
+}
+
 .company-compact-card:hover,
-.company-compact-card:focus-visible {
+.company-compact-card:focus-within {
   border-color: #b9cdf8;
   background: #f3f7ff;
 }
@@ -428,6 +467,11 @@ h2 {
 
 .company-list.is-reordering-list [data-company-card]:not(.is-reordering) {
   opacity: 0.72;
+}
+
+.company-list.is-reordering-list,
+.es-editor-list.is-reordering-list {
+  touch-action: none;
 }
 
 .company-compact-card .company-icon {
@@ -774,6 +818,16 @@ button:disabled {
   color: var(--blue-dark);
   background: #e8f0ff;
   font-size: 13px;
+}
+
+.reorder-button {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.reorder-button:active {
+  cursor: grabbing;
 }
 
 .delete-button {

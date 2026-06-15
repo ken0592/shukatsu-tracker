@@ -865,7 +865,7 @@ function handleEsReorderPointerDown(event) {
   esDragState.startY = event.clientY;
   esDragState.longPressTimer = window.setTimeout(startEsReorder, event.pointerType === "mouse" ? 160 : 320);
   card.classList.add("is-reorder-pending");
-  els.detailEsList.setPointerCapture?.(event.pointerId);
+  capturePointer(els.detailEsList, event.pointerId);
   event.preventDefault();
 }
 
@@ -874,21 +874,39 @@ function handleEsReorderPointerMove(event) {
 
   const moved = Math.hypot(event.clientX - esDragState.startX, event.clientY - esDragState.startY);
   if (!esDragState.isDragging && moved > 24) {
-    cancelEsReorder();
+    cancelEsReorder(event);
     return;
   }
 
   if (!esDragState.isDragging) return;
 
-  const nextCard = findCardAfterPointer(els.detailEsList, ".es-editor-card:not(.is-reordering)", esDragState.card, event.clientX, event.clientY);
-  animateListReorder(els.detailEsList, ".es-editor-card", () => {
+  const nextCard = findCardAfterPointer(els.detailEsList, ".es-editor-card:not(.is-reordering)", esDragState.card, event.clientX, event.clientY, "vertical");
+  moveReorderCard(els.detailEsList, ".es-editor-card", esDragState.card, nextCard);
+  event.preventDefault();
+}
+
+function moveReorderCard(container, selector, activeCard, nextCard) {
+  if (!activeCard || isSameInsertionPoint(container, selector, activeCard, nextCard)) return false;
+
+  animateListReorder(container, selector, activeCard, () => {
     if (nextCard) {
-      els.detailEsList.insertBefore(esDragState.card, nextCard);
+      container.insertBefore(activeCard, nextCard);
     } else {
-      els.detailEsList.appendChild(esDragState.card);
+      container.appendChild(activeCard);
     }
   });
-  event.preventDefault();
+  return true;
+}
+
+function isSameInsertionPoint(container, selector, activeCard, nextCard) {
+  const cards = Array.from(container.querySelectorAll(selector)).filter((card) => !card.hidden);
+  const currentIndex = cards.indexOf(activeCard);
+  if (currentIndex === -1) return false;
+
+  let targetIndex = nextCard ? cards.indexOf(nextCard) : cards.length;
+  if (targetIndex === -1) return false;
+  if (targetIndex > currentIndex) targetIndex -= 1;
+  return targetIndex === currentIndex;
 }
 
 function startEsReorder() {
@@ -917,9 +935,7 @@ function resetEsReorderState(pointerId = null) {
   window.clearTimeout(esDragState.longPressTimer);
   esDragState.card?.classList.remove("is-reorder-pending", "is-reordering");
   els.detailEsList.classList.remove("is-reordering-list");
-  if (pointerId !== null && els.detailEsList.hasPointerCapture?.(pointerId)) {
-    els.detailEsList.releasePointerCapture(pointerId);
-  }
+  releasePointer(els.detailEsList, pointerId);
   esDragState.card = null;
   esDragState.pointerId = null;
   esDragState.startX = 0;
@@ -942,7 +958,7 @@ function handleCompanyReorderPointerDown(event) {
   companyDragState.startY = event.clientY;
   companyDragState.longPressTimer = window.setTimeout(startCompanyReorder, event.pointerType === "mouse" ? 140 : 300);
   card.classList.add("is-reorder-pending");
-  els.companyList.setPointerCapture?.(event.pointerId);
+  capturePointer(els.companyList, event.pointerId);
 }
 
 function handleCompanyReorderPointerMove(event) {
@@ -956,14 +972,9 @@ function handleCompanyReorderPointerMove(event) {
 
   if (!companyDragState.isDragging) return;
 
-  const nextCard = findCardAfterPointer(els.companyList, "[data-company-card]:not(.is-reordering)", companyDragState.card, event.clientX, event.clientY);
-  animateListReorder(els.companyList, "[data-company-card]", () => {
-    if (nextCard) {
-      els.companyList.insertBefore(companyDragState.card, nextCard);
-    } else {
-      els.companyList.appendChild(companyDragState.card);
-    }
-  });
+  const layout = state.companyViewMode === "compact" ? "grid" : "vertical";
+  const nextCard = findCardAfterPointer(els.companyList, "[data-company-card]:not(.is-reordering)", companyDragState.card, event.clientX, event.clientY, layout);
+  moveReorderCard(els.companyList, "[data-company-card]", companyDragState.card, nextCard);
   event.preventDefault();
 }
 
@@ -997,9 +1008,7 @@ function resetCompanyReorderState(pointerId = null) {
   window.clearTimeout(companyDragState.longPressTimer);
   companyDragState.card?.classList.remove("is-reorder-pending", "is-reordering");
   els.companyList.classList.remove("is-reordering-list");
-  if (pointerId !== null && els.companyList.hasPointerCapture?.(pointerId)) {
-    els.companyList.releasePointerCapture(pointerId);
-  }
+  releasePointer(els.companyList, pointerId);
   companyDragState.card = null;
   companyDragState.pointerId = null;
   companyDragState.startX = 0;
@@ -1008,17 +1017,44 @@ function resetCompanyReorderState(pointerId = null) {
   companyDragState.isDragging = false;
 }
 
-function findCardAfterPointer(container, selector, activeCard, pointerX, pointerY) {
+function findCardAfterPointer(container, selector, activeCard, pointerX, pointerY, layout = "vertical") {
   const cards = Array.from(container.querySelectorAll(selector))
     .filter((card) => card !== activeCard && !card.hidden)
     .map((card) => ({ card, rect: card.getBoundingClientRect() }))
     .sort((a, b) => a.rect.top - b.rect.top || a.rect.left - b.rect.left);
 
-  return cards.find(({ rect }) => pointerY < rect.top + rect.height / 2 || (pointerY < rect.bottom && pointerX < rect.left + rect.width / 2))?.card || null;
+  if (layout === "grid") {
+    const nearest = cards.reduce(
+      (closest, item) => {
+        const centerX = item.rect.left + item.rect.width / 2;
+        const centerY = item.rect.top + item.rect.height / 2;
+        const distance = Math.hypot(pointerX - centerX, pointerY - centerY);
+        return distance < closest.distance ? { ...item, distance } : closest;
+      },
+      { card: null, rect: null, distance: Number.POSITIVE_INFINITY }
+    );
+    if (!nearest.card) return null;
+
+    const rowThreshold = nearest.rect.height / 2;
+    const beforeTarget = pointerY < nearest.rect.top + rowThreshold || (
+      pointerY <= nearest.rect.bottom && pointerX < nearest.rect.left + nearest.rect.width / 2
+    );
+    if (beforeTarget) return nearest.card;
+    const nearestIndex = cards.findIndex((item) => item.card === nearest.card);
+    return cards[nearestIndex + 1]?.card || null;
+  }
+
+  return cards.reduce(
+    (closest, item) => {
+      const offset = pointerY - item.rect.top - item.rect.height / 2;
+      return offset < 0 && offset > closest.offset ? { offset, card: item.card } : closest;
+    },
+    { offset: Number.NEGATIVE_INFINITY, card: null }
+  ).card;
 }
 
-function animateListReorder(container, selector, mutate) {
-  const items = Array.from(container.querySelectorAll(selector));
+function animateListReorder(container, selector, activeCard, mutate) {
+  const items = Array.from(container.querySelectorAll(selector)).filter((item) => item !== activeCard);
   const first = new Map(items.map((item) => [item, item.getBoundingClientRect()]));
   mutate();
   Array.from(container.querySelectorAll(selector)).forEach((item) => {
@@ -1039,6 +1075,23 @@ function animateListReorder(container, selector, mutate) {
       }, 240);
     });
   });
+}
+
+function capturePointer(element, pointerId) {
+  try {
+    element.setPointerCapture?.(pointerId);
+  } catch {
+    // Some browsers refuse capture if the pointer already ended. Reordering still works without it.
+  }
+}
+
+function releasePointer(element, pointerId) {
+  if (pointerId === null || pointerId === undefined) return;
+  try {
+    if (element.hasPointerCapture?.(pointerId)) element.releasePointerCapture(pointerId);
+  } catch {
+    // Ignore stale pointer ids.
+  }
 }
 
 async function persistCompanyOrderFromDom() {
@@ -1599,10 +1652,13 @@ function renderCompanyList() {
     els.companyList.innerHTML = entries
       .map((entry) => {
         return `
-          <button class="company-compact-card" data-company-card data-company-id="${escapeAttribute(entry.id)}" data-company-reorder-handle data-detail-id="${escapeAttribute(entry.id)}" type="button" title="${escapeAttribute(entry.companyName)}の詳細を開く">
-            ${companyIconMarkup(entry)}
-            <span>${escapeHtml(entry.companyName)}</span>
-          </button>
+          <article class="company-compact-card" data-company-card data-company-id="${escapeAttribute(entry.id)}" title="${escapeAttribute(entry.companyName)}の詳細を開く">
+            <button class="company-compact-main" data-detail-id="${escapeAttribute(entry.id)}" type="button">
+              ${companyIconMarkup(entry)}
+              <span>${escapeHtml(entry.companyName)}</span>
+            </button>
+            <button class="compact-reorder-button" data-company-reorder-handle type="button" aria-label="${escapeAttribute(entry.companyName)}を並べ替え">↕</button>
+          </article>
         `;
       })
       .join("");
