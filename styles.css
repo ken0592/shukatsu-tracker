@@ -516,13 +516,46 @@ h2 {
 
 .company-list.is-reordering-list [data-company-card]:not(.is-reordering),
 .template-list.is-reordering-list [data-template-card]:not(.is-reordering) {
-  opacity: 0.72;
+  opacity: 0.9;
 }
 
 .company-list.is-reordering-list,
 .es-editor-list.is-reordering-list,
 .template-list.is-reordering-list {
   touch-action: none;
+}
+
+.is-reordering-active {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.reorder-placeholder {
+  min-height: 52px;
+  border: 2px dashed #a9bef0;
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(232, 240, 255, 0.9), rgba(248, 251, 255, 0.72));
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.08);
+}
+
+.company-list.medium-view .reorder-placeholder {
+  min-height: 142px;
+}
+
+.company-list.compact-view .reorder-placeholder {
+  min-height: 58px;
+}
+
+.es-editor-list .reorder-placeholder,
+.template-list .reorder-placeholder {
+  min-height: 84px;
+}
+
+.is-floating-reorder {
+  opacity: 0.98;
+  box-shadow: 0 26px 62px rgba(15, 23, 42, 0.22), 0 6px 18px rgba(37, 99, 235, 0.18) !important;
+  cursor: grabbing;
+  will-change: transform;
 }
 
 .company-compact-card .company-icon {

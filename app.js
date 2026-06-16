@@ -168,18 +168,24 @@ const mascotState = {
 
 const esDragState = {
   card: null,
+  placeholder: null,
   pointerId: null,
   startX: 0,
   startY: 0,
+  dragOffsetX: 0,
+  dragOffsetY: 0,
   longPressTimer: null,
   isDragging: false
 };
 
 const companyDragState = {
   card: null,
+  placeholder: null,
   pointerId: null,
   startX: 0,
   startY: 0,
+  dragOffsetX: 0,
+  dragOffsetY: 0,
   longPressTimer: null,
   isDragging: false,
   suppressClick: false
@@ -187,9 +193,12 @@ const companyDragState = {
 
 const templateDragState = {
   card: null,
+  placeholder: null,
   pointerId: null,
   startX: 0,
   startY: 0,
+  dragOffsetX: 0,
+  dragOffsetY: 0,
   longPressTimer: null,
   isDragging: false
 };
@@ -928,27 +937,30 @@ function handleEsReorderPointerMove(event) {
 
   if (!esDragState.isDragging) return;
 
+  updateFloatingReorder(esDragState, event);
   const nextCard = findCardAfterPointer(els.detailEsList, ".es-editor-card:not(.is-reordering)", esDragState.card, event.clientX, event.clientY, "vertical");
-  moveReorderCard(els.detailEsList, ".es-editor-card", esDragState.card, nextCard);
+  moveReorderCard(els.detailEsList, ".es-editor-card", esDragState.card, nextCard, esDragState.placeholder);
   event.preventDefault();
 }
 
-function moveReorderCard(container, selector, activeCard, nextCard) {
-  if (!activeCard || isSameInsertionPoint(container, selector, activeCard, nextCard)) return false;
+function moveReorderCard(container, selector, activeCard, nextCard, placeholder = null) {
+  const movingNode = placeholder || activeCard;
+  if (!activeCard || !movingNode || isSameInsertionPoint(container, selector, activeCard, movingNode, nextCard)) return false;
 
   animateListReorder(container, selector, activeCard, () => {
     if (nextCard) {
-      container.insertBefore(activeCard, nextCard);
+      container.insertBefore(movingNode, nextCard);
     } else {
-      container.appendChild(activeCard);
+      container.appendChild(movingNode);
     }
   });
   return true;
 }
 
-function isSameInsertionPoint(container, selector, activeCard, nextCard) {
-  const cards = Array.from(container.querySelectorAll(selector)).filter((card) => !card.hidden);
-  const currentIndex = cards.indexOf(activeCard);
+function isSameInsertionPoint(container, selector, activeCard, movingNode, nextCard) {
+  const cards = Array.from(container.children)
+    .filter((card) => card === movingNode || (card.matches?.(selector) && card !== activeCard && !card.hidden));
+  const currentIndex = cards.indexOf(movingNode);
   if (currentIndex === -1) return false;
 
   let targetIndex = nextCard ? cards.indexOf(nextCard) : cards.length;
@@ -964,13 +976,14 @@ function startEsReorder() {
   esDragState.card.classList.remove("is-reorder-pending");
   esDragState.card.classList.add("is-reordering");
   els.detailEsList.classList.add("is-reordering-list");
+  beginFloatingReorder(esDragState, els.detailEsList);
 }
 
 function finishEsReorder(event) {
   if (!esDragState.card || esDragState.pointerId !== event.pointerId) return;
 
   const wasDragging = esDragState.isDragging;
-  resetEsReorderState(event.pointerId);
+  resetEsReorderState(event.pointerId, wasDragging);
   if (wasDragging) showToast("ESの順番を入れ替えました。");
 }
 
@@ -979,15 +992,19 @@ function cancelEsReorder(event = null) {
   resetEsReorderState(event?.pointerId);
 }
 
-function resetEsReorderState(pointerId = null) {
+function resetEsReorderState(pointerId = null, commit = false) {
   window.clearTimeout(esDragState.longPressTimer);
+  finishFloatingReorder(esDragState, els.detailEsList, commit);
   esDragState.card?.classList.remove("is-reorder-pending", "is-reordering");
   els.detailEsList.classList.remove("is-reordering-list");
   releasePointer(els.detailEsList, pointerId);
   esDragState.card = null;
+  esDragState.placeholder = null;
   esDragState.pointerId = null;
   esDragState.startX = 0;
   esDragState.startY = 0;
+  esDragState.dragOffsetX = 0;
+  esDragState.dragOffsetY = 0;
   esDragState.longPressTimer = null;
   esDragState.isDragging = false;
 }
@@ -1020,9 +1037,10 @@ function handleCompanyReorderPointerMove(event) {
 
   if (!companyDragState.isDragging) return;
 
+  updateFloatingReorder(companyDragState, event);
   const layout = state.companyViewMode === "normal" ? "vertical" : "grid";
   const nextCard = findCardAfterPointer(els.companyList, "[data-company-card]:not(.is-reordering)", companyDragState.card, event.clientX, event.clientY, layout);
-  moveReorderCard(els.companyList, "[data-company-card]", companyDragState.card, nextCard);
+  moveReorderCard(els.companyList, "[data-company-card]", companyDragState.card, nextCard, companyDragState.placeholder);
   event.preventDefault();
 }
 
@@ -1034,13 +1052,14 @@ function startCompanyReorder() {
   companyDragState.card.classList.remove("is-reorder-pending");
   companyDragState.card.classList.add("is-reordering");
   els.companyList.classList.add("is-reordering-list");
+  beginFloatingReorder(companyDragState, els.companyList);
 }
 
 async function finishCompanyReorder(event) {
   if (!companyDragState.card || companyDragState.pointerId !== event.pointerId) return;
 
   const wasDragging = companyDragState.isDragging;
-  resetCompanyReorderState(event.pointerId);
+  resetCompanyReorderState(event.pointerId, wasDragging);
   if (wasDragging) {
     await persistCompanyOrderFromDom();
     showToast("企業の順番を入れ替えました。");
@@ -1052,15 +1071,19 @@ function cancelCompanyReorder(event = null) {
   resetCompanyReorderState(event?.pointerId);
 }
 
-function resetCompanyReorderState(pointerId = null) {
+function resetCompanyReorderState(pointerId = null, commit = false) {
   window.clearTimeout(companyDragState.longPressTimer);
+  finishFloatingReorder(companyDragState, els.companyList, commit);
   companyDragState.card?.classList.remove("is-reorder-pending", "is-reordering");
   els.companyList.classList.remove("is-reordering-list");
   releasePointer(els.companyList, pointerId);
   companyDragState.card = null;
+  companyDragState.placeholder = null;
   companyDragState.pointerId = null;
   companyDragState.startX = 0;
   companyDragState.startY = 0;
+  companyDragState.dragOffsetX = 0;
+  companyDragState.dragOffsetY = 0;
   companyDragState.longPressTimer = null;
   companyDragState.isDragging = false;
 }
@@ -1094,8 +1117,9 @@ function handleTemplateReorderPointerMove(event) {
 
   if (!templateDragState.isDragging) return;
 
+  updateFloatingReorder(templateDragState, event);
   const nextCard = findCardAfterPointer(els.templateList, "[data-template-card]:not(.is-reordering)", templateDragState.card, event.clientX, event.clientY, "vertical");
-  moveReorderCard(els.templateList, "[data-template-card]", templateDragState.card, nextCard);
+  moveReorderCard(els.templateList, "[data-template-card]", templateDragState.card, nextCard, templateDragState.placeholder);
   event.preventDefault();
 }
 
@@ -1106,13 +1130,14 @@ function startTemplateReorder() {
   templateDragState.card.classList.remove("is-reorder-pending");
   templateDragState.card.classList.add("is-reordering");
   els.templateList.classList.add("is-reordering-list");
+  beginFloatingReorder(templateDragState, els.templateList);
 }
 
 async function finishTemplateReorder(event) {
   if (!templateDragState.card || templateDragState.pointerId !== event.pointerId) return;
 
   const wasDragging = templateDragState.isDragging;
-  resetTemplateReorderState(event.pointerId);
+  resetTemplateReorderState(event.pointerId, wasDragging);
   if (wasDragging) {
     await persistTemplateOrderFromDom();
     showToast("型の順番を入れ替えました。");
@@ -1124,15 +1149,19 @@ function cancelTemplateReorder(event = null) {
   resetTemplateReorderState(event?.pointerId);
 }
 
-function resetTemplateReorderState(pointerId = null) {
+function resetTemplateReorderState(pointerId = null, commit = false) {
   window.clearTimeout(templateDragState.longPressTimer);
+  finishFloatingReorder(templateDragState, els.templateList, commit);
   templateDragState.card?.classList.remove("is-reorder-pending", "is-reordering");
   els.templateList.classList.remove("is-reordering-list");
   releasePointer(els.templateList, pointerId);
   templateDragState.card = null;
+  templateDragState.placeholder = null;
   templateDragState.pointerId = null;
   templateDragState.startX = 0;
   templateDragState.startY = 0;
+  templateDragState.dragOffsetX = 0;
+  templateDragState.dragOffsetY = 0;
   templateDragState.longPressTimer = null;
   templateDragState.isDragging = false;
 }
@@ -1216,6 +1245,63 @@ function animateListReorder(container, selector, activeCard, mutate) {
       }, 240);
     });
   });
+}
+
+function beginFloatingReorder(dragState, container) {
+  if (!dragState.card || dragState.placeholder) return;
+
+  const rect = dragState.card.getBoundingClientRect();
+  const placeholder = document.createElement("div");
+  placeholder.className = "reorder-placeholder";
+  placeholder.style.height = `${rect.height}px`;
+  placeholder.style.minHeight = `${rect.height}px`;
+  container.insertBefore(placeholder, dragState.card);
+
+  dragState.placeholder = placeholder;
+  dragState.dragOffsetX = dragState.startX - rect.left;
+  dragState.dragOffsetY = dragState.startY - rect.top;
+
+  dragState.card.classList.add("is-floating-reorder");
+  dragState.card.style.position = "fixed";
+  dragState.card.style.left = "0";
+  dragState.card.style.top = "0";
+  dragState.card.style.width = `${rect.width}px`;
+  dragState.card.style.height = `${rect.height}px`;
+  dragState.card.style.zIndex = "1000";
+  dragState.card.style.pointerEvents = "none";
+  dragState.card.style.transition = "transform 90ms linear, box-shadow 160ms ease, opacity 160ms ease";
+  updateFloatingReorder(dragState, { clientX: dragState.startX, clientY: dragState.startY });
+  document.body.classList.add("is-reordering-active");
+}
+
+function updateFloatingReorder(dragState, event) {
+  if (!dragState.card) return;
+  const x = event.clientX - dragState.dragOffsetX;
+  const y = event.clientY - dragState.dragOffsetY;
+  dragState.card.style.transform = `translate3d(${x}px, ${y}px, 0) scale(1.03)`;
+}
+
+function finishFloatingReorder(dragState, container, commit) {
+  const card = dragState.card;
+  const placeholder = dragState.placeholder;
+  if (!card) return;
+
+  if (commit && placeholder?.parentNode === container) {
+    container.insertBefore(card, placeholder);
+  }
+  placeholder?.remove();
+
+  card.classList.remove("is-floating-reorder");
+  card.style.position = "";
+  card.style.left = "";
+  card.style.top = "";
+  card.style.width = "";
+  card.style.height = "";
+  card.style.zIndex = "";
+  card.style.pointerEvents = "";
+  card.style.transition = "";
+  card.style.transform = "";
+  document.body.classList.remove("is-reordering-active");
 }
 
 function capturePointer(element, pointerId) {
