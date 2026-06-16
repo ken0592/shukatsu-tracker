@@ -2,6 +2,7 @@ const storageKey = "shukatsu-tracker-entries";
 const templateStorageKey = "shukatsu-tracker-templates";
 const mascotPositionKey = "shukatsu-tracker-mascot-position";
 const companyViewModeStorageKey = "shukatsu-tracker-company-view-mode";
+const companyViewModes = ["normal", "medium", "compact"];
 const activeStatuses = ["気になる", "応募予定", "応募済み", "ES提出済み", "Webテスト", "一次面接", "二次面接", "最終面接", "結果待ち", "選考通過", "インターン選考通過", "インターン参加決定"];
 const finishedStatuses = ["内定", "落選", "辞退", "参加済み"];
 const celebrationStatuses = ["内定", "選考通過", "インターン選考通過", "インターン参加決定"];
@@ -48,11 +49,14 @@ const state = {
   industryFilter: "all",
   deadlineFilter: "all",
   priorityFilter: "all",
-  companyViewMode: localStorage.getItem(companyViewModeStorageKey) === "compact" ? "compact" : "normal",
+  companyViewMode: companyViewModes.includes(localStorage.getItem(companyViewModeStorageKey))
+    ? localStorage.getItem(companyViewModeStorageKey)
+    : "normal",
   mode: hasCloudConfig ? "cloud" : "local",
   session: null,
   loading: true,
   cloudSortOrderAvailable: true,
+  cloudTemplateSortOrderAvailable: true,
   editingId: null,
   detailEditingId: null,
   editingTemplateId: null,
@@ -181,6 +185,15 @@ const companyDragState = {
   suppressClick: false
 };
 
+const templateDragState = {
+  card: null,
+  pointerId: null,
+  startX: 0,
+  startY: 0,
+  longPressTimer: null,
+  isDragging: false
+};
+
 bindEvents();
 init();
 
@@ -249,6 +262,18 @@ function bindEvents() {
       return;
     }
 
+    const insertCardTemplateButton = event.target.closest("[data-es-insert-template]");
+    if (insertCardTemplateButton) {
+      insertTemplateIntoEsVariant(insertCardTemplateButton.closest("[data-es-variant-id]"));
+      return;
+    }
+
+    const copyCardTemplateButton = event.target.closest("[data-es-copy-template]");
+    if (copyCardTemplateButton) {
+      copyTemplateFromEsVariant(copyCardTemplateButton.closest("[data-es-variant-id]"));
+      return;
+    }
+
     const toggleButton = event.target.closest("[data-es-toggle]");
     if (toggleButton) {
       toggleEsCard(toggleButton.closest(".es-editor-card"));
@@ -274,6 +299,10 @@ function bindEvents() {
   els.templateForm.addEventListener("submit", handleTemplateSubmit);
   els.templateBodyInput.addEventListener("input", updateTemplateBodyCount);
   els.resetTemplateButton.addEventListener("click", resetTemplateForm);
+  els.templateList.addEventListener("pointerdown", handleTemplateReorderPointerDown);
+  els.templateList.addEventListener("pointermove", handleTemplateReorderPointerMove);
+  els.templateList.addEventListener("pointerup", finishTemplateReorder);
+  els.templateList.addEventListener("pointercancel", cancelTemplateReorder);
   els.prevCalendarButton.addEventListener("click", () => moveCalendarMonth(-1));
   els.nextCalendarButton.addEventListener("click", () => moveCalendarMonth(1));
   els.todayCalendarButton.addEventListener("click", resetCalendarMonth);
@@ -320,6 +349,12 @@ function bindEvents() {
     const detailButton = event.target.closest("[data-detail-id]");
     if (detailButton) {
       openCompanyDetail(detailButton.dataset.detailId);
+      return;
+    }
+
+    const templateToggleButton = event.target.closest("[data-template-toggle]");
+    if (templateToggleButton) {
+      toggleTemplateCard(templateToggleButton.closest("[data-template-card]"));
       return;
     }
 
@@ -657,6 +692,7 @@ function esEditorCard(item) {
   const title = esItemTitle(value);
   const activeVariant = getActiveEsVariant(value);
   const activeVariantId = activeVariant?.id || value.variants[0]?.id || "";
+  const templateOptions = templateOptionsMarkup();
   const tabs = value.variants
     .map((variant) => {
       const active = variant.id === activeVariantId;
@@ -676,6 +712,18 @@ function esEditorCard(item) {
             回答の見出し
             <input data-es-variant-label value="${escapeAttribute(variant.label)}" placeholder="例: 400字 / 600字 / 一次面接用" />
           </label>
+          <div class="es-template-tools">
+            <label>
+              保存した型をこの回答に使う
+              <select data-es-template-select ${state.templates.length === 0 ? "disabled" : ""}>
+                ${templateOptions}
+              </select>
+            </label>
+            <div class="es-template-actions">
+              <button class="secondary-button small-button" data-es-insert-template type="button" ${state.templates.length === 0 ? "disabled" : ""}>この回答に入れる</button>
+              <button class="secondary-button small-button" data-es-copy-template type="button" ${state.templates.length === 0 ? "disabled" : ""}>コピー</button>
+            </div>
+          </div>
           <label>
             回答
             <textarea class="es-answer-input" data-es-answer rows="9" placeholder="回答をここに書く">${escapeHtml(variant.answer)}</textarea>
@@ -972,7 +1020,7 @@ function handleCompanyReorderPointerMove(event) {
 
   if (!companyDragState.isDragging) return;
 
-  const layout = state.companyViewMode === "compact" ? "grid" : "vertical";
+  const layout = state.companyViewMode === "normal" ? "vertical" : "grid";
   const nextCard = findCardAfterPointer(els.companyList, "[data-company-card]:not(.is-reordering)", companyDragState.card, event.clientX, event.clientY, layout);
   moveReorderCard(els.companyList, "[data-company-card]", companyDragState.card, nextCard);
   event.preventDefault();
@@ -1015,6 +1063,78 @@ function resetCompanyReorderState(pointerId = null) {
   companyDragState.startY = 0;
   companyDragState.longPressTimer = null;
   companyDragState.isDragging = false;
+}
+
+function handleTemplateReorderPointerDown(event) {
+  const handle = event.target.closest("[data-template-reorder-handle]");
+  if (!handle) return;
+
+  const card = handle.closest("[data-template-card]");
+  if (!card) return;
+
+  cancelTemplateReorder();
+  templateDragState.card = card;
+  templateDragState.pointerId = event.pointerId;
+  templateDragState.startX = event.clientX;
+  templateDragState.startY = event.clientY;
+  templateDragState.longPressTimer = window.setTimeout(startTemplateReorder, event.pointerType === "mouse" ? 140 : 300);
+  card.classList.add("is-reorder-pending");
+  capturePointer(els.templateList, event.pointerId);
+  event.preventDefault();
+}
+
+function handleTemplateReorderPointerMove(event) {
+  if (!templateDragState.card || templateDragState.pointerId !== event.pointerId) return;
+
+  const moved = Math.hypot(event.clientX - templateDragState.startX, event.clientY - templateDragState.startY);
+  if (!templateDragState.isDragging && moved > 24) {
+    cancelTemplateReorder(event);
+    return;
+  }
+
+  if (!templateDragState.isDragging) return;
+
+  const nextCard = findCardAfterPointer(els.templateList, "[data-template-card]:not(.is-reordering)", templateDragState.card, event.clientX, event.clientY, "vertical");
+  moveReorderCard(els.templateList, "[data-template-card]", templateDragState.card, nextCard);
+  event.preventDefault();
+}
+
+function startTemplateReorder() {
+  if (!templateDragState.card) return;
+
+  templateDragState.isDragging = true;
+  templateDragState.card.classList.remove("is-reorder-pending");
+  templateDragState.card.classList.add("is-reordering");
+  els.templateList.classList.add("is-reordering-list");
+}
+
+async function finishTemplateReorder(event) {
+  if (!templateDragState.card || templateDragState.pointerId !== event.pointerId) return;
+
+  const wasDragging = templateDragState.isDragging;
+  resetTemplateReorderState(event.pointerId);
+  if (wasDragging) {
+    await persistTemplateOrderFromDom();
+    showToast("型の順番を入れ替えました。");
+  }
+}
+
+function cancelTemplateReorder(event = null) {
+  if (!templateDragState.card) return;
+  resetTemplateReorderState(event?.pointerId);
+}
+
+function resetTemplateReorderState(pointerId = null) {
+  window.clearTimeout(templateDragState.longPressTimer);
+  templateDragState.card?.classList.remove("is-reorder-pending", "is-reordering");
+  els.templateList.classList.remove("is-reordering-list");
+  releasePointer(els.templateList, pointerId);
+  templateDragState.card = null;
+  templateDragState.pointerId = null;
+  templateDragState.startX = 0;
+  templateDragState.startY = 0;
+  templateDragState.longPressTimer = null;
+  templateDragState.isDragging = false;
 }
 
 function findCardAfterPointer(container, selector, activeCard, pointerX, pointerY, layout = "vertical") {
@@ -1130,6 +1250,37 @@ async function saveCloudCompanyOrder() {
   showToast("SupabaseのSQLを更新すると、企業の並び順も端末間で保存できます。");
 }
 
+async function persistTemplateOrderFromDom() {
+  const visibleIds = Array.from(els.templateList.querySelectorAll("[data-template-card]")).map((card) => card.dataset.templateId);
+  if (visibleIds.length === 0) return;
+
+  const rank = new Map(visibleIds.map((id, index) => [id, index]));
+  state.templates = state.templates.map((template) => ({
+    ...template,
+    sortOrder: rank.has(template.id) ? rank.get(template.id) : template.sortOrder
+  }));
+
+  if (state.mode === "local") {
+    saveLocalTemplates(state.templates);
+    return;
+  }
+
+  if (state.mode === "cloud" && state.session && state.cloudTemplateSortOrderAvailable) {
+    await saveCloudTemplateOrder();
+  }
+}
+
+async function saveCloudTemplateOrder() {
+  const results = await Promise.all(
+    state.templates.map((template) => supabaseClient.from("es_templates").update({ sort_order: template.sortOrder }).eq("id", template.id))
+  );
+  const error = results.find((result) => result.error)?.error;
+  if (!error) return;
+
+  state.cloudTemplateSortOrderAvailable = false;
+  showToast("SupabaseのSQLを更新すると、型の並び順も端末間で保存できます。");
+}
+
 async function handleDetailSubmit(event) {
   event.preventDefault();
   const existingEntry = state.entries.find((entry) => entry.id === state.detailEditingId);
@@ -1208,6 +1359,40 @@ function insertSelectedTemplateIntoDetail() {
   showToast("型を回答に入れました。");
 }
 
+function insertTemplateIntoEsVariant(pane) {
+  if (!pane) return;
+  const template = getTemplateFromVariantPane(pane);
+  if (!template) {
+    showToast("この回答に入れる型を選んでください。");
+    return;
+  }
+
+  const answer = pane.querySelector("[data-es-answer]");
+  if (!answer) return;
+  const current = answer.value.trimEnd();
+  answer.value = current ? `${current}\n\n${template.body}` : template.body;
+  answer.focus();
+  updateDetailEsCharCounts();
+  updateEsCardSummary(pane.closest(".es-editor-card"));
+  showToast("この回答に型を入れました。");
+}
+
+async function copyTemplateFromEsVariant(pane) {
+  if (!pane) return;
+  const template = getTemplateFromVariantPane(pane);
+  if (!template) {
+    showToast("コピーする型を選んでください。");
+    return;
+  }
+  const copied = await copyTextToClipboard(template.body);
+  showToast(copied ? "型をコピーしました。この回答欄に貼り付けできます。" : "コピーできませんでした。");
+}
+
+function getTemplateFromVariantPane(pane) {
+  const templateId = pane.querySelector("[data-es-template-select]")?.value;
+  return state.templates.find((item) => item.id === templateId) || null;
+}
+
 async function copySelectedTemplate() {
   const template = state.templates.find((item) => item.id === els.detailTemplateSelect.value);
   if (!template) {
@@ -1236,7 +1421,8 @@ async function handleTemplateSubmit(event) {
     title: els.templateTitleInput.value.trim(),
     body: els.templateBodyInput.value.trim(),
     createdAt: existingTemplate?.createdAt || new Date().toISOString(),
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
+    sortOrder: Number.isFinite(existingTemplate?.sortOrder) ? existingTemplate.sortOrder : nextTemplateSortOrder()
   });
 
   if (!template.title || !template.body) {
@@ -1250,8 +1436,12 @@ async function handleTemplateSubmit(event) {
       return;
     }
 
-    const saved = existingTemplate ? await updateCloudTemplate(template) : await createCloudTemplate(template);
-    if (!saved) return;
+    const savedResult = existingTemplate ? await updateCloudTemplate(template) : await createCloudTemplate(template);
+    if (!savedResult) return;
+    const saved = normalizeTemplate({
+      ...savedResult,
+      sortOrder: Number.isFinite(savedResult.sortOrder) ? savedResult.sortOrder : template.sortOrder
+    });
     if (existingTemplate) {
       state.templates = state.templates.map((item) => (item.id === saved.id ? saved : item));
     } else {
@@ -1632,6 +1822,7 @@ function renderEventList() {
 
 function renderCompanyList() {
   const isCompact = state.companyViewMode === "compact";
+  const isMedium = state.companyViewMode === "medium";
   const entries = state.entries
     .filter(matchesListFilter)
     .filter(matchesSearchQuery)
@@ -1642,6 +1833,7 @@ function renderCompanyList() {
 
   updateCompanyViewButtons();
   els.companyList.classList.toggle("compact-view", isCompact);
+  els.companyList.classList.toggle("medium-view", isMedium);
 
   if (entries.length === 0) {
     els.companyList.innerHTML = emptyState("条件に合う企業がありません。内定・落選の企業も「全部」または「結果済み」に残ります。");
@@ -1658,6 +1850,39 @@ function renderCompanyList() {
               <span>${escapeHtml(entry.companyName)}</span>
             </button>
             <button class="compact-reorder-button" data-company-reorder-handle type="button" aria-label="${escapeAttribute(entry.companyName)}を並べ替え">↕</button>
+          </article>
+        `;
+      })
+      .join("");
+    return;
+  }
+
+  if (isMedium) {
+    els.companyList.innerHTML = entries
+      .map((entry) => {
+        return `
+          <article class="company-medium-card" data-company-card data-company-id="${escapeAttribute(entry.id)}">
+            <div class="company-medium-main">
+              ${companyIconMarkup(entry)}
+              <div>
+                <strong>${escapeHtml(entry.companyName)}</strong>
+                <div class="meta-row">
+                  ${statusTag(entry.status)}
+                  ${entry.industry ? `<span>${escapeHtml(entry.industry)}</span>` : ""}
+                </div>
+              </div>
+            </div>
+            <div class="company-medium-details">
+              <span>${escapeHtml(entry.trackType)} / ${escapeHtml(entry.eventType)}</span>
+              ${entry.deadline ? `<span>${formatDate(entry.deadline)} 締切</span>` : ""}
+              ${entry.eventDate ? `<span>${formatDate(entry.eventDate)} 予定</span>` : ""}
+              <span>志望度 ${escapeHtml(entry.priority)}</span>
+            </div>
+            <div class="company-medium-actions">
+              <button class="compact-reorder-button" data-company-reorder-handle type="button" aria-label="${escapeAttribute(entry.companyName)}を並べ替え">↕</button>
+              <button class="detail-button" data-detail-id="${entry.id}" type="button">詳細</button>
+              <button class="edit-button" data-edit-id="${entry.id}" type="button">編集</button>
+            </div>
           </article>
         `;
       })
@@ -1707,7 +1932,7 @@ function renderCompanyList() {
 }
 
 function setCompanyViewMode(viewMode) {
-  state.companyViewMode = viewMode === "compact" ? "compact" : "normal";
+  state.companyViewMode = companyViewModes.includes(viewMode) ? viewMode : "normal";
   localStorage.setItem(companyViewModeStorageKey, state.companyViewMode);
   updateCompanyViewButtons();
   renderCompanyList();
@@ -1725,38 +1950,57 @@ function renderTemplateList() {
     return;
   }
 
-  els.templateList.innerHTML = state.templates
+  els.templateList.innerHTML = [...state.templates].sort(sortTemplates)
     .map((template) => {
-      const preview = template.body.length > 180 ? `${template.body.slice(0, 180)}...` : template.body;
       return `
-        <article class="template-card">
+        <article class="template-card" data-template-card data-template-id="${escapeAttribute(template.id)}">
           <div class="template-card-heading">
-            <div>
+            <button class="template-title-button" data-template-toggle type="button" aria-expanded="false">
               <span class="tag">${escapeHtml(template.kind)}</span>
               <strong>${escapeHtml(template.title)}</strong>
-            </div>
+              <span class="template-title-meta">${formatCharCount(template.body)}</span>
+            </button>
             <div class="template-card-actions">
+              <button class="reorder-button" data-template-reorder-handle type="button">並べ替え</button>
               <button class="detail-button" data-template-copy-id="${template.id}" type="button">コピー</button>
               <button class="edit-button" data-template-edit-id="${template.id}" type="button">編集</button>
               <button class="delete-button" data-template-delete-id="${template.id}" type="button">削除</button>
             </div>
           </div>
-          <p>${escapeHtml(preview)}</p>
-          <span class="char-count">${formatCharCount(template.body)}</span>
+          <div class="template-card-body" data-template-body hidden>
+            <p>${escapeHtml(template.body)}</p>
+          </div>
         </article>
       `;
     })
     .join("");
 }
 
-function renderTemplateOptions() {
-  const selected = els.detailTemplateSelect.value;
-  els.detailTemplateSelect.innerHTML = [
+function toggleTemplateCard(card) {
+  if (!card) return;
+  const body = card.querySelector("[data-template-body]");
+  const toggle = card.querySelector("[data-template-toggle]");
+  if (!body || !toggle) return;
+  const expanded = body.hidden;
+  body.hidden = !expanded;
+  toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+  card.classList.toggle("is-open", expanded);
+}
+
+function templateOptionsMarkup() {
+  const templates = [...state.templates].sort(sortTemplates);
+  if (templates.length === 0) return '<option value="">先に下の「ES・ガクチカの型」で保存</option>';
+  return [
     '<option value="">型を選択</option>',
-    ...state.templates.map((template) =>
+    ...templates.map((template) =>
       `<option value="${escapeAttribute(template.id)}">${escapeHtml(template.kind)}：${escapeHtml(template.title)}</option>`
     )
   ].join("");
+}
+
+function renderTemplateOptions() {
+  const selected = els.detailTemplateSelect.value;
+  els.detailTemplateSelect.innerHTML = templateOptionsMarkup();
   if (state.templates.some((template) => template.id === selected)) {
     els.detailTemplateSelect.value = selected;
   }
@@ -2092,7 +2336,8 @@ function normalizeTemplate(template) {
     title: template.title || "",
     body: template.body || "",
     createdAt: template.createdAt || new Date().toISOString(),
-    updatedAt: template.updatedAt || template.createdAt || new Date().toISOString()
+    updatedAt: template.updatedAt || template.createdAt || new Date().toISOString(),
+    sortOrder: Number.isFinite(Number(template.sortOrder)) ? Number(template.sortOrder) : Number.NaN
   };
 }
 
@@ -2115,7 +2360,8 @@ function fromDbTemplate(row) {
     title: row.title,
     body: row.body,
     createdAt: row.created_at,
-    updatedAt: row.updated_at
+    updatedAt: row.updated_at,
+    sortOrder: Number(row.sort_order)
   });
 }
 
@@ -2524,7 +2770,7 @@ function getMascotHelpAnswer(question) {
   }
 
   if (text.includes("型") || text.includes("テンプレ") || text.includes("使い回") || text.includes("使いまわ")) {
-    return "画面の「ES・ガクチカの型」によく使う文章を保存できます。企業詳細で型を選んで「型をコピー」を押すと、回答欄へ貼り付けられます。";
+    return "画面の「ES・ガクチカの型」によく使う文章を保存できます。企業詳細でES質問カードを開くと、回答欄の上に型の選択欄が出ます。「この回答に入れる」でその回答だけに追加できます。";
   }
 
   if (text.includes("締切") || text.includes("予定") || text.includes("カレンダー") || text.includes("面接")) {
@@ -2668,6 +2914,19 @@ function sortCompanyEntries(a, b) {
 
 function nextCompanySortOrder() {
   const orders = state.entries.map((entry) => entry.sortOrder).filter(Number.isFinite);
+  return orders.length > 0 ? Math.max(...orders) + 1 : Number.NaN;
+}
+
+function sortTemplates(a, b) {
+  const aOrder = Number.isFinite(a.sortOrder) ? a.sortOrder : Number.MAX_SAFE_INTEGER;
+  const bOrder = Number.isFinite(b.sortOrder) ? b.sortOrder : Number.MAX_SAFE_INTEGER;
+  if (aOrder !== bOrder) return aOrder - bOrder;
+
+  return new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0);
+}
+
+function nextTemplateSortOrder() {
+  const orders = state.templates.map((template) => template.sortOrder).filter(Number.isFinite);
   return orders.length > 0 ? Math.max(...orders) + 1 : Number.NaN;
 }
 

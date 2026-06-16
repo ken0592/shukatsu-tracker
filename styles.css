@@ -391,6 +391,51 @@ h2 {
   grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
 }
 
+.company-list.medium-view {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.company-medium-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfdff;
+}
+
+.company-medium-main {
+  display: flex;
+  align-items: flex-start;
+  min-width: 0;
+  gap: 10px;
+}
+
+.company-medium-main > div {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.company-medium-main strong {
+  overflow-wrap: anywhere;
+}
+
+.company-medium-details {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.company-medium-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .company-compact-card {
   display: flex;
   align-items: center;
@@ -452,12 +497,16 @@ h2 {
 }
 
 .company-card.is-reorder-pending,
-.company-compact-card.is-reorder-pending {
+.company-medium-card.is-reorder-pending,
+.company-compact-card.is-reorder-pending,
+.template-card.is-reorder-pending {
   border-color: #93b4f4;
 }
 
 .company-card.is-reordering,
-.company-compact-card.is-reordering {
+.company-medium-card.is-reordering,
+.company-compact-card.is-reordering,
+.template-card.is-reordering {
   position: relative;
   z-index: 2;
   border-color: var(--blue);
@@ -465,12 +514,14 @@ h2 {
   transform: scale(1.01);
 }
 
-.company-list.is-reordering-list [data-company-card]:not(.is-reordering) {
+.company-list.is-reordering-list [data-company-card]:not(.is-reordering),
+.template-list.is-reordering-list [data-template-card]:not(.is-reordering) {
   opacity: 0.72;
 }
 
 .company-list.is-reordering-list,
-.es-editor-list.is-reordering-list {
+.es-editor-list.is-reordering-list,
+.template-list.is-reordering-list {
   touch-action: none;
 }
 
@@ -642,6 +693,7 @@ h2 {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
 .template-card-heading {
@@ -651,14 +703,26 @@ h2 {
   gap: 10px;
 }
 
-.template-card-heading > div:first-child {
+.template-title-button {
   display: grid;
   gap: 6px;
   min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
 }
 
-.template-card-heading strong {
+.template-title-button strong {
   overflow-wrap: anywhere;
+}
+
+.template-title-meta {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .template-card-actions {
@@ -668,7 +732,11 @@ h2 {
   justify-content: flex-end;
 }
 
-.template-card p {
+.template-card-body[hidden] {
+  display: none;
+}
+
+.template-card-body p {
   margin: 0;
   color: #344054;
   font-size: 14px;
@@ -1212,7 +1280,14 @@ button:disabled {
 
 .celebration-overlay.is-rejection .celebration-card h2 {
   color: #991b1b;
+  font-size: clamp(28px, 5.4vw, 48px);
+  overflow-wrap: anywhere;
   text-shadow: 0 3px 0 #fed7aa, 0 10px 24px rgba(153, 27, 27, 0.26);
+}
+
+.celebration-overlay.is-rejection .celebration-title-line {
+  max-width: 100%;
+  white-space: normal;
 }
 
 .celebration-card p:not(.eyebrow) {
@@ -1374,6 +1449,10 @@ button:disabled {
   align-items: end;
 }
 
+.template-insert-row[hidden] {
+  display: none;
+}
+
 .template-insert-row label {
   flex: 1;
 }
@@ -1507,6 +1586,23 @@ button:disabled {
 .es-variant-pane {
   display: grid;
   gap: 10px;
+}
+
+.es-template-tools {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #dbe5f4;
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.es-template-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .small-button {
@@ -1650,9 +1746,17 @@ textarea {
     grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
   }
 
+  .company-list.medium-view {
+    grid-template-columns: 1fr;
+  }
+
   .company-compact-card {
     min-height: 52px;
     padding: 7px;
+  }
+
+  .es-template-tools {
+    grid-template-columns: 1fr;
   }
 
   .company-compact-card .company-icon {

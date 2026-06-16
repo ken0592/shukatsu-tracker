@@ -81,12 +81,19 @@ create table if not exists public.es_templates (
   kind text not null default 'ガクチカ',
   title text not null,
   body text not null default '',
+  sort_order double precision,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
+alter table public.es_templates
+  add column if not exists sort_order double precision;
+
 create index if not exists es_templates_user_id_updated_at_idx
   on public.es_templates (user_id, updated_at desc);
+
+create index if not exists es_templates_user_id_sort_order_idx
+  on public.es_templates (user_id, sort_order);
 
 alter table public.es_templates enable row level security;
 

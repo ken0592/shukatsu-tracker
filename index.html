@@ -119,6 +119,7 @@
                 </div>
                 <div class="view-toggle" role="group" aria-label="企業一覧の表示切り替え">
                   <button class="view-button active" data-view-mode="normal" type="button">通常</button>
+                  <button class="view-button" data-view-mode="medium" type="button">中型</button>
                   <button class="view-button" data-view-mode="compact" type="button">コンパクト</button>
                 </div>
               </div>
@@ -378,12 +379,12 @@
           <div class="detail-section-heading">
             <div>
               <h3>ES</h3>
-              <p>質問と回答を分けて管理します。</p>
+              <p>質問カードを開くと、保存した型をその回答に直接入れられます。</p>
             </div>
             <button class="secondary-button" id="addEsItemButton" type="button">＋ 質問を追加</button>
           </div>
 
-          <div class="template-insert-row">
+          <div class="template-insert-row" hidden>
             <label>
               保存した型を使う
               <select id="detailTemplateSelect">
