@@ -1144,24 +1144,7 @@ function findCardAfterPointer(container, selector, activeCard, pointerX, pointer
     .sort((a, b) => a.rect.top - b.rect.top || a.rect.left - b.rect.left);
 
   if (layout === "grid") {
-    const nearest = cards.reduce(
-      (closest, item) => {
-        const centerX = item.rect.left + item.rect.width / 2;
-        const centerY = item.rect.top + item.rect.height / 2;
-        const distance = Math.hypot(pointerX - centerX, pointerY - centerY);
-        return distance < closest.distance ? { ...item, distance } : closest;
-      },
-      { card: null, rect: null, distance: Number.POSITIVE_INFINITY }
-    );
-    if (!nearest.card) return null;
-
-    const rowThreshold = nearest.rect.height / 2;
-    const beforeTarget = pointerY < nearest.rect.top + rowThreshold || (
-      pointerY <= nearest.rect.bottom && pointerX < nearest.rect.left + nearest.rect.width / 2
-    );
-    if (beforeTarget) return nearest.card;
-    const nearestIndex = cards.findIndex((item) => item.card === nearest.card);
-    return cards[nearestIndex + 1]?.card || null;
+    return findGridCardAfterPointer(cards, pointerX, pointerY);
   }
 
   return cards.reduce(
@@ -1171,6 +1154,44 @@ function findCardAfterPointer(container, selector, activeCard, pointerX, pointer
     },
     { offset: Number.NEGATIVE_INFINITY, card: null }
   ).card;
+}
+
+function findGridCardAfterPointer(cards, pointerX, pointerY) {
+  const rows = groupGridRows(cards);
+  if (rows.length === 0) return null;
+
+  const targetRowIndex = rows.findIndex((row) => pointerY < row.centerY);
+  const rowIndex = targetRowIndex === -1 ? rows.length - 1 : targetRowIndex;
+  const row = rows[rowIndex];
+  const nextInRow = row.items.find((item) => pointerX < item.rect.left + item.rect.width / 2);
+
+  if (nextInRow) return nextInRow.card;
+  return rows[rowIndex + 1]?.items[0]?.card || null;
+}
+
+function groupGridRows(cards) {
+  const shortestHeight = cards.reduce((height, item) => Math.min(height, item.rect.height), Number.POSITIVE_INFINITY);
+  const rowTolerance = Math.max(12, Number.isFinite(shortestHeight) ? shortestHeight * 0.35 : 12);
+  const rows = [];
+
+  cards.forEach((item) => {
+    let row = rows.find((candidate) => Math.abs(candidate.top - item.rect.top) <= rowTolerance);
+    if (!row) {
+      row = { top: item.rect.top, bottom: item.rect.bottom, items: [] };
+      rows.push(row);
+    }
+    row.top = Math.min(row.top, item.rect.top);
+    row.bottom = Math.max(row.bottom, item.rect.bottom);
+    row.items.push(item);
+  });
+
+  return rows
+    .map((row) => ({
+      ...row,
+      centerY: row.top + (row.bottom - row.top) / 2,
+      items: row.items.sort((a, b) => a.rect.left - b.rect.left)
+    }))
+    .sort((a, b) => a.centerY - b.centerY);
 }
 
 function animateListReorder(container, selector, activeCard, mutate) {
