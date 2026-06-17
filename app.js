@@ -947,13 +947,11 @@ function moveReorderCard(container, selector, activeCard, nextCard, placeholder 
   const movingNode = placeholder || activeCard;
   if (!activeCard || !movingNode || isSameInsertionPoint(container, selector, activeCard, movingNode, nextCard)) return false;
 
-  animateListReorder(container, selector, activeCard, () => {
-    if (nextCard) {
-      container.insertBefore(movingNode, nextCard);
-    } else {
-      container.appendChild(movingNode);
-    }
-  });
+  if (nextCard) {
+    container.insertBefore(movingNode, nextCard);
+  } else {
+    container.appendChild(movingNode);
+  }
   return true;
 }
 
@@ -1223,30 +1221,6 @@ function groupGridRows(cards) {
     .sort((a, b) => a.centerY - b.centerY);
 }
 
-function animateListReorder(container, selector, activeCard, mutate) {
-  const items = Array.from(container.querySelectorAll(selector)).filter((item) => item !== activeCard);
-  const first = new Map(items.map((item) => [item, item.getBoundingClientRect()]));
-  mutate();
-  Array.from(container.querySelectorAll(selector)).forEach((item) => {
-    const before = first.get(item);
-    if (!before) return;
-    const after = item.getBoundingClientRect();
-    const deltaX = before.left - after.left;
-    const deltaY = before.top - after.top;
-    if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) return;
-
-    item.style.transition = "none";
-    item.style.transform = `translate3d(${deltaX}px, ${deltaY}px, 0)`;
-    requestAnimationFrame(() => {
-      item.style.transition = "transform 220ms cubic-bezier(.2,.8,.2,1)";
-      item.style.transform = "";
-      window.setTimeout(() => {
-        item.style.transition = "";
-      }, 240);
-    });
-  });
-}
-
 function beginFloatingReorder(dragState, container) {
   if (!dragState.card || dragState.placeholder) return;
 
@@ -1269,7 +1243,7 @@ function beginFloatingReorder(dragState, container) {
   dragState.card.style.height = `${rect.height}px`;
   dragState.card.style.zIndex = "1000";
   dragState.card.style.pointerEvents = "none";
-  dragState.card.style.transition = "transform 90ms linear, box-shadow 160ms ease, opacity 160ms ease";
+  dragState.card.style.transition = "box-shadow 160ms ease, opacity 160ms ease";
   updateFloatingReorder(dragState, { clientX: dragState.startX, clientY: dragState.startY });
   document.body.classList.add("is-reordering-active");
 }
