@@ -116,6 +116,8 @@ const els = {
   deadlineCount: document.querySelector("#deadlineCount"),
   eventCount: document.querySelector("#eventCount"),
   activeCount: document.querySelector("#activeCount"),
+  todayActionCount: document.querySelector("#todayActionCount"),
+  todayActionList: document.querySelector("#todayActionList"),
   deadlineList: document.querySelector("#deadlineList"),
   eventList: document.querySelector("#eventList"),
   companyList: document.querySelector("#companyList"),
@@ -1793,6 +1795,7 @@ function render() {
   renderMode();
   renderDailyQuote();
   renderSummary();
+  renderTodayActions();
   renderDeadlineList();
   renderEventList();
   renderFilterOptions();
@@ -1847,6 +1850,28 @@ function renderSummary() {
   els.deadlineCount.textContent = getUpcomingDeadlines().length;
   els.eventCount.textContent = getUpcomingEvents().length;
   els.activeCount.textContent = state.entries.filter(isActive).length;
+}
+
+function renderTodayActions() {
+  const actions = getTodayActions(5);
+  els.todayActionCount.textContent = `${actions.length}件`;
+
+  if (actions.length === 0) {
+    els.todayActionList.innerHTML = emptyState("今日は急ぎのタスクはありません。気になる企業を1社だけ確認できたら十分です。");
+    return;
+  }
+
+  els.todayActionList.innerHTML = actions
+    .map(({ entry, action }) => {
+      return `
+        <button class="today-action-item ${action.tone}" data-detail-id="${escapeAttribute(entry.id)}" type="button">
+          <span class="today-action-company">${escapeHtml(entry.companyName)}</span>
+          <strong>${escapeHtml(action.label)}</strong>
+          <span>${escapeHtml(action.meta)}</span>
+        </button>
+      `;
+    })
+    .join("");
 }
 
 function renderDeadlineList() {
@@ -1925,7 +1950,7 @@ function renderCompanyList() {
     els.companyList.innerHTML = entries
       .map((entry) => {
         return `
-          <article class="company-compact-card" data-company-card data-company-id="${escapeAttribute(entry.id)}" title="${escapeAttribute(entry.companyName)}の詳細を開く">
+          <article class="company-compact-card" data-company-card data-company-id="${escapeAttribute(entry.id)}" title="${escapeAttribute(companyCardTitle(entry))}">
             <button class="company-compact-main" data-detail-id="${escapeAttribute(entry.id)}" type="button">
               ${companyIconMarkup(entry)}
               <span>${escapeHtml(entry.companyName)}</span>
@@ -1959,6 +1984,7 @@ function renderCompanyList() {
               ${entry.eventDate ? `<span>${formatDate(entry.eventDate)} 予定</span>` : ""}
               <span>志望度 ${escapeHtml(entry.priority)}</span>
             </div>
+            ${nextActionMarkup(entry, "compact")}
             <div class="company-medium-actions">
               <button class="compact-reorder-button" data-company-reorder-handle type="button" aria-label="${escapeAttribute(entry.companyName)}を並べ替え">↕</button>
               <button class="detail-button" data-detail-id="${entry.id}" type="button">詳細</button>
@@ -2000,6 +2026,7 @@ function renderCompanyList() {
             ${entry.deadline ? `<span>${formatDate(entry.deadline)} 締切</span>` : ""}
             ${entry.eventDate ? `<span>${formatDate(entry.eventDate)} 予定</span>` : ""}
           </div>
+          ${nextActionMarkup(entry)}
           ${entry.mypageId ? `<div class="credential-line"><strong>マイページID</strong><span>${escapeHtml(entry.mypageId)}</span></div>` : ""}
           ${entry.officialUrl ? `<a class="mypage-link" href="${escapeAttribute(entry.officialUrl)}" target="_blank" rel="noopener noreferrer">企業公式サイトを開く</a>` : ""}
           ${entry.mypageUrl ? `<a class="mypage-link" href="${escapeAttribute(entry.mypageUrl)}" target="_blank" rel="noopener noreferrer">企業マイページを開く</a>` : ""}
@@ -2877,6 +2904,114 @@ function getMascotHelpAnswer(question) {
   return "まずは「＋追加」で企業を登録して、締切日・次の予定日・ステータスを入れるのがおすすめ。詳しく書きたい企業は「詳細」からESや面接メモを編集できます。";
 }
 
+function getTodayActions(limit = 5) {
+  return state.entries
+    .filter(isActive)
+    .map((entry) => ({ entry, action: getNextAction(entry) }))
+    .filter(({ action }) => action)
+    .sort((a, b) => {
+      if (a.action.rank !== b.action.rank) return a.action.rank - b.action.rank;
+      if (a.action.dateKey !== b.action.dateKey) return a.action.dateKey.localeCompare(b.action.dateKey);
+      const priorityDiff = priorityScore(a.entry.priority) - priorityScore(b.entry.priority);
+      if (priorityDiff !== 0) return priorityDiff;
+      return a.entry.companyName.localeCompare(b.entry.companyName, "ja");
+    })
+    .slice(0, limit);
+}
+
+function getNextAction(entry) {
+  if (isFinished(entry)) return null;
+
+  const candidates = [];
+  const deadlineDays = daysUntil(entry.deadline);
+  const eventDays = daysUntil(entry.eventDate);
+
+  if (Number.isFinite(deadlineDays)) {
+    if (deadlineDays < 0) {
+      candidates.push(createNextAction("締切超過。提出状況を確認", "danger", `${Math.abs(deadlineDays)}日超過`, 0, entry.deadline));
+    } else if (deadlineDays === 0) {
+      candidates.push(createNextAction("今日締切。最優先で提出", "danger", "今日締切", 1, entry.deadline));
+    } else if (deadlineDays <= 3) {
+      candidates.push(createNextAction("締切が近い。ES・応募を仕上げる", "danger", `${deadlineDays}日後に締切`, 2, entry.deadline));
+    } else if (deadlineDays <= 7) {
+      candidates.push(createNextAction("締切前に内容を確認", "warning", `${deadlineDays}日後に締切`, 4, entry.deadline));
+    }
+  }
+
+  if (Number.isFinite(eventDays)) {
+    if (eventDays < 0) {
+      candidates.push(createNextAction("予定日を更新", "warning", `${Math.abs(eventDays)}日経過`, 5, entry.eventDate));
+    } else if (eventDays === 0) {
+      candidates.push(createNextAction(`${entry.eventType}は今日。開始時間を確認`, "danger", "今日の予定", 1, entry.eventDate));
+    } else if (eventDays <= 3) {
+      candidates.push(createNextAction(`${entry.eventType}の準備`, "warning", `${eventDays}日後の予定`, 3, entry.eventDate));
+    } else if (eventDays <= 7) {
+      candidates.push(createNextAction("面接・説明会のメモを準備", "info", `${eventDays}日後の予定`, 6, entry.eventDate));
+    }
+  }
+
+  if (candidates.length > 0) {
+    return candidates.sort((a, b) => a.rank - b.rank || a.dateKey.localeCompare(b.dateKey))[0];
+  }
+
+  if (!entryHasEsContent(entry) && ["気になる", "応募予定", "応募済み", "ES提出済み"].includes(entry.status)) {
+    return createNextAction("ES質問・回答をメモ", "info", "詳細ページで作成", 8);
+  }
+
+  if (!entry.deadline && !entry.eventDate) {
+    return createNextAction("次の締切か予定日を入れる", "info", "日付未設定", 9);
+  }
+
+  if (entry.status === "結果待ち") {
+    return createNextAction("結果待ち。連絡が来たら予定を追加", "info", "待機中", 10);
+  }
+
+  if (entry.status === "気になる") {
+    return createNextAction("応募するか判断", "info", "気になる企業", 11);
+  }
+
+  return createNextAction("マイページを確認", "info", "次の動きを確認", 12);
+}
+
+function createNextAction(label, tone, meta, rank, dateKey = "9999-12-31") {
+  return {
+    label,
+    tone,
+    meta,
+    rank,
+    dateKey: dateKey || "9999-12-31"
+  };
+}
+
+function nextActionMarkup(entry, variant = "normal") {
+  const action = getNextAction(entry);
+  if (!action) return "";
+
+  return `
+    <div class="next-action ${action.tone} ${variant === "compact" ? "small" : ""}">
+      <span>次</span>
+      <strong>${escapeHtml(action.label)}</strong>
+      <small>${escapeHtml(action.meta)}</small>
+    </div>
+  `;
+}
+
+function companyCardTitle(entry) {
+  const action = getNextAction(entry);
+  return action ? `${entry.companyName} / 次: ${action.label}` : `${entry.companyName}の詳細を開く`;
+}
+
+function entryHasEsContent(entry) {
+  return normalizeEsItems(entry.esItems, entry.esContent).some((item) => {
+    return item.question.trim() || item.variants.some((variant) => variant.label.trim() || variant.answer.trim());
+  });
+}
+
+function priorityScore(priority) {
+  const scores = { 高: 0, 中: 1, 未定: 2, 低: 3 };
+  return scores[priority] ?? 4;
+}
+
 function getUpcomingDeadlines() {
   return state.entries
     .filter((entry) => entry.deadline && isWithinDays(entry.deadline, 14))
@@ -2968,10 +3103,16 @@ function isFinished(entry) {
 }
 
 function isWithinDays(dateValue, days) {
+  const diff = daysUntil(dateValue);
+  return diff >= 0 && diff <= days;
+}
+
+function daysUntil(dateValue) {
+  if (!dateValue) return Number.POSITIVE_INFINITY;
   const today = startOfDay(new Date());
   const target = startOfDay(new Date(`${dateValue}T00:00:00`));
-  const diff = (target - today) / 86400000;
-  return diff >= 0 && diff <= days;
+  const diff = Math.round((target - today) / 86400000);
+  return Number.isFinite(diff) ? diff : Number.POSITIVE_INFINITY;
 }
 
 function sortByClosestDate(a, b) {
