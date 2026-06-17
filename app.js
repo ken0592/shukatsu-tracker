@@ -2,7 +2,9 @@ const storageKey = "shukatsu-tracker-entries";
 const templateStorageKey = "shukatsu-tracker-templates";
 const mascotPositionKey = "shukatsu-tracker-mascot-position";
 const companyViewModeStorageKey = "shukatsu-tracker-company-view-mode";
+const actionScopeStorageKey = "shukatsu-tracker-action-scope";
 const companyViewModes = ["normal", "medium", "compact"];
+const actionScopes = ["today", "week"];
 const activeStatuses = ["気になる", "応募予定", "応募済み", "ES提出済み", "Webテスト", "一次面接", "二次面接", "最終面接", "結果待ち", "選考通過", "インターン選考通過", "インターン参加決定"];
 const finishedStatuses = ["内定", "落選", "辞退", "参加済み"];
 const celebrationStatuses = ["内定", "選考通過", "インターン選考通過", "インターン参加決定"];
@@ -52,6 +54,9 @@ const state = {
   companyViewMode: companyViewModes.includes(localStorage.getItem(companyViewModeStorageKey))
     ? localStorage.getItem(companyViewModeStorageKey)
     : "normal",
+  actionScope: actionScopes.includes(localStorage.getItem(actionScopeStorageKey))
+    ? localStorage.getItem(actionScopeStorageKey)
+    : "today",
   mode: hasCloudConfig ? "cloud" : "local",
   session: null,
   loading: true,
@@ -116,6 +121,7 @@ const els = {
   deadlineCount: document.querySelector("#deadlineCount"),
   eventCount: document.querySelector("#eventCount"),
   activeCount: document.querySelector("#activeCount"),
+  todayActionTitle: document.querySelector("#todayActionTitle"),
   todayActionCount: document.querySelector("#todayActionCount"),
   todayActionList: document.querySelector("#todayActionList"),
   deadlineList: document.querySelector("#deadlineList"),
@@ -133,6 +139,7 @@ const els = {
   clearFiltersButton: document.querySelector("#clearFiltersButton"),
   filterButtons: document.querySelectorAll(".filter-button"),
   viewModeButtons: document.querySelectorAll(".view-button"),
+  actionScopeButtons: document.querySelectorAll(".today-scope-button"),
   mascot: document.querySelector("#mascot"),
   mascotBubble: document.querySelector("#mascotBubble"),
   celebrationOverlay: document.querySelector("#celebrationOverlay"),
@@ -346,6 +353,12 @@ function bindEvents() {
   els.viewModeButtons.forEach((button) => {
     button.addEventListener("click", () => {
       setCompanyViewMode(button.dataset.viewMode);
+    });
+  });
+
+  els.actionScopeButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      setActionScope(button.dataset.actionScope);
     });
   });
 
@@ -1853,11 +1866,18 @@ function renderSummary() {
 }
 
 function renderTodayActions() {
-  const actions = getTodayActions(5);
+  const isWeek = state.actionScope === "week";
+  const actions = getTodayActions(isWeek ? 8 : 5);
+  els.todayActionTitle.textContent = isWeek ? "1週間以内にやること" : "今日やること";
   els.todayActionCount.textContent = `${actions.length}件`;
+  updateActionScopeButtons();
 
   if (actions.length === 0) {
-    els.todayActionList.innerHTML = emptyState("今日は急ぎのタスクはありません。気になる企業を1社だけ確認できたら十分です。");
+    els.todayActionList.innerHTML = emptyState(
+      isWeek
+        ? "1週間以内の急ぎタスクはありません。余裕があるうちに気になる企業を整理しておくと強いです。"
+        : "今日は急ぎのタスクはありません。気になる企業を1社だけ確認できたら十分です。"
+    );
     return;
   }
 
@@ -1872,6 +1892,18 @@ function renderTodayActions() {
       `;
     })
     .join("");
+}
+
+function setActionScope(scope) {
+  state.actionScope = actionScopes.includes(scope) ? scope : "today";
+  localStorage.setItem(actionScopeStorageKey, state.actionScope);
+  renderTodayActions();
+}
+
+function updateActionScopeButtons() {
+  els.actionScopeButtons.forEach((button) => {
+    button.classList.toggle("active", button.dataset.actionScope === state.actionScope);
+  });
 }
 
 function renderDeadlineList() {
@@ -2909,6 +2941,7 @@ function getTodayActions(limit = 5) {
     .filter(isActive)
     .map((entry) => ({ entry, action: getNextAction(entry) }))
     .filter(({ action }) => action)
+    .filter(({ action }) => matchesActionScope(action))
     .sort((a, b) => {
       if (a.action.rank !== b.action.rank) return a.action.rank - b.action.rank;
       if (a.action.dateKey !== b.action.dateKey) return a.action.dateKey.localeCompare(b.action.dateKey);
@@ -2928,25 +2961,25 @@ function getNextAction(entry) {
 
   if (Number.isFinite(deadlineDays)) {
     if (deadlineDays < 0) {
-      candidates.push(createNextAction("締切超過。提出状況を確認", "danger", `${Math.abs(deadlineDays)}日超過`, 0, entry.deadline));
+      candidates.push(createNextAction("締切超過。提出状況を確認", "danger", `${Math.abs(deadlineDays)}日超過`, 0, entry.deadline, deadlineDays));
     } else if (deadlineDays === 0) {
-      candidates.push(createNextAction("今日締切。最優先で提出", "danger", "今日締切", 1, entry.deadline));
+      candidates.push(createNextAction("今日締切。最優先で提出", "danger", "今日締切", 1, entry.deadline, deadlineDays));
     } else if (deadlineDays <= 3) {
-      candidates.push(createNextAction("締切が近い。ES・応募を仕上げる", "danger", `${deadlineDays}日後に締切`, 2, entry.deadline));
+      candidates.push(createNextAction("締切が近い。ES・応募を仕上げる", "danger", `${deadlineDays}日後に締切`, 2, entry.deadline, deadlineDays));
     } else if (deadlineDays <= 7) {
-      candidates.push(createNextAction("締切前に内容を確認", "warning", `${deadlineDays}日後に締切`, 4, entry.deadline));
+      candidates.push(createNextAction("締切前に内容を確認", "warning", `${deadlineDays}日後に締切`, 4, entry.deadline, deadlineDays));
     }
   }
 
   if (Number.isFinite(eventDays)) {
     if (eventDays < 0) {
-      candidates.push(createNextAction("予定日を更新", "warning", `${Math.abs(eventDays)}日経過`, 5, entry.eventDate));
+      candidates.push(createNextAction("予定日を更新", "warning", `${Math.abs(eventDays)}日経過`, 5, entry.eventDate, eventDays));
     } else if (eventDays === 0) {
-      candidates.push(createNextAction(`${entry.eventType}は今日。開始時間を確認`, "danger", "今日の予定", 1, entry.eventDate));
+      candidates.push(createNextAction(`${entry.eventType}は今日。開始時間を確認`, "danger", "今日の予定", 1, entry.eventDate, eventDays));
     } else if (eventDays <= 3) {
-      candidates.push(createNextAction(`${entry.eventType}の準備`, "warning", `${eventDays}日後の予定`, 3, entry.eventDate));
+      candidates.push(createNextAction(`${entry.eventType}の準備`, "warning", `${eventDays}日後の予定`, 3, entry.eventDate, eventDays));
     } else if (eventDays <= 7) {
-      candidates.push(createNextAction("面接・説明会のメモを準備", "info", `${eventDays}日後の予定`, 6, entry.eventDate));
+      candidates.push(createNextAction("面接・説明会のメモを準備", "info", `${eventDays}日後の予定`, 6, entry.eventDate, eventDays));
     }
   }
 
@@ -2955,32 +2988,42 @@ function getNextAction(entry) {
   }
 
   if (!entryHasEsContent(entry) && ["気になる", "応募予定", "応募済み", "ES提出済み"].includes(entry.status)) {
-    return createNextAction("ES質問・回答をメモ", "info", "詳細ページで作成", 8);
+    return createNextAction("ES質問・回答をメモ", "info", "詳細ページで作成", 8, "", Number.POSITIVE_INFINITY, true);
   }
 
   if (!entry.deadline && !entry.eventDate) {
-    return createNextAction("次の締切か予定日を入れる", "info", "日付未設定", 9);
+    return createNextAction("次の締切か予定日を入れる", "info", "日付未設定", 9, "", Number.POSITIVE_INFINITY, true);
   }
 
   if (entry.status === "結果待ち") {
-    return createNextAction("結果待ち。連絡が来たら予定を追加", "info", "待機中", 10);
+    return createNextAction("結果待ち。連絡が来たら予定を追加", "info", "待機中", 10, "", Number.POSITIVE_INFINITY, true);
   }
 
   if (entry.status === "気になる") {
-    return createNextAction("応募するか判断", "info", "気になる企業", 11);
+    return createNextAction("応募するか判断", "info", "気になる企業", 11, "", Number.POSITIVE_INFINITY, true);
   }
 
-  return createNextAction("マイページを確認", "info", "次の動きを確認", 12);
+  return createNextAction("マイページを確認", "info", "次の動きを確認", 12, "", Number.POSITIVE_INFINITY, true);
 }
 
-function createNextAction(label, tone, meta, rank, dateKey = "9999-12-31") {
+function createNextAction(label, tone, meta, rank, dateKey = "9999-12-31", days = Number.POSITIVE_INFINITY, isGeneral = false) {
   return {
     label,
     tone,
     meta,
     rank,
-    dateKey: dateKey || "9999-12-31"
+    dateKey: dateKey || "9999-12-31",
+    days,
+    isGeneral
   };
+}
+
+function matchesActionScope(action) {
+  if (state.actionScope === "week") {
+    return action.days <= 7 || action.isGeneral;
+  }
+
+  return action.days <= 0;
 }
 
 function nextActionMarkup(entry, variant = "normal") {

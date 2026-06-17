@@ -198,7 +198,40 @@ h2 {
   gap: 12px;
 }
 
-.today-panel-heading > span {
+.today-panel-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.today-scope-toggle {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 8px;
+  background: #eef3fa;
+}
+
+.today-scope-button {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.today-scope-button.active {
+  background: #ffffff;
+  color: var(--blue-dark);
+  box-shadow: 0 1px 6px rgba(18, 38, 63, 0.08);
+}
+
+.today-panel-tools > span {
   color: var(--muted);
   font-size: 13px;
   font-weight: 700;
@@ -1868,6 +1901,11 @@ textarea {
   }
 
   .today-panel-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .today-panel-tools {
     align-items: flex-start;
     flex-direction: column;
   }
