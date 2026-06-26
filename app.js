@@ -5,6 +5,7 @@ const companyViewModeStorageKey = "shukatsu-tracker-company-view-mode";
 const actionScopeStorageKey = "shukatsu-tracker-action-scope";
 const companyViewModes = ["normal", "medium", "compact"];
 const actionScopes = ["today", "week"];
+const detailTabs = ["basic", "es"];
 const activeStatuses = ["気になる", "応募予定", "応募済み", "ES提出済み", "Webテスト", "一次面接", "二次面接", "最終面接", "結果待ち", "選考通過", "インターン選考通過", "インターン参加決定"];
 const finishedStatuses = ["内定", "落選", "辞退", "参加済み"];
 const celebrationStatuses = ["内定", "選考通過", "インターン選考通過", "インターン参加決定"];
@@ -64,6 +65,7 @@ const state = {
   cloudTemplateSortOrderAvailable: true,
   editingId: null,
   detailEditingId: null,
+  detailTab: "basic",
   editingTemplateId: null,
   calendarYear: initialCalendarDate.getFullYear(),
   calendarMonth: initialCalendarDate.getMonth()
@@ -101,6 +103,10 @@ const els = {
   closeDetailButton: document.querySelector("#closeDetailButton"),
   detailCompanyTitle: document.querySelector("#detailCompanyTitle"),
   detailCompanyMeta: document.querySelector("#detailCompanyMeta"),
+  detailTabs: document.querySelectorAll("[data-detail-tab]"),
+  detailPanels: document.querySelectorAll("[data-detail-panel]"),
+  detailTabPanels: document.querySelector("#detailTabPanels"),
+  detailInfoSummary: document.querySelector("#detailInfoSummary"),
   detailEsList: document.querySelector("#detailEsList"),
   addEsItemButton: document.querySelector("#addEsItemButton"),
   detailTemplateSelect: document.querySelector("#detailTemplateSelect"),
@@ -212,6 +218,12 @@ const templateDragState = {
   isDragging: false
 };
 
+const detailSwipeState = {
+  pointerId: null,
+  startX: 0,
+  startY: 0
+};
+
 bindEvents();
 init();
 
@@ -256,6 +268,12 @@ function bindEvents() {
   });
   els.closeDetailButton.addEventListener("click", closeCompanyDetail);
   els.companyDetailForm.addEventListener("submit", handleDetailSubmit);
+  els.detailTabs.forEach((tab) => {
+    tab.addEventListener("click", () => setDetailTab(tab.dataset.detailTab));
+  });
+  els.detailTabPanels.addEventListener("pointerdown", handleDetailSwipePointerDown);
+  els.detailTabPanels.addEventListener("pointerup", handleDetailSwipePointerUp);
+  els.detailTabPanels.addEventListener("pointercancel", resetDetailSwipe);
   els.addEsItemButton.addEventListener("click", () => addDetailEsItem());
   els.insertTemplateButton.addEventListener("click", insertSelectedTemplateIntoDetail);
   els.copyTemplateButton.addEventListener("click", copySelectedTemplate);
@@ -687,8 +705,10 @@ function openCompanyDetail(id) {
   els.detailInterviewNotesInput.value = values.interviewNotes;
   els.detailMemoInput.value = values.memo;
   els.detailEsSearchInput.value = "";
+  renderDetailInfoSummary(values);
   renderDetailEsItems(values.esItems.length > 0 ? values.esItems : [createEsItem()]);
   renderTemplateOptions();
+  setDetailTab(state.detailTab);
 
   if (typeof els.companyDetailDialog.showModal === "function") {
     els.companyDetailDialog.showModal();
@@ -702,7 +722,96 @@ function closeCompanyDetail() {
   els.companyDetailForm.reset();
   els.detailEsSearchInput.value = "";
   els.detailEsList.textContent = "";
+  els.detailInfoSummary.textContent = "";
   els.companyDetailDialog.close();
+}
+
+function setDetailTab(tabName) {
+  const nextTab = detailTabs.includes(tabName) ? tabName : "basic";
+  state.detailTab = nextTab;
+
+  els.detailTabs.forEach((tab) => {
+    const active = tab.dataset.detailTab === nextTab;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", String(active));
+    tab.tabIndex = active ? 0 : -1;
+  });
+
+  els.detailPanels.forEach((panel) => {
+    const active = panel.dataset.detailPanel === nextTab;
+    panel.classList.toggle("active", active);
+    panel.hidden = !active;
+  });
+}
+
+function renderDetailInfoSummary(entry) {
+  const officialUrl = normalizeExternalUrl(entry.officialUrl);
+  const mypageUrl = normalizeExternalUrl(entry.mypageUrl);
+  const items = [
+    ["ステータス", entry.status],
+    ["種類", entry.trackType],
+    ["志望度", entry.priority],
+    ["締切", entry.deadline ? formatDate(entry.deadline) : "未設定"],
+    ["次の予定", entry.eventDate ? `${formatDate(entry.eventDate)} / ${entry.eventType}` : "未設定"],
+    ["業種", entry.industry || "未設定"],
+    ["マイページID", entry.mypageId || "未登録"]
+  ];
+
+  els.detailInfoSummary.innerHTML = [
+    ...items.map(([label, value]) => detailInfoItem(label, value)),
+    officialUrl ? detailInfoLink("企業公式サイト", officialUrl, "公式サイトを開く") : detailInfoItem("企業公式サイト", "未登録"),
+    mypageUrl ? detailInfoLink("企業マイページ", mypageUrl, "マイページを開く") : detailInfoItem("企業マイページ", "未登録")
+  ].join("");
+}
+
+function detailInfoItem(label, value) {
+  return `
+    <div class="detail-info-item">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+    </div>
+  `;
+}
+
+function detailInfoLink(label, url, text) {
+  return `
+    <div class="detail-info-item">
+      <span>${escapeHtml(label)}</span>
+      <a class="detail-info-link" href="${escapeAttribute(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(text)}</a>
+    </div>
+  `;
+}
+
+function handleDetailSwipePointerDown(event) {
+  if (event.pointerType === "mouse") return;
+  if (event.target.closest("input, textarea, select, button, a")) return;
+
+  detailSwipeState.pointerId = event.pointerId;
+  detailSwipeState.startX = event.clientX;
+  detailSwipeState.startY = event.clientY;
+  capturePointer(els.detailTabPanels, event.pointerId);
+}
+
+function handleDetailSwipePointerUp(event) {
+  if (detailSwipeState.pointerId !== event.pointerId) return;
+
+  const deltaX = event.clientX - detailSwipeState.startX;
+  const deltaY = event.clientY - detailSwipeState.startY;
+  const isHorizontalSwipe = Math.abs(deltaX) > 56 && Math.abs(deltaX) > Math.abs(deltaY) * 1.4;
+
+  if (isHorizontalSwipe) {
+    setDetailTab(deltaX < 0 ? "es" : "basic");
+  }
+
+  resetDetailSwipe(event);
+}
+
+function resetDetailSwipe(event) {
+  releasePointer(els.detailTabPanels, detailSwipeState.pointerId);
+  detailSwipeState.pointerId = null;
+  detailSwipeState.startX = 0;
+  detailSwipeState.startY = 0;
+  event?.preventDefault?.();
 }
 
 function renderDetailEsItems(items) {
@@ -1998,6 +2107,13 @@ function renderCompanyList() {
   if (isMedium) {
     els.companyList.innerHTML = entries
       .map((entry) => {
+        const officialUrl = normalizeExternalUrl(entry.officialUrl);
+        const mypageUrl = normalizeExternalUrl(entry.mypageUrl);
+        const mediumLinks = [
+          officialUrl ? `<a class="mypage-link medium-link" href="${escapeAttribute(officialUrl)}" target="_blank" rel="noopener noreferrer">公式</a>` : "",
+          mypageUrl ? `<a class="mypage-link medium-link" href="${escapeAttribute(mypageUrl)}" target="_blank" rel="noopener noreferrer">マイページ</a>` : ""
+        ].filter(Boolean).join("");
+
         return `
           <article class="company-medium-card" data-company-card data-company-id="${escapeAttribute(entry.id)}">
             <div class="company-medium-main">
@@ -2016,6 +2132,7 @@ function renderCompanyList() {
               ${entry.eventDate ? `<span>${formatDate(entry.eventDate)} 予定</span>` : ""}
               <span>志望度 ${escapeHtml(entry.priority)}</span>
             </div>
+            ${mediumLinks ? `<div class="company-medium-links">${mediumLinks}</div>` : ""}
             ${nextActionMarkup(entry, "compact")}
             <div class="company-medium-actions">
               <button class="compact-reorder-button" data-company-reorder-handle type="button" aria-label="${escapeAttribute(entry.companyName)}を並べ替え">↕</button>

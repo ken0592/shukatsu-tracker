@@ -538,6 +538,12 @@ h2 {
   font-weight: 700;
 }
 
+.company-medium-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .company-medium-actions {
   display: flex;
   flex-wrap: wrap;
@@ -817,6 +823,16 @@ h2 {
   font-size: 14px;
   font-weight: 700;
   text-decoration: none;
+}
+
+.mypage-link.medium-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: #e8f0ff;
+  font-size: 12px;
 }
 
 .mypage-link:hover {
@@ -1622,6 +1638,89 @@ button:disabled {
   font-weight: 700;
 }
 
+.detail-tabs {
+  position: sticky;
+  top: 76px;
+  z-index: 2;
+  display: flex;
+  gap: 6px;
+  margin: -2px -20px 0;
+  padding: 10px 20px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(12px);
+}
+
+.detail-tab {
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: #eef3fa;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.detail-tab.active {
+  border-color: #b9cdf8;
+  background: var(--blue);
+  color: #fff;
+}
+
+.detail-tab-panel {
+  display: grid;
+  gap: 14px;
+  animation: softOpen 140ms ease;
+}
+
+.detail-tab-panel[hidden] {
+  display: none;
+}
+
+.detail-info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.detail-info-item {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #dbe5f4;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.detail-info-item span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.detail-info-item strong,
+.detail-info-link {
+  min-width: 0;
+  color: #344054;
+  font-size: 14px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.detail-info-link {
+  color: var(--blue);
+  text-decoration: none;
+}
+
+.detail-info-link:hover {
+  text-decoration: underline;
+}
+
 .detail-section {
   display: grid;
   gap: 12px;
@@ -1947,6 +2046,14 @@ textarea {
   .form-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .detail-tabs {
+    top: 88px;
+  }
+
+  .detail-info-grid {
+    grid-template-columns: 1fr;
   }
 
   .filter-row {
