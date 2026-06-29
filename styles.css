@@ -1128,6 +1128,12 @@ button:disabled {
   font-size: 13px;
 }
 
+.entry-delete-button {
+  min-height: 38px;
+  padding: 0 14px;
+  font-weight: 700;
+}
+
 .calendar {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));

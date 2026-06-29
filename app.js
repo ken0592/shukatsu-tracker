@@ -74,7 +74,7 @@ const state = {
 const els = {
   openFormButton: document.querySelector("#openFormButton"),
   closeFormButton: document.querySelector("#closeFormButton"),
-  clearSampleButton: document.querySelector("#clearSampleButton"),
+  deleteEntryButton: document.querySelector("#deleteEntryButton"),
   signOutButton: document.querySelector("#signOutButton"),
   signInButton: document.querySelector("#signInButton"),
   signUpButton: document.querySelector("#signUpButton"),
@@ -242,7 +242,9 @@ function bindEvents() {
     els.entryDialog.close();
   });
 
-  els.clearSampleButton.addEventListener("click", handleClearEntries);
+  els.deleteEntryButton.addEventListener("click", () => {
+    if (state.editingId) handleDeleteEntry(state.editingId);
+  });
   els.entryForm.addEventListener("submit", handleEntrySubmit);
   els.authForm.addEventListener("submit", (event) => event.preventDefault());
   els.signInButton.addEventListener("click", handleSignIn);
@@ -643,7 +645,15 @@ function handleEditEntry(id) {
 }
 
 async function handleDeleteEntry(id) {
-  const shouldDelete = window.confirm("このデータを削除しますか？");
+  const entryToDelete = state.entries.find((entry) => entry.id === id);
+  if (!entryToDelete) {
+    showToast("削除する企業が見つかりません。");
+    return;
+  }
+
+  const shouldDelete = window.confirm(
+    `「${entryToDelete.companyName}」を削除しますか？\nこの操作は元に戻せません。`
+  );
   if (!shouldDelete) return;
 
   if (state.mode === "cloud") {
@@ -661,29 +671,7 @@ async function handleDeleteEntry(id) {
     els.entryDialog.close();
   }
   render();
-}
-
-async function handleClearEntries() {
-  const shouldClear = window.confirm("登録したデータをすべて削除しますか？");
-  if (!shouldClear) return;
-
-  if (state.mode === "cloud") {
-    const ids = state.entries.map((entry) => entry.id);
-    if (ids.length > 0) {
-      const { error } = await supabaseClient.from("entries").delete().in("id", ids);
-      if (error) {
-        showToast(error.message);
-        return;
-      }
-    }
-  }
-
-  state.entries = [];
-  if (state.mode === "local") saveLocalEntries(state.entries);
-  render();
-  resetEntryForm();
-  els.entryDialog.close();
-  showToast("削除しました。");
+  showToast(`「${entryToDelete.companyName}」を削除しました。`);
 }
 
 function openCompanyDetail(id) {
@@ -2317,6 +2305,7 @@ function openEntryDialog(entry = null) {
   state.editingId = entry?.id || null;
   els.entryFormTitle.textContent = entry ? "企業・選考を編集" : "企業・選考を追加";
   els.saveEntryButton.textContent = entry ? "更新" : "保存";
+  els.deleteEntryButton.hidden = !entry;
   fillEntryForm(entry);
 
   if (typeof els.entryDialog.showModal === "function") {
@@ -2355,6 +2344,7 @@ function resetEntryForm() {
   els.entryForm.reset();
   els.entryFormTitle.textContent = "企業・選考を追加";
   els.saveEntryButton.textContent = "保存";
+  els.deleteEntryButton.hidden = true;
 }
 
 function renderFilterOptions() {
