@@ -86,6 +86,10 @@
             <span class="summary-label">選考中</span>
             <strong id="activeCount">0</strong>
           </article>
+          <article class="summary-item">
+            <span class="summary-label">ゴミ箱</span>
+            <strong id="trashCount">0</strong>
+          </article>
         </section>
 
         <section class="today-panel" aria-label="今日やること">
@@ -133,6 +137,7 @@
                   <button class="filter-button" data-filter="インターン" type="button">インターン</button>
                   <button class="filter-button" data-filter="早期選考" type="button">早期</button>
                   <button class="filter-button" data-filter="本選考" type="button">本選考</button>
+                  <button class="filter-button" data-filter="trash" type="button">ゴミ箱</button>
                 </div>
                 <div class="view-toggle" role="group" aria-label="企業一覧の表示切り替え">
                   <button class="view-button active" data-view-mode="normal" type="button">通常</button>
@@ -140,6 +145,11 @@
                   <button class="view-button" data-view-mode="compact" type="button">コンパクト</button>
                 </div>
               </div>
+            </div>
+            <div class="track-guide" aria-label="選考タイプの使い分け">
+              <span><strong>インターン</strong>参加前の応募・選考</span>
+              <span><strong>早期選考</strong>インターン後などの早い本選考</span>
+              <span><strong>本選考</strong>内定に向けた通常選考</span>
             </div>
             <div class="search-controls" aria-label="検索条件">
               <label>
@@ -290,13 +300,14 @@
           <label>
             種類
             <select id="trackTypeInput" name="trackType">
-              <option>インターン</option>
-              <option>早期選考</option>
-              <option>本選考</option>
-              <option>説明会</option>
-              <option>面談</option>
-              <option>OB/OG訪問</option>
+              <option value="インターン">インターン（参加前の応募・選考）</option>
+              <option value="早期選考">早期選考（早い本選考）</option>
+              <option value="本選考">本選考（内定までの選考）</option>
+              <option value="説明会">説明会</option>
+              <option value="面談">面談</option>
+              <option value="OB/OG訪問">OB/OG訪問</option>
             </select>
+            <span class="field-hint" id="trackTypeHint">インターン参加前の応募・ES・面接をまとめます。</span>
           </label>
 
           <label>
@@ -375,7 +386,7 @@
         </label>
 
         <div class="form-actions">
-          <button class="delete-button entry-delete-button" id="deleteEntryButton" type="button" hidden>この企業を削除</button>
+          <button class="delete-button entry-delete-button" id="deleteEntryButton" type="button" hidden>ゴミ箱へ移動</button>
           <button class="primary-button" id="saveEntryButton" type="submit">保存</button>
         </div>
       </form>

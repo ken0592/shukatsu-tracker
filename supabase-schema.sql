@@ -18,6 +18,7 @@ create table if not exists public.entries (
   interview_notes text not null default '',
   memo text not null default '',
   sort_order double precision,
+  deleted_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -32,7 +33,8 @@ alter table public.entries
   add column if not exists es_items jsonb not null default '[]'::jsonb,
   add column if not exists interview_notes text not null default '',
   add column if not exists memo text not null default '',
-  add column if not exists sort_order double precision;
+  add column if not exists sort_order double precision,
+  add column if not exists deleted_at timestamptz;
 
 create index if not exists entries_user_id_created_at_idx
   on public.entries (user_id, created_at desc);
@@ -42,6 +44,9 @@ create index if not exists entries_user_id_industry_idx
 
 create index if not exists entries_user_id_sort_order_idx
   on public.entries (user_id, sort_order);
+
+create index if not exists entries_user_id_deleted_at_idx
+  on public.entries (user_id, deleted_at);
 
 alter table public.entries enable row level security;
 

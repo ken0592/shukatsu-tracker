@@ -6,6 +6,7 @@ const actionScopeStorageKey = "shukatsu-tracker-action-scope";
 const companyViewModes = ["normal", "medium", "compact"];
 const actionScopes = ["today", "week"];
 const detailTabs = ["basic", "es"];
+const trashFilterValue = "trash";
 const activeStatuses = ["気になる", "応募予定", "応募済み", "ES提出済み", "Webテスト", "一次面接", "二次面接", "最終面接", "結果待ち", "選考通過", "インターン選考通過", "インターン参加決定"];
 const finishedStatuses = ["内定", "落選", "辞退", "参加済み"];
 const celebrationStatuses = ["内定", "選考通過", "インターン選考通過", "インターン参加決定"];
@@ -13,6 +14,22 @@ const rejectionStatuses = ["落選"];
 const sampleCompanyNames = ["株式会社サンプル商事", "ミライテック株式会社", "東都キャリア株式会社"];
 const initialCalendarDate = new Date();
 const commonIndustries = ["IT・通信", "メーカー", "商社", "金融", "コンサル", "広告・メディア", "人材", "不動産・建設", "インフラ", "小売・サービス","製薬"];
+const trackTypeHints = {
+  インターン: "インターン参加前の応募・ES・面接をまとめます。参加が決まったらステータスを「インターン参加決定」にします。",
+  早期選考: "インターン後など、通常より早く進む本選考です。迷ったら本選考寄りとして扱えば大丈夫です。",
+  本選考: "内定に向けた通常選考です。ES締切、Webテスト、面接予定を中心に追います。",
+  説明会: "説明会や企業理解イベントを置いておく枠です。応募するならあとで本選考に変えられます。",
+  面談: "カジュアル面談や社員面談を置いておく枠です。",
+  "OB/OG訪問": "OB/OG訪問の予定やメモを残す枠です。"
+};
+const trackTypeClassNames = {
+  インターン: "intern",
+  早期選考: "early",
+  本選考: "main",
+  説明会: "event",
+  面談: "event",
+  "OB/OG訪問": "event"
+};
 const quoteMonthDays = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 const quoteEntries = window.SHUKATSU_DAILY_QUOTES || [];
 const dailyQuotes = buildDailyQuotes();
@@ -63,6 +80,8 @@ const state = {
   loading: true,
   cloudSortOrderAvailable: true,
   cloudTemplateSortOrderAvailable: true,
+  cloudDeletedAtAvailable: false,
+  cloudDeletedAtWarningShown: false,
   editingId: null,
   detailEditingId: null,
   detailTab: "basic",
@@ -127,6 +146,7 @@ const els = {
   deadlineCount: document.querySelector("#deadlineCount"),
   eventCount: document.querySelector("#eventCount"),
   activeCount: document.querySelector("#activeCount"),
+  trashCount: document.querySelector("#trashCount"),
   todayActionTitle: document.querySelector("#todayActionTitle"),
   todayActionCount: document.querySelector("#todayActionCount"),
   todayActionList: document.querySelector("#todayActionList"),
@@ -142,6 +162,8 @@ const els = {
   industryFilterInput: document.querySelector("#industryFilterInput"),
   deadlineFilterInput: document.querySelector("#deadlineFilterInput"),
   priorityFilterInput: document.querySelector("#priorityFilterInput"),
+  trackTypeInput: document.querySelector("#trackTypeInput"),
+  trackTypeHint: document.querySelector("#trackTypeHint"),
   clearFiltersButton: document.querySelector("#clearFiltersButton"),
   filterButtons: document.querySelectorAll(".filter-button"),
   viewModeButtons: document.querySelectorAll(".view-button"),
@@ -360,6 +382,7 @@ function bindEvents() {
     state.priorityFilter = els.priorityFilterInput.value;
     renderCompanyList();
   });
+  els.trackTypeInput.addEventListener("change", updateTrackTypeHint);
   els.clearFiltersButton.addEventListener("click", clearCompanyFilters);
 
   els.filterButtons.forEach((button) => {
@@ -423,6 +446,12 @@ function bindEvents() {
     const editButton = event.target.closest("[data-edit-id]");
     if (editButton) {
       handleEditEntry(editButton.dataset.editId);
+      return;
+    }
+
+    const restoreButton = event.target.closest("[data-restore-id]");
+    if (restoreButton) {
+      handleRestoreEntry(restoreButton.dataset.restoreId);
       return;
     }
 
@@ -592,7 +621,8 @@ async function handleEntrySubmit(event) {
     interviewNotes: String(formData.get("interviewNotes")).trim(),
     memo: String(formData.get("memo")).trim(),
     createdAt: existingEntry?.createdAt || new Date().toISOString(),
-    sortOrder: Number.isFinite(existingEntry?.sortOrder) ? existingEntry.sortOrder : nextCompanySortOrder()
+    sortOrder: Number.isFinite(existingEntry?.sortOrder) ? existingEntry.sortOrder : nextCompanySortOrder(),
+    deletedAt: existingEntry?.deletedAt || ""
   };
 
   if (!entry.companyName) {
@@ -651,27 +681,70 @@ async function handleDeleteEntry(id) {
     return;
   }
 
+  if (isTrashed(entryToDelete)) {
+    showToast("この企業はすでにゴミ箱にあります。");
+    return;
+  }
+
   const shouldDelete = window.confirm(
-    `「${entryToDelete.companyName}」を削除しますか？\nこの操作は元に戻せません。`
+    `「${entryToDelete.companyName}」をゴミ箱に移動しますか？\n企業情報・ES・メモは残り、あとで復元できます。`
   );
   if (!shouldDelete) return;
 
+  if (!canUseCloudTrash()) return;
+
+  const trashedEntry = normalizeEntry({
+    ...entryToDelete,
+    deletedAt: new Date().toISOString()
+  });
+
   if (state.mode === "cloud") {
-    const { error } = await supabaseClient.from("entries").delete().eq("id", id);
-    if (error) {
-      showToast(error.message);
-      return;
-    }
+    const saved = await updateCloudEntry(trashedEntry);
+    if (!saved) return;
+    state.entries = state.entries.map((entry) => (entry.id === id ? saved : entry));
+  } else {
+    state.entries = state.entries.map((entry) => (entry.id === id ? trashedEntry : entry));
+    saveLocalEntries(state.entries);
   }
 
-  state.entries = state.entries.filter((entry) => entry.id !== id);
-  if (state.mode === "local") saveLocalEntries(state.entries);
   if (state.editingId === id) {
     resetEntryForm();
     els.entryDialog.close();
   }
   render();
-  showToast(`「${entryToDelete.companyName}」を削除しました。`);
+  showToast(`「${entryToDelete.companyName}」をゴミ箱に移動しました。`);
+}
+
+async function handleRestoreEntry(id) {
+  const entryToRestore = state.entries.find((entry) => entry.id === id);
+  if (!entryToRestore) {
+    showToast("復元する企業が見つかりません。");
+    return;
+  }
+
+  if (!isTrashed(entryToRestore)) {
+    showToast("この企業はゴミ箱にありません。");
+    return;
+  }
+
+  if (!canUseCloudTrash()) return;
+
+  const restoredEntry = normalizeEntry({
+    ...entryToRestore,
+    deletedAt: ""
+  });
+
+  if (state.mode === "cloud") {
+    const saved = await updateCloudEntry(restoredEntry);
+    if (!saved) return;
+    state.entries = state.entries.map((entry) => (entry.id === id ? saved : entry));
+  } else {
+    state.entries = state.entries.map((entry) => (entry.id === id ? restoredEntry : entry));
+    saveLocalEntries(state.entries);
+  }
+
+  render();
+  showToast(`「${entryToRestore.companyName}」を復元しました。`);
 }
 
 function openCompanyDetail(id) {
@@ -1702,7 +1775,7 @@ function updateTemplateBodyCount() {
 function handleExportBackup() {
   const backup = {
     app: "shukatsu-tracker",
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     mode: state.mode,
     entries: state.entries.map(normalizeEntry),
@@ -1732,15 +1805,23 @@ async function handleImportBackup(event) {
     return;
   }
 
-  const shouldImport = window.confirm("バックアップを復元しますか？同じデータは上書きし、新しいデータは追加します。");
-  if (!shouldImport) return;
-
   const entries = backup.entries.map(normalizeEntry);
   const templates = backup.templates.map(normalizeTemplate);
+  const activeEntryCount = entries.filter((entry) => !isTrashed(entry)).length;
+  const trashedEntryCount = entries.filter(isTrashed).length;
+  const shouldImport = window.confirm(
+    `バックアップを復元しますか？\n企業 ${activeEntryCount}件、ゴミ箱 ${trashedEntryCount}件、ESの型 ${templates.length}件を読み込みます。\n同じデータは上書きし、新しいデータは追加します。`
+  );
+  if (!shouldImport) return;
 
   if (state.mode === "cloud") {
     if (!state.session) {
       showToast("ログインすると復元できます。");
+      return;
+    }
+
+    if (!state.cloudDeletedAtAvailable && entries.some(isTrashed)) {
+      showToast("ゴミ箱入りデータを復元するにはSupabaseのSQL更新が必要です。");
       return;
     }
 
@@ -1803,6 +1884,11 @@ async function handleImportLocalEntries() {
   const localEntries = readSavedLocalEntries();
   if (localEntries.length === 0 || !state.session) return;
 
+  if (!state.cloudDeletedAtAvailable && localEntries.some(isTrashed)) {
+    showToast("ゴミ箱入りデータを移すにはSupabaseのSQL更新が必要です。");
+    return;
+  }
+
   const shouldImport = window.confirm("この端末に残っているデータをクラウドへ移しますか？");
   if (!shouldImport) return;
 
@@ -1823,6 +1909,7 @@ async function loadCloudData() {
 
   state.loading = true;
   renderMode();
+  await refreshCloudEntryColumnSupport();
   const [entriesResult, templatesResult] = await Promise.all([
     supabaseClient.from("entries").select("*").order("created_at", { ascending: false }),
     supabaseClient.from("es_templates").select("*").order("updated_at", { ascending: false })
@@ -1850,6 +1937,7 @@ async function loadCloudEntries() {
 
   state.loading = true;
   renderMode();
+  await refreshCloudEntryColumnSupport();
   const { data, error } = await supabaseClient.from("entries").select("*").order("created_at", { ascending: false });
   state.loading = false;
 
@@ -1861,6 +1949,26 @@ async function loadCloudEntries() {
 
   state.entries = data.map(fromDbEntry);
   render();
+}
+
+async function refreshCloudEntryColumnSupport() {
+  if (!state.session) return;
+
+  const { error } = await supabaseClient.from("entries").select("id, deleted_at").limit(1);
+  state.cloudDeletedAtAvailable = !error;
+
+  if (error && !state.cloudDeletedAtWarningShown) {
+    state.cloudDeletedAtWarningShown = true;
+    showToast("SupabaseのSQLを更新すると、ゴミ箱と復元が使えます。");
+  }
+}
+
+function canUseCloudTrash() {
+  if (state.mode !== "cloud") return true;
+  if (state.cloudDeletedAtAvailable) return true;
+
+  showToast("SupabaseのSQLを更新するとゴミ箱が使えます。データ保護のため削除しません。");
+  return false;
 }
 
 async function createCloudEntry(entry) {
@@ -1959,7 +2067,8 @@ function renderMode() {
 function renderSummary() {
   els.deadlineCount.textContent = getUpcomingDeadlines().length;
   els.eventCount.textContent = getUpcomingEvents().length;
-  els.activeCount.textContent = state.entries.filter(isActive).length;
+  els.activeCount.textContent = activeEntries().filter(isActive).length;
+  els.trashCount.textContent = trashedEntries().length;
 }
 
 function renderTodayActions() {
@@ -2019,7 +2128,7 @@ function renderDeadlineList() {
             ${statusTag(entry.status)}
           </div>
           <div class="meta-row">
-            <span>${escapeHtml(entry.trackType)}</span>
+            ${trackTag(entry.trackType)}
             <span>${formatDate(entry.deadline)} 締切</span>
             <span>志望度 ${escapeHtml(entry.priority)}</span>
           </div>
@@ -2046,7 +2155,7 @@ function renderEventList() {
           </div>
           <div class="meta-row">
             <span>${formatDate(entry.eventDate)}</span>
-            <span>${escapeHtml(entry.trackType)}</span>
+            ${trackTag(entry.trackType)}
             <span>${escapeHtml(entry.status)}</span>
           </div>
         </article>
@@ -2056,22 +2165,64 @@ function renderEventList() {
 }
 
 function renderCompanyList() {
-  const isCompact = state.companyViewMode === "compact";
-  const isMedium = state.companyViewMode === "medium";
+  const isTrashView = state.filter === trashFilterValue;
+  const isCompact = !isTrashView && state.companyViewMode === "compact";
+  const isMedium = !isTrashView && state.companyViewMode === "medium";
   const entries = state.entries
     .filter(matchesListFilter)
     .filter(matchesSearchQuery)
     .filter(matchesIndustryFilter)
     .filter(matchesDeadlineFilter)
     .filter(matchesPriorityFilter)
-    .sort(sortCompanyEntries);
+    .sort(isTrashView ? sortTrashedEntries : sortCompanyEntries);
 
   updateCompanyViewButtons();
   els.companyList.classList.toggle("compact-view", isCompact);
   els.companyList.classList.toggle("medium-view", isMedium);
+  els.companyList.classList.toggle("trash-view", isTrashView);
 
   if (entries.length === 0) {
-    els.companyList.innerHTML = emptyState("条件に合う企業がありません。内定・落選の企業も「全部」または「結果済み」に残ります。");
+    els.companyList.innerHTML = emptyState(
+      isTrashView
+        ? "ゴミ箱は空です。ここに移動した企業は、必要になったら復元できます。"
+        : "条件に合う企業がありません。内定・落選の企業も「全部」または「結果済み」に残ります。"
+    );
+    return;
+  }
+
+  if (isTrashView) {
+    els.companyList.innerHTML = entries
+      .map((entry) => {
+        return `
+          <article class="company-card trash-card" data-company-card data-company-id="${escapeAttribute(entry.id)}">
+            <div class="company-title-row">
+              <div class="company-identity">
+                ${companyIconMarkup(entry)}
+                <div>
+                  <strong>${escapeHtml(entry.companyName)}</strong>
+                  <div class="meta-row">
+                    ${trackTag(entry.trackType)}
+                    ${statusTag(entry.status)}
+                    ${entry.industry ? `<span>${escapeHtml(entry.industry)}</span>` : ""}
+                  </div>
+                </div>
+              </div>
+              <div class="card-actions">
+                <button class="restore-button" data-restore-id="${escapeAttribute(entry.id)}" type="button">復元</button>
+              </div>
+            </div>
+            <div class="meta-row">
+              <span>ゴミ箱へ移動 ${formatDateTime(entry.deletedAt)}</span>
+              ${entry.deadline ? `<span>${formatDate(entry.deadline)} 締切</span>` : ""}
+              ${entry.eventDate ? `<span>${formatDate(entry.eventDate)} 予定</span>` : ""}
+            </div>
+            ${entry.mypageId ? `<div class="credential-line"><strong>マイページID</strong><span>${escapeHtml(entry.mypageId)}</span></div>` : ""}
+            ${entry.officialUrl ? `<a class="mypage-link" href="${escapeAttribute(entry.officialUrl)}" target="_blank" rel="noopener noreferrer">企業公式サイトを開く</a>` : ""}
+            ${entry.mypageUrl ? `<a class="mypage-link" href="${escapeAttribute(entry.mypageUrl)}" target="_blank" rel="noopener noreferrer">企業マイページを開く</a>` : ""}
+          </article>
+        `;
+      })
+      .join("");
     return;
   }
 
@@ -2109,13 +2260,14 @@ function renderCompanyList() {
               <div>
                 <strong>${escapeHtml(entry.companyName)}</strong>
                 <div class="meta-row">
+                  ${trackTag(entry.trackType)}
                   ${statusTag(entry.status)}
                   ${entry.industry ? `<span>${escapeHtml(entry.industry)}</span>` : ""}
                 </div>
               </div>
             </div>
             <div class="company-medium-details">
-              <span>${escapeHtml(entry.trackType)} / ${escapeHtml(entry.eventType)}</span>
+              <span>${escapeHtml(entry.eventType)}</span>
               ${entry.deadline ? `<span>${formatDate(entry.deadline)} 締切</span>` : ""}
               ${entry.eventDate ? `<span>${formatDate(entry.eventDate)} 予定</span>` : ""}
               <span>志望度 ${escapeHtml(entry.priority)}</span>
@@ -2145,7 +2297,7 @@ function renderCompanyList() {
                 <strong>${escapeHtml(entry.companyName)}</strong>
                 <div class="meta-row">
                   ${entry.industry ? `<span>${escapeHtml(entry.industry)}</span>` : ""}
-                  <span>${escapeHtml(entry.trackType)}</span>
+                  ${trackTag(entry.trackType)}
                   <span>${escapeHtml(entry.eventType)}</span>
                   <span>志望度 ${escapeHtml(entry.priority)}</span>
                 </div>
@@ -2307,6 +2459,7 @@ function openEntryDialog(entry = null) {
   els.saveEntryButton.textContent = entry ? "更新" : "保存";
   els.deleteEntryButton.hidden = !entry;
   fillEntryForm(entry);
+  updateTrackTypeHint();
 
   if (typeof els.entryDialog.showModal === "function") {
     els.entryDialog.showModal();
@@ -2345,12 +2498,18 @@ function resetEntryForm() {
   els.entryFormTitle.textContent = "企業・選考を追加";
   els.saveEntryButton.textContent = "保存";
   els.deleteEntryButton.hidden = true;
+  updateTrackTypeHint();
+}
+
+function updateTrackTypeHint() {
+  const trackType = els.trackTypeInput.value;
+  els.trackTypeHint.textContent = trackTypeHints[trackType] || "予定や接点の種類に合わせて選びます。";
 }
 
 function renderFilterOptions() {
   const selected = state.industryFilter;
   const industries = Array.from(
-    new Set([...commonIndustries, ...state.entries.map((entry) => entry.industry).filter(Boolean)])
+    new Set([...commonIndustries, ...activeEntries().map((entry) => entry.industry).filter(Boolean)])
   ).sort((a, b) => a.localeCompare(b, "ja"));
 
   els.industryFilterInput.innerHTML = [
@@ -2398,7 +2557,7 @@ function readSavedLocalEntries() {
 }
 
 function saveLocalEntries(entries) {
-  localStorage.setItem(storageKey, JSON.stringify(entries));
+  localStorage.setItem(storageKey, JSON.stringify(entries.map(normalizeEntry)));
 }
 
 function loadLocalTemplates() {
@@ -2414,31 +2573,38 @@ function loadLocalTemplates() {
 }
 
 function saveLocalTemplates(templates) {
-  localStorage.setItem(templateStorageKey, JSON.stringify(templates));
+  localStorage.setItem(templateStorageKey, JSON.stringify(templates.map(normalizeTemplate)));
 }
 
 function toDbEntry(entry) {
-  return {
-    id: entry.id,
+  const values = normalizeEntry(entry);
+  const payload = {
+    id: values.id,
     user_id: state.session.user.id,
-    company_name: entry.companyName,
-    industry: entry.industry,
-    mypage_id: entry.mypageId,
-    official_url: entry.officialUrl,
-    logo_url: entry.logoUrl,
-    track_type: entry.trackType,
-    status: entry.status,
-    deadline: entry.deadline || null,
-    event_date: entry.eventDate || null,
-    event_type: entry.eventType,
-    priority: entry.priority,
-    mypage_url: entry.mypageUrl,
-    es_content: entry.esContent,
-    es_items: normalizeEsItems(entry.esItems, entry.esContent),
-    interview_notes: entry.interviewNotes,
-    memo: entry.memo,
-    created_at: entry.createdAt || new Date().toISOString()
+    company_name: values.companyName,
+    industry: values.industry,
+    mypage_id: values.mypageId,
+    official_url: values.officialUrl,
+    logo_url: values.logoUrl,
+    track_type: values.trackType,
+    status: values.status,
+    deadline: values.deadline || null,
+    event_date: values.eventDate || null,
+    event_type: values.eventType,
+    priority: values.priority,
+    mypage_url: values.mypageUrl,
+    es_content: values.esContent,
+    es_items: normalizeEsItems(values.esItems, values.esContent),
+    interview_notes: values.interviewNotes,
+    memo: values.memo,
+    created_at: values.createdAt || new Date().toISOString()
   };
+
+  if (state.cloudDeletedAtAvailable) {
+    payload.deleted_at = values.deletedAt || null;
+  }
+
+  return payload;
 }
 
 function fromDbEntry(row) {
@@ -2461,7 +2627,8 @@ function fromDbEntry(row) {
     interviewNotes: row.interview_notes || "",
     memo: row.memo || "",
     createdAt: row.created_at,
-    sortOrder: Number(row.sort_order)
+    sortOrder: Number(row.sort_order),
+    deletedAt: row.deleted_at || ""
   });
 }
 
@@ -2485,7 +2652,8 @@ function normalizeEntry(entry) {
     interviewNotes: entry.interviewNotes || "",
     memo: entry.memo || "",
     createdAt: entry.createdAt || new Date().toISOString(),
-    sortOrder: Number.isFinite(Number(entry.sortOrder)) ? Number(entry.sortOrder) : Number.NaN
+    sortOrder: Number.isFinite(Number(entry.sortOrder)) ? Number(entry.sortOrder) : Number.NaN,
+    deletedAt: entry.deletedAt || ""
   };
 }
 
@@ -3044,7 +3212,7 @@ function getMascotHelpAnswer(question) {
 }
 
 function getTodayActions(limit = 5) {
-  return state.entries
+  return activeEntries()
     .filter(isActive)
     .map((entry) => ({ entry, action: getNextAction(entry) }))
     .filter(({ action }) => action)
@@ -3163,13 +3331,13 @@ function priorityScore(priority) {
 }
 
 function getUpcomingDeadlines() {
-  return state.entries
+  return activeEntries()
     .filter((entry) => entry.deadline && isWithinDays(entry.deadline, 14))
     .sort((a, b) => a.deadline.localeCompare(b.deadline));
 }
 
 function getUpcomingEvents() {
-  return state.entries
+  return activeEntries()
     .filter((entry) => entry.eventDate && isWithinDays(entry.eventDate, 30))
     .sort((a, b) => a.eventDate.localeCompare(b.eventDate));
 }
@@ -3225,6 +3393,8 @@ function matchesPriorityFilter(entry) {
 }
 
 function matchesListFilter(entry) {
+  if (state.filter === trashFilterValue) return isTrashed(entry);
+  if (isTrashed(entry)) return false;
   if (state.filter === "all") return true;
   if (state.filter === "active") return isActive(entry);
   if (state.filter === "finished") return isFinished(entry);
@@ -3233,7 +3403,7 @@ function matchesListFilter(entry) {
 
 function calendarItemsFor(dateKey) {
   const items = [];
-  state.entries.forEach((entry) => {
+  activeEntries().forEach((entry) => {
     if (entry.deadline === dateKey) {
       items.push({ kind: "deadline", label: `${entry.companyName} 締切` });
     }
@@ -3245,11 +3415,25 @@ function calendarItemsFor(dateKey) {
 }
 
 function isActive(entry) {
+  if (isTrashed(entry)) return false;
   return activeStatuses.includes(entry.status) || !finishedStatuses.includes(entry.status);
 }
 
 function isFinished(entry) {
+  if (isTrashed(entry)) return false;
   return finishedStatuses.includes(entry.status);
+}
+
+function activeEntries() {
+  return state.entries.filter((entry) => !isTrashed(entry));
+}
+
+function trashedEntries() {
+  return state.entries.filter(isTrashed);
+}
+
+function isTrashed(entry) {
+  return Boolean(entry?.deletedAt);
 }
 
 function isWithinDays(dateValue, days) {
@@ -3284,8 +3468,12 @@ function sortCompanyEntries(a, b) {
   return sortByClosestDate(a, b);
 }
 
+function sortTrashedEntries(a, b) {
+  return new Date(b.deletedAt || 0) - new Date(a.deletedAt || 0);
+}
+
 function nextCompanySortOrder() {
-  const orders = state.entries.map((entry) => entry.sortOrder).filter(Number.isFinite);
+  const orders = activeEntries().map((entry) => entry.sortOrder).filter(Number.isFinite);
   return orders.length > 0 ? Math.max(...orders) + 1 : Number.NaN;
 }
 
@@ -3473,6 +3661,12 @@ function companyColor(companyName) {
   return `hsl(${hash}, 72%, 42%)`;
 }
 
+function trackTag(trackType) {
+  const label = trackType || "本選考";
+  const className = trackTypeClassNames[label] || "event";
+  return `<span class="track-badge ${className}">${escapeHtml(label)}</span>`;
+}
+
 function statusTag(status) {
   const className = ["落選", "辞退"].includes(status)
     ? "red"
@@ -3589,6 +3783,13 @@ function formatDate(value) {
   if (!value) return "";
   const date = new Date(`${value}T00:00:00`);
   return `${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+function formatDateTime(value) {
+  if (!value) return "日時不明";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "日時不明";
+  return `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
 function clampNumber(value, min, max) {
