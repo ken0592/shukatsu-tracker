@@ -1027,6 +1027,51 @@ h2 {
   justify-content: flex-end;
 }
 
+.track-filter-row {
+  flex: 1 1 520px;
+  justify-content: flex-start;
+}
+
+.status-filter-row {
+  flex: 0 1 auto;
+}
+
+.track-filter-button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 118px;
+  min-height: 46px;
+  padding: 7px 10px;
+  text-align: left;
+}
+
+.track-filter-button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track-filter-button strong {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  min-height: 24px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8);
+  color: inherit;
+  font-size: 12px;
+}
+
+.trash-filter-button:not(.active) {
+  background: #fff4d6;
+  color: var(--yellow);
+}
+
 .track-guide {
   display: flex;
   flex-wrap: wrap;
@@ -1825,6 +1870,14 @@ button:disabled {
   gap: 12px;
 }
 
+.detail-section-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .detail-section-heading h3 {
   margin: 0;
   font-size: 16px;
@@ -1858,6 +1911,32 @@ button:disabled {
   gap: 12px;
 }
 
+.es-mode-toggle {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f6f9fd;
+}
+
+.es-mode-button {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.es-mode-button.active {
+  background: var(--blue);
+  color: #fff;
+}
+
 .es-editor-card {
   display: grid;
   gap: 12px;
@@ -1872,6 +1951,83 @@ button:disabled {
 .es-card-body[hidden],
 .es-variant-pane[hidden] {
   display: none;
+}
+
+.es-editor-list.edit-mode [data-es-read] {
+  display: none;
+}
+
+.es-editor-list.read-mode .es-card-body,
+.es-editor-list.read-mode [data-es-delete],
+.es-editor-list.read-mode [data-es-drag-handle] {
+  display: none !important;
+}
+
+.es-read-card {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #dbe6f6;
+  border-radius: 8px;
+  background: #fbfdff;
+}
+
+.es-read-question {
+  display: grid;
+  gap: 5px;
+}
+
+.es-read-question span,
+.es-read-answer-heading {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.es-read-question strong {
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.es-read-answers {
+  display: grid;
+  gap: 10px;
+}
+
+.es-read-answer {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.es-read-answer-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.es-read-answer p {
+  margin: 0;
+  color: #344054;
+  font-size: 14px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.es-read-answer p.empty-answer {
+  color: var(--muted);
+}
+
+.es-read-answer .small-button,
+.es-read-edit-button {
+  justify-self: start;
 }
 
 .es-editor-card.is-reorder-pending {
@@ -2135,6 +2291,7 @@ textarea {
 
   .template-card-heading,
   .detail-section-heading,
+  .detail-section-actions,
   .template-insert-row,
   .form-actions {
     align-items: stretch;
@@ -2151,6 +2308,15 @@ textarea {
 
   .filter-row {
     justify-content: flex-start;
+  }
+
+  .track-filter-row {
+    flex-basis: 100%;
+  }
+
+  .track-filter-button {
+    flex: 1 1 calc(50% - 6px);
+    min-width: 132px;
   }
 
   .list-toolbar {

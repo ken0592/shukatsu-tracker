@@ -6,6 +6,7 @@ const actionScopeStorageKey = "shukatsu-tracker-action-scope";
 const companyViewModes = ["normal", "medium", "compact"];
 const actionScopes = ["today", "week"];
 const detailTabs = ["basic", "es"];
+const detailEsModes = ["read", "edit"];
 const trashFilterValue = "trash";
 const activeStatuses = ["気になる", "応募予定", "応募済み", "ES提出済み", "Webテスト", "一次面接", "二次面接", "最終面接", "結果待ち", "選考通過", "インターン選考通過", "インターン参加決定"];
 const finishedStatuses = ["内定", "落選", "辞退", "参加済み"];
@@ -85,6 +86,7 @@ const state = {
   editingId: null,
   detailEditingId: null,
   detailTab: "basic",
+  detailEsMode: "read",
   editingTemplateId: null,
   calendarYear: initialCalendarDate.getFullYear(),
   calendarMonth: initialCalendarDate.getMonth()
@@ -123,6 +125,7 @@ const els = {
   detailCompanyTitle: document.querySelector("#detailCompanyTitle"),
   detailCompanyMeta: document.querySelector("#detailCompanyMeta"),
   detailTabs: document.querySelectorAll("[data-detail-tab]"),
+  detailEsModeButtons: document.querySelectorAll("[data-es-mode]"),
   detailPanels: document.querySelectorAll("[data-detail-panel]"),
   detailTabPanels: document.querySelector("#detailTabPanels"),
   detailInfoSummary: document.querySelector("#detailInfoSummary"),
@@ -295,6 +298,9 @@ function bindEvents() {
   els.detailTabs.forEach((tab) => {
     tab.addEventListener("click", () => setDetailTab(tab.dataset.detailTab));
   });
+  els.detailEsModeButtons.forEach((button) => {
+    button.addEventListener("click", () => setDetailEsMode(button.dataset.esMode));
+  });
   els.detailTabPanels.addEventListener("pointerdown", handleDetailSwipePointerDown);
   els.detailTabPanels.addEventListener("pointerup", handleDetailSwipePointerUp);
   els.detailTabPanels.addEventListener("pointercancel", resetDetailSwipe);
@@ -334,8 +340,24 @@ function bindEvents() {
       return;
     }
 
+    const copyAnswerButton = event.target.closest("[data-es-copy-answer]");
+    if (copyAnswerButton) {
+      copyEsAnswer(copyAnswerButton.closest("[data-es-read-answer]"));
+      return;
+    }
+
+    const editCardButton = event.target.closest("[data-es-edit-card]");
+    if (editCardButton) {
+      const card = editCardButton.closest(".es-editor-card");
+      setDetailEsMode("edit");
+      setEsCardExpanded(card, true);
+      card?.querySelector("[data-es-question], [data-es-answer]")?.focus();
+      return;
+    }
+
     const toggleButton = event.target.closest("[data-es-toggle]");
     if (toggleButton) {
+      if (state.detailEsMode === "read") return;
       toggleEsCard(toggleButton.closest(".es-editor-card"));
       return;
     }
@@ -387,8 +409,7 @@ function bindEvents() {
 
   els.filterButtons.forEach((button) => {
     button.addEventListener("click", () => {
-      state.filter = button.dataset.filter;
-      els.filterButtons.forEach((item) => item.classList.toggle("active", item === button));
+      setCompanyFilter(button.dataset.filter);
       renderCompanyList();
     });
   });
@@ -766,6 +787,7 @@ function openCompanyDetail(id) {
   els.detailInterviewNotesInput.value = values.interviewNotes;
   els.detailMemoInput.value = values.memo;
   els.detailEsSearchInput.value = "";
+  state.detailEsMode = values.esItems.length > 0 ? "read" : "edit";
   renderDetailInfoSummary(values);
   renderDetailEsItems(values.esItems.length > 0 ? values.esItems : [createEsItem()]);
   renderTemplateOptions();
@@ -803,6 +825,20 @@ function setDetailTab(tabName) {
     panel.classList.toggle("active", active);
     panel.hidden = !active;
   });
+}
+
+function setDetailEsMode(mode) {
+  const nextMode = detailEsModes.includes(mode) ? mode : "read";
+  state.detailEsMode = nextMode;
+
+  els.detailEsModeButtons.forEach((button) => {
+    const active = button.dataset.esMode === nextMode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+
+  els.detailEsList.classList.toggle("read-mode", nextMode === "read");
+  els.detailEsList.classList.toggle("edit-mode", nextMode === "edit");
 }
 
 function renderDetailInfoSummary(entry) {
@@ -879,6 +915,7 @@ function renderDetailEsItems(items) {
   els.detailEsList.innerHTML = items.map(esEditorCard).join("");
   updateDetailEsCharCounts();
   filterDetailEsCards();
+  setDetailEsMode(state.detailEsMode);
 }
 
 function esEditorCard(item) {
@@ -940,6 +977,7 @@ function esEditorCard(item) {
         </div>
         <button class="delete-button" data-es-delete type="button">削除</button>
       </div>
+      ${esReadBlock(value)}
       <div class="es-card-body" data-es-body hidden>
         <label>
           質問
@@ -956,7 +994,39 @@ function esEditorCard(item) {
   `;
 }
 
+function esReadBlock(item) {
+  const question = item.question.trim() || "未入力のES質問";
+  const answers = item.variants
+    .map((variant) => {
+      const answer = variant.answer.trim();
+      const empty = !answer;
+      return `
+        <section class="es-read-answer" data-es-read-answer>
+          <div class="es-read-answer-heading">
+            <span class="tag">${escapeHtml(esVariantTitle(variant))}</span>
+            <span class="char-count">${formatCharCount(answer)}</span>
+          </div>
+          <p class="${empty ? "empty-answer" : ""}" data-es-read-answer-text>${escapeHtml(answer || "回答未入力")}</p>
+          <button class="secondary-button small-button" data-es-copy-answer type="button" ${empty ? "disabled" : ""}>回答をコピー</button>
+        </section>
+      `;
+    })
+    .join("");
+
+  return `
+    <div class="es-read-card" data-es-read>
+      <div class="es-read-question">
+        <span>質問</span>
+        <strong>${escapeHtml(question)}</strong>
+      </div>
+      <div class="es-read-answers">${answers}</div>
+      <button class="edit-button es-read-edit-button" data-es-edit-card type="button">この質問を編集</button>
+    </div>
+  `;
+}
+
 function addDetailEsItem(item = createEsItem()) {
+  setDetailEsMode("edit");
   els.detailEsList.insertAdjacentHTML("beforeend", esEditorCard(item));
   updateDetailEsCharCounts();
   const lastCard = els.detailEsList.querySelector(".es-editor-card:last-child");
@@ -1055,6 +1125,7 @@ function replaceEsCard(card, item, expanded) {
   setEsCardExpanded(replacement, expanded);
   updateDetailEsCharCounts();
   filterDetailEsCards();
+  setDetailEsMode(state.detailEsMode);
 }
 
 function handleDetailEsInput(event) {
@@ -1075,6 +1146,8 @@ function updateEsCardSummary(card) {
     const variant = item.variants.find((candidate) => candidate.id === tab.dataset.esVariantTab);
     if (variant) tab.textContent = esVariantTitle(variant);
   });
+  const readBlock = card.querySelector("[data-es-read]");
+  if (readBlock) readBlock.outerHTML = esReadBlock(item);
 }
 
 function filterDetailEsCards() {
@@ -1654,6 +1727,17 @@ async function copyTemplateFromEsVariant(pane) {
   showToast(copied ? "型をコピーしました。この回答欄に貼り付けできます。" : "コピーできませんでした。");
 }
 
+async function copyEsAnswer(answerBlock) {
+  const text = answerBlock?.querySelector("[data-es-read-answer-text]")?.textContent.trim() || "";
+  if (!text || text === "回答未入力") {
+    showToast("コピーする回答がありません。");
+    return;
+  }
+
+  const copied = await copyTextToClipboard(text);
+  showToast(copied ? "ES回答をコピーしました。" : "コピーできませんでした。本文を選択してコピーしてください。");
+}
+
 function getTemplateFromVariantPane(pane) {
   const templateId = pane.querySelector("[data-es-template-select]")?.value;
   return state.templates.find((item) => item.id === templateId) || null;
@@ -2112,6 +2196,39 @@ function updateActionScopeButtons() {
   });
 }
 
+function setCompanyFilter(filter) {
+  state.filter = filter || "all";
+  updateCompanyFilterButtons();
+}
+
+function updateCompanyFilterButtons() {
+  els.filterButtons.forEach((button) => {
+    const filter = button.dataset.filter;
+    button.classList.toggle("active", filter === state.filter);
+    const count = button.querySelector("[data-filter-count]");
+    if (count) count.textContent = countEntriesForListFilter(filter);
+  });
+}
+
+function countEntriesForListFilter(filter) {
+  return state.entries
+    .filter((entry) => matchesStandaloneListFilter(entry, filter))
+    .filter(matchesSearchQuery)
+    .filter(matchesIndustryFilter)
+    .filter(matchesDeadlineFilter)
+    .filter(matchesPriorityFilter)
+    .length;
+}
+
+function matchesStandaloneListFilter(entry, filter) {
+  if (filter === trashFilterValue) return isTrashed(entry);
+  if (isTrashed(entry)) return false;
+  if (filter === "all") return true;
+  if (filter === "active") return isActive(entry);
+  if (filter === "finished") return isFinished(entry);
+  return entry.trackType === filter;
+}
+
 function renderDeadlineList() {
   const deadlines = getUpcomingDeadlines();
   if (deadlines.length === 0) {
@@ -2177,6 +2294,7 @@ function renderCompanyList() {
     .sort(isTrashView ? sortTrashedEntries : sortCompanyEntries);
 
   updateCompanyViewButtons();
+  updateCompanyFilterButtons();
   els.companyList.classList.toggle("compact-view", isCompact);
   els.companyList.classList.toggle("medium-view", isMedium);
   els.companyList.classList.toggle("trash-view", isTrashView);
