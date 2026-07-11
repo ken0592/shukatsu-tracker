@@ -422,6 +422,18 @@
               <div class="detail-info-grid" id="detailInfoSummary"></div>
             </section>
 
+            <section class="detail-section handoff-section" id="detailHandoffSection" hidden>
+              <div class="detail-section-heading">
+                <div>
+                  <p class="eyebrow">Next Track</p>
+                  <h3>次の選考へ引き継ぐ</h3>
+                  <p id="detailHandoffMessage">インターンの記録を残したまま、次の選考を追加できます。</p>
+                </div>
+                <div class="handoff-actions" id="detailHandoffActions"></div>
+              </div>
+              <p class="handoff-note">企業情報・マイページ・ES・メモをコピーし、締切と次の予定だけ空にして追加します。</p>
+            </section>
+
             <section class="detail-section">
               <label>
                 面接対策メモ
@@ -477,6 +489,26 @@
         <div class="form-actions">
           <button class="secondary-button" id="openBasicEditButton" type="button">基本情報を編集</button>
           <button class="primary-button" id="saveDetailButton" type="submit">詳細を保存</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="conflict-dialog" id="saveConflictDialog">
+      <form class="conflict-form" id="saveConflictForm" method="dialog">
+        <div class="form-heading">
+          <div>
+            <p class="eyebrow">Safe Save</p>
+            <h2>別の端末でも更新されています</h2>
+          </div>
+          <button class="icon-button" id="closeConflictButton" type="button" aria-label="編集に戻る">×</button>
+        </div>
+        <p class="conflict-intro">
+          同じ項目がPCとiPhoneの両方で変わっています。残したい内容を選んでください。重なっていない変更は自動でまとめます。
+        </p>
+        <div class="conflict-list" id="saveConflictList"></div>
+        <div class="form-actions">
+          <button class="secondary-button" id="cancelConflictButton" type="button">編集に戻る</button>
+          <button class="primary-button" id="resolveConflictButton" type="submit">選んだ内容で安全に保存</button>
         </div>
       </form>
     </dialog>

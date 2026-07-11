@@ -34,7 +34,8 @@ alter table public.entries
   add column if not exists interview_notes text not null default '',
   add column if not exists memo text not null default '',
   add column if not exists sort_order double precision,
-  add column if not exists deleted_at timestamptz;
+  add column if not exists deleted_at timestamptz,
+  add column if not exists updated_at timestamptz not null default now();
 
 create index if not exists entries_user_id_created_at_idx
   on public.entries (user_id, created_at desc);
