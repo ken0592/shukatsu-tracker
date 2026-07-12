@@ -115,6 +115,7 @@ const state = {
   detailTab: "basic",
   detailEsMode: "read",
   pendingEntryConflict: null,
+  trashDeletePending: false,
   editingTemplateId: null,
   calendarYear: initialCalendarDate.getFullYear(),
   calendarMonth: initialCalendarDate.getMonth()
@@ -188,6 +189,7 @@ const els = {
   eventCount: document.querySelector("#eventCount"),
   activeCount: document.querySelector("#activeCount"),
   trashCount: document.querySelector("#trashCount"),
+  emptyTrashButton: document.querySelector("#emptyTrashButton"),
   todayActionTitle: document.querySelector("#todayActionTitle"),
   todayActionCount: document.querySelector("#todayActionCount"),
   todayActionList: document.querySelector("#todayActionList"),
@@ -204,6 +206,7 @@ const els = {
   deadlineFilterInput: document.querySelector("#deadlineFilterInput"),
   priorityFilterInput: document.querySelector("#priorityFilterInput"),
   trackTypeInput: document.querySelector("#trackTypeInput"),
+  clearNextEventButton: document.querySelector("#clearNextEventButton"),
   trackTypeHint: document.querySelector("#trackTypeHint"),
   clearFiltersButton: document.querySelector("#clearFiltersButton"),
   filterButtons: document.querySelectorAll(".filter-button"),
@@ -454,7 +457,13 @@ function bindEvents() {
     renderCompanyList();
   });
   els.trackTypeInput.addEventListener("change", updateTrackTypeHint);
+  els.clearNextEventButton.addEventListener("click", () => {
+    setFormValue("eventDate", "");
+    setFormValue("eventType", "");
+    showToast("次の予定を空にしました。更新すると保存されます。");
+  });
   els.clearFiltersButton.addEventListener("click", clearCompanyFilters);
+  els.emptyTrashButton.addEventListener("click", handleEmptyTrash);
 
   els.filterButtons.forEach((button) => {
     button.addEventListener("click", () => {
@@ -522,6 +531,12 @@ function bindEvents() {
     const restoreButton = event.target.closest("[data-restore-id]");
     if (restoreButton) {
       handleRestoreEntry(restoreButton.dataset.restoreId);
+      return;
+    }
+
+    const permanentDeleteButton = event.target.closest("[data-permanent-delete-id]");
+    if (permanentDeleteButton) {
+      handlePermanentDeleteEntry(permanentDeleteButton.dataset.permanentDeleteId);
       return;
     }
 
@@ -845,6 +860,121 @@ async function handleRestoreEntry(id) {
   showToast(`「${entryToRestore.companyName}」を復元しました。`);
 }
 
+async function handlePermanentDeleteEntry(id) {
+  if (state.trashDeletePending) return;
+
+  const entryToDelete = state.entries.find((entry) => entry.id === id);
+  if (!entryToDelete) {
+    showToast("完全削除する企業が見つかりません。");
+    return;
+  }
+
+  if (!isTrashed(entryToDelete)) {
+    showToast("ゴミ箱にない企業は完全削除できません。");
+    return;
+  }
+
+  const confirmation = window.prompt(
+    `「${entryToDelete.companyName}」を完全に削除します。\n企業情報・ES・メモは復元できなくなります。\n続けるには「完全削除」と入力してください。`
+  );
+  if (confirmation === null) return;
+  if (confirmation.trim() !== "完全削除") {
+    showToast("確認文字が一致しないため、削除しませんでした。");
+    return;
+  }
+
+  if (!canUseCloudTrash()) return;
+
+  state.trashDeletePending = true;
+  renderCompanyList();
+  try {
+    if (state.mode === "cloud") {
+      const { data, error } = await supabaseClient
+        .from("entries")
+        .delete()
+        .eq("id", id)
+        .not("deleted_at", "is", null)
+        .select("id");
+      if (error) {
+        showToast(error.message);
+        return;
+      }
+      if (!Array.isArray(data) || data.length !== 1) {
+        await loadCloudEntries();
+        showToast("別の端末で状態が変わったため、最新のゴミ箱を読み込みました。");
+        return;
+      }
+    } else {
+      const nextEntries = state.entries.filter((entry) => entry.id !== id);
+      if (!saveLocalEntries(nextEntries)) return;
+    }
+
+    state.entries = state.entries.filter((entry) => entry.id !== id);
+    render();
+    showToast(`「${entryToDelete.companyName}」を完全に削除しました。`);
+  } finally {
+    state.trashDeletePending = false;
+    renderCompanyList();
+  }
+}
+
+async function handleEmptyTrash() {
+  if (state.trashDeletePending) return;
+
+  const entriesToDelete = trashedEntries();
+  if (entriesToDelete.length === 0) {
+    showToast("ゴミ箱は空です。");
+    return;
+  }
+
+  const expectedText = `${entriesToDelete.length}件を完全削除`;
+  const confirmation = window.prompt(
+    `ゴミ箱にある企業 ${entriesToDelete.length}件をすべて完全に削除します。\n企業情報・ES・メモは復元できなくなります。\n続けるには「${expectedText}」と入力してください。`
+  );
+  if (confirmation === null) return;
+  if (confirmation.trim() !== expectedText) {
+    showToast("確認文字が一致しないため、削除しませんでした。");
+    return;
+  }
+
+  if (!canUseCloudTrash()) return;
+
+  const idsToDelete = entriesToDelete.map((entry) => entry.id);
+  state.trashDeletePending = true;
+  renderCompanyList();
+  try {
+    if (state.mode === "cloud") {
+      const { data, error } = await supabaseClient
+        .from("entries")
+        .delete()
+        .in("id", idsToDelete)
+        .not("deleted_at", "is", null)
+        .select("id");
+      if (error) {
+        showToast(error.message);
+        return;
+      }
+      if (!Array.isArray(data) || data.length !== idsToDelete.length) {
+        await loadCloudEntries();
+        showToast("別の端末で状態が変わったため、最新のゴミ箱を読み込みました。");
+        return;
+      }
+    } else {
+      const deletedIds = new Set(idsToDelete);
+      const nextEntries = state.entries.filter((entry) => !deletedIds.has(entry.id));
+      if (!saveLocalEntries(nextEntries)) return;
+    }
+
+    const deletedIds = new Set(idsToDelete);
+    state.entries = state.entries.filter((entry) => !deletedIds.has(entry.id));
+    render();
+    showToast(`ゴミ箱の企業 ${idsToDelete.length}件を完全に削除しました。`);
+  } finally {
+    state.trashDeletePending = false;
+    renderCompanyList();
+  }
+}
+
 function openCompanyDetail(id) {
   const entry = state.entries.find((item) => item.id === id);
   if (!entry) {
@@ -931,7 +1061,7 @@ function renderDetailInfoSummary(entry) {
     ["種類", entry.trackType],
     ["志望度", entry.priority],
     ["締切", entry.deadline ? formatDate(entry.deadline) : "未設定"],
-    ["次の予定", entry.eventDate ? `${formatDate(entry.eventDate)} / ${entry.eventType}` : "未設定"],
+    ["次の予定", entry.eventDate ? `${formatDate(entry.eventDate)} / ${entry.eventType || "予定"}` : "未設定"],
     ["業種", entry.industry || "未設定"],
     ["マイページID", entry.mypageId || "未登録"]
   ];
@@ -2642,7 +2772,7 @@ function renderEventList() {
         <article class="list-item">
           <div class="list-title-row">
             <strong>${escapeHtml(entry.companyName)}</strong>
-            <span class="tag green">${escapeHtml(entry.eventType)}</span>
+            <span class="tag green">${escapeHtml(entry.eventType || "予定")}</span>
           </div>
           <div class="meta-row">
             <span>${formatDate(entry.eventDate)}</span>
@@ -2657,6 +2787,7 @@ function renderEventList() {
 
 function renderCompanyList() {
   const isTrashView = state.filter === trashFilterValue;
+  const trashEntries = trashedEntries();
   const isCompact = !isTrashView && state.companyViewMode === "compact";
   const isMedium = !isTrashView && state.companyViewMode === "medium";
   const entries = state.entries
@@ -2672,6 +2803,11 @@ function renderCompanyList() {
   els.companyList.classList.toggle("compact-view", isCompact);
   els.companyList.classList.toggle("medium-view", isMedium);
   els.companyList.classList.toggle("trash-view", isTrashView);
+  els.emptyTrashButton.hidden = !isTrashView || trashEntries.length === 0;
+  els.emptyTrashButton.disabled = state.trashDeletePending;
+  els.emptyTrashButton.textContent = state.trashDeletePending
+    ? "完全削除中..."
+    : `ゴミ箱を空にする (${trashEntries.length})`;
 
   if (entries.length === 0) {
     els.companyList.innerHTML = emptyState(
@@ -2700,7 +2836,8 @@ function renderCompanyList() {
                 </div>
               </div>
               <div class="card-actions">
-                <button class="restore-button" data-restore-id="${escapeAttribute(entry.id)}" type="button">復元</button>
+                <button class="restore-button" data-restore-id="${escapeAttribute(entry.id)}" type="button" ${state.trashDeletePending ? "disabled" : ""}>復元</button>
+                <button class="delete-button" data-permanent-delete-id="${escapeAttribute(entry.id)}" type="button" ${state.trashDeletePending ? "disabled" : ""}>完全削除</button>
               </div>
             </div>
             <div class="meta-row">
@@ -2759,7 +2896,7 @@ function renderCompanyList() {
               </div>
             </div>
             <div class="company-medium-details">
-              <span>${escapeHtml(entry.eventType)}</span>
+              <span>予定の内容 ${escapeHtml(entry.eventType || "未設定")}</span>
               ${entry.deadline ? `<span>${formatDate(entry.deadline)} 締切</span>` : ""}
               ${entry.eventDate ? `<span>${formatDate(entry.eventDate)} 予定</span>` : ""}
               <span>志望度 ${escapeHtml(entry.priority)}</span>
@@ -2790,7 +2927,7 @@ function renderCompanyList() {
                 <div class="meta-row">
                   ${entry.industry ? `<span>${escapeHtml(entry.industry)}</span>` : ""}
                   ${trackTag(entry.trackType)}
-                  <span>${escapeHtml(entry.eventType)}</span>
+                  <span>予定 ${escapeHtml(entry.eventType || "未設定")}</span>
                   <span>志望度 ${escapeHtml(entry.priority)}</span>
                 </div>
               </div>
@@ -3234,7 +3371,7 @@ function normalizeEntry(entry) {
     status: entry.status || "気になる",
     deadline: entry.deadline || "",
     eventDate: entry.eventDate || "",
-    eventType: entry.eventType || "面接",
+    eventType: entry.eventType == null ? "面接" : String(entry.eventType),
     priority: entry.priority || "未定",
     mypageUrl: entry.mypageUrl || "",
     esContent: entry.esContent || "",
@@ -3820,6 +3957,9 @@ function getTodayActions(limit = 5) {
 
 function getNextAction(entry) {
   if (isFinished(entry)) return null;
+  if (entry.status === "結果待ち") {
+    return createNextAction("結果待ち。連絡が来たら予定を追加", "info", "待機中", 10, "", Number.POSITIVE_INFINITY, true);
+  }
 
   const candidates = [];
   const deadlineDays = daysUntil(entry.deadline);
@@ -3841,9 +3981,9 @@ function getNextAction(entry) {
     if (eventDays < 0) {
       candidates.push(createNextAction("予定日を更新", "warning", `${Math.abs(eventDays)}日経過`, 5, entry.eventDate, eventDays));
     } else if (eventDays === 0) {
-      candidates.push(createNextAction(`${entry.eventType}は今日。開始時間を確認`, "danger", "今日の予定", 1, entry.eventDate, eventDays));
+      candidates.push(createNextAction(`${entry.eventType || "予定"}は今日。開始時間を確認`, "danger", "今日の予定", 1, entry.eventDate, eventDays));
     } else if (eventDays <= 3) {
-      candidates.push(createNextAction(`${entry.eventType}の準備`, "warning", `${eventDays}日後の予定`, 3, entry.eventDate, eventDays));
+      candidates.push(createNextAction(`${entry.eventType || "予定"}の準備`, "warning", `${eventDays}日後の予定`, 3, entry.eventDate, eventDays));
     } else if (eventDays <= 7) {
       candidates.push(createNextAction("面接・説明会のメモを準備", "info", `${eventDays}日後の予定`, 6, entry.eventDate, eventDays));
     }
@@ -3861,9 +4001,6 @@ function getNextAction(entry) {
     return createNextAction("次の締切か予定日を入れる", "info", "日付未設定", 9, "", Number.POSITIVE_INFINITY, true);
   }
 
-  if (entry.status === "結果待ち") {
-    return createNextAction("結果待ち。連絡が来たら予定を追加", "info", "待機中", 10, "", Number.POSITIVE_INFINITY, true);
-  }
 
   if (entry.status === "気になる") {
     return createNextAction("応募するか判断", "info", "気になる企業", 11, "", Number.POSITIVE_INFINITY, true);
@@ -3999,7 +4136,7 @@ function calendarItemsFor(dateKey) {
       items.push({ kind: "deadline", label: `${entry.companyName} 締切` });
     }
     if (entry.eventDate === dateKey) {
-      items.push({ kind: "event", label: `${entry.companyName} ${entry.eventType}` });
+      items.push({ kind: "event", label: `${entry.companyName} ${entry.eventType || "予定"}` });
     }
   });
   return items;

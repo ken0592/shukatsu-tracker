@@ -1253,6 +1253,16 @@ button:disabled {
   font-weight: 700;
 }
 
+.clear-next-event-button {
+  justify-self: start;
+}
+
+.empty-trash-button {
+  min-height: 38px;
+  padding: 0 12px;
+  font-weight: 700;
+}
+
 .entry-delete-button {
   min-height: 38px;
   padding: 0 14px;
