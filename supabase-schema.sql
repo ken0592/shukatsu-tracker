@@ -156,3 +156,49 @@ create trigger es_templates_set_updated_at
   before update on public.es_templates
   for each row
   execute function public.set_updated_at();
+
+-- 公開AIの無料枠を利用者ごとに守るため、本文を保存せず回数だけを記録します。
+create table if not exists public.ai_daily_usage (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  usage_date date not null default ((now() at time zone 'Asia/Tokyo')::date),
+  request_count integer not null default 0 check (request_count >= 0),
+  primary key (user_id, usage_date)
+);
+
+alter table public.ai_daily_usage enable row level security;
+
+revoke all on table public.ai_daily_usage from anon, authenticated;
+
+create or replace function public.consume_ai_quota()
+returns table (is_allowed boolean, remaining integer)
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  current_user_id uuid := auth.uid();
+  today_jst date := (now() at time zone 'Asia/Tokyo')::date;
+  current_count integer;
+  daily_limit constant integer := 10;
+begin
+  if current_user_id is null then
+    raise exception 'authentication required';
+  end if;
+
+  insert into public.ai_daily_usage (user_id, usage_date, request_count)
+  values (current_user_id, today_jst, 1)
+  on conflict (user_id, usage_date) do update
+    set request_count = public.ai_daily_usage.request_count + 1
+    where public.ai_daily_usage.request_count < daily_limit
+  returning request_count into current_count;
+
+  if current_count is null then
+    return query select false, 0;
+  end if;
+
+  return query select true, greatest(0, daily_limit - current_count);
+end;
+$$;
+
+revoke all on function public.consume_ai_quota() from public, anon;
+grant execute on function public.consume_ai_quota() to authenticated;

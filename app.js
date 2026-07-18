@@ -79,6 +79,7 @@ const mascotImageVariants = {
 ensureMascotDom();
 
 const appConfig = window.SHUKATSU_CONFIG || {};
+const localAi = window.SHUKATSU_AI || null;
 const hasCloudConfig = Boolean(appConfig.supabaseUrl && appConfig.supabaseAnonKey && window.supabase);
 const supabaseClient = hasCloudConfig
   ? window.supabase.createClient(appConfig.supabaseUrl, appConfig.supabaseAnonKey)
@@ -108,6 +109,7 @@ const state = {
   editingId: null,
   editingBaseEntry: null,
   entryDraft: null,
+  entryDraftKind: null,
   entrySavePending: false,
   detailEditingId: null,
   detailBaseEntry: null,
@@ -117,12 +119,28 @@ const state = {
   pendingEntryConflict: null,
   trashDeletePending: false,
   editingTemplateId: null,
+  aiCards: [],
+  aiGeneratePending: false,
   calendarYear: initialCalendarDate.getFullYear(),
   calendarMonth: initialCalendarDate.getMonth()
 };
 
 const els = {
   openFormButton: document.querySelector("#openFormButton"),
+  openAiImportButton: document.querySelector("#openAiImportButton"),
+  aiImportDialog: document.querySelector("#aiImportDialog"),
+  aiImportForm: document.querySelector("#aiImportForm"),
+  closeAiImportButton: document.querySelector("#closeAiImportButton"),
+  aiMemoInput: document.querySelector("#aiMemoInput"),
+  selectAiMemoFileButton: document.querySelector("#selectAiMemoFileButton"),
+  aiMemoFileInput: document.querySelector("#aiMemoFileInput"),
+  aiMemoFileName: document.querySelector("#aiMemoFileName"),
+  aiPrivacySummary: document.querySelector("#aiPrivacySummary"),
+  aiRedactedPreview: document.querySelector("#aiRedactedPreview"),
+  aiConnectionStatus: document.querySelector("#aiConnectionStatus"),
+  aiImportError: document.querySelector("#aiImportError"),
+  aiResultList: document.querySelector("#aiResultList"),
+  generateAiCardsButton: document.querySelector("#generateAiCardsButton"),
   closeFormButton: document.querySelector("#closeFormButton"),
   deleteEntryButton: document.querySelector("#deleteEntryButton"),
   signOutButton: document.querySelector("#signOutButton"),
@@ -294,6 +312,21 @@ bindEvents();
 init();
 
 function bindEvents() {
+  els.openAiImportButton.addEventListener("click", openAiImportDialog);
+  els.closeAiImportButton.addEventListener("click", () => closeAiImportDialog(true));
+  els.aiImportDialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeAiImportDialog(true);
+  });
+  els.aiImportForm.addEventListener("submit", handleAiGenerate);
+  els.aiMemoInput.addEventListener("input", updateAiPrivacyPreview);
+  els.selectAiMemoFileButton.addEventListener("click", () => els.aiMemoFileInput.click());
+  els.aiMemoFileInput.addEventListener("change", handleAiMemoFile);
+  els.aiResultList.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-ai-card-index]");
+    if (button) openAiCardDraft(Number(button.dataset.aiCardIndex));
+  });
+
   els.openFormButton.addEventListener("click", () => {
     if (state.mode === "cloud" && !state.session) {
       showToast("ログインすると追加できます。");
@@ -680,6 +713,201 @@ async function handleSignOut() {
   showToast("ログアウトしました。");
 }
 
+function openAiImportDialog() {
+  updateAiPrivacyPreview();
+  renderAiCards();
+  setAiImportError("");
+
+  if (typeof els.aiImportDialog.showModal === "function") {
+    els.aiImportDialog.showModal();
+  } else {
+    els.aiImportDialog.setAttribute("open", "");
+  }
+  els.aiMemoInput.focus();
+}
+
+function closeAiImportDialog(clearAll = false) {
+  if (clearAll) clearAiImportData();
+  if (els.aiImportDialog.open) els.aiImportDialog.close();
+}
+
+function clearAiImportData() {
+  els.aiMemoInput.value = "";
+  els.aiMemoFileInput.value = "";
+  els.aiMemoFileName.textContent = "ファイル未選択";
+  state.aiCards = [];
+  setAiImportError("");
+  updateAiPrivacyPreview();
+  renderAiCards();
+}
+
+async function handleAiMemoFile(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  if (file.size > 256 * 1024) {
+    setAiImportError("ファイルが大きすぎます。256KB以下のテキストファイルを選んでください。");
+    event.target.value = "";
+    return;
+  }
+
+  try {
+    const content = await file.text();
+    els.aiMemoInput.value = content.slice(0, localAi?.maxMemoChars || 12000);
+    els.aiMemoFileName.textContent = file.name;
+    setAiImportError(content.length > (localAi?.maxMemoChars || 12000) ? "先頭12,000文字を読み込みました。" : "");
+    updateAiPrivacyPreview();
+  } catch {
+    setAiImportError("ファイルを読み込めませんでした。文字をコピーして貼り付けてください。");
+  }
+}
+
+function updateAiPrivacyPreview() {
+  if (!localAi) {
+    els.aiPrivacySummary.textContent = "安全処理を読み込めませんでした。画面を再読み込みしてください。";
+    els.aiRedactedPreview.textContent = "安全処理を読み込めませんでした。";
+    return;
+  }
+
+  const result = localAi.redactSensitiveMemo(els.aiMemoInput.value);
+  els.aiPrivacySummary.textContent = localAi.privacySummary(result);
+  els.aiRedactedPreview.textContent = result.text.trim() || "まだ文章がありません。";
+}
+
+async function handleAiGenerate(event) {
+  event.preventDefault();
+  if (state.aiGeneratePending) return;
+  if (!localAi) {
+    setAiImportError("安全処理を読み込めませんでした。画面を再読み込みしてください。");
+    return;
+  }
+
+  const accessToken = state.session?.access_token;
+  if (!accessToken) {
+    setAiImportError("ログインしてからAIメモ整理をお使いください。");
+    return;
+  }
+
+  const source = els.aiMemoInput.value.trim();
+  if (!source) {
+    setAiImportError("メモ帳の内容を貼り付けるか、ファイルを選んでください。");
+    els.aiMemoInput.focus();
+    return;
+  }
+
+  const redacted = localAi.redactSensitiveMemo(source);
+  if (!redacted.text.trim()) {
+    setAiImportError("個人情報を隠すと整理できる文章が残りませんでした。企業名や締切などだけにしてお試しください。");
+    return;
+  }
+
+  state.aiGeneratePending = true;
+  state.aiCards = [];
+  updateAiGenerateButton();
+  renderAiCards();
+  setAiImportError("");
+  setAiConnectionStatus("オンラインで整理中...", "checking");
+
+  try {
+    const cards = await localAi.generateCards(redacted.text, { accessToken });
+    state.aiCards = cards;
+    if (cards.length) {
+      setAiConnectionStatus("接続OK", "connected");
+      showToast(`${cards.length}件のカード案を作りました。`);
+    } else {
+      setAiImportError("企業名を含むカード案を作れませんでした。会社ごとに企業名と予定を書いて、もう一度お試しください。");
+    }
+  } catch (error) {
+    setAiConnectionStatus("接続できません", "error");
+    setAiImportError(error.message);
+  } finally {
+    state.aiGeneratePending = false;
+    updateAiGenerateButton();
+    renderAiCards();
+  }
+}
+
+function updateAiGenerateButton() {
+  els.generateAiCardsButton.disabled = state.aiGeneratePending;
+  els.generateAiCardsButton.textContent = state.aiGeneratePending
+    ? "AIが整理中..."
+    : "個人情報を隠してカード案を作る";
+}
+
+function setAiConnectionStatus(message, tone) {
+  els.aiConnectionStatus.textContent = message;
+  els.aiConnectionStatus.classList.toggle("connected", tone === "connected");
+  els.aiConnectionStatus.classList.toggle("error", tone === "error");
+  els.aiConnectionStatus.classList.toggle("checking", tone === "checking");
+}
+
+function setAiImportError(message) {
+  els.aiImportError.textContent = message;
+  els.aiImportError.hidden = !message;
+}
+
+function renderAiCards() {
+  if (state.aiGeneratePending) {
+    els.aiResultList.innerHTML = '<div class="ai-loading-card"><span aria-hidden="true"></span><strong>メモを企業ごとに整理しています</strong><p>通常は数秒から数十秒ほどかかります。</p></div>';
+    return;
+  }
+  if (!state.aiCards.length) {
+    els.aiResultList.textContent = "";
+    return;
+  }
+
+  els.aiResultList.innerHTML = `
+    <div class="ai-result-heading">
+      <div><strong>${state.aiCards.length}件のカード案</strong><span>内容を選ぶと、通常の入力画面で修正できます。</span></div>
+      <span class="ai-review-badge">未保存</span>
+    </div>
+    ${state.aiCards.map((card, index) => aiCardMarkup(card, index)).join("")}
+  `;
+}
+
+function aiCardMarkup(card, index) {
+  const meta = [
+    card.industry,
+    card.trackType,
+    card.status,
+    card.deadline ? `締切 ${formatDate(card.deadline)}` : "",
+    card.eventDate ? `予定 ${formatDate(card.eventDate)}` : "",
+    card.priority && card.priority !== "未定" ? `志望度 ${card.priority}` : ""
+  ].filter(Boolean);
+  const notes = [card.esContent, card.interviewNotes, card.memo].filter(Boolean).join("\n");
+
+  return `
+    <article class="ai-result-card">
+      <div class="ai-result-card-main">
+        <strong>${escapeHtml(card.companyName)}</strong>
+        <div class="ai-result-meta">${meta.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
+        ${notes ? `<p>${escapeHtml(notes.slice(0, 260))}${notes.length > 260 ? "…" : ""}</p>` : '<p class="ai-empty-note">メモ欄は空です。</p>'}
+      </div>
+      <button class="primary-button" data-ai-card-index="${index}" type="button">入力画面で確認</button>
+    </article>
+  `;
+}
+
+function openAiCardDraft(index) {
+  const card = state.aiCards[index];
+  if (!card) return;
+  const now = new Date().toISOString();
+  const draft = normalizeEntry({
+    ...card,
+    id: createId(),
+    esItems: normalizeEsItems([], card.esContent),
+    createdAt: now,
+    updatedAt: now,
+    sortOrder: nextCompanySortOrder()
+  });
+
+  els.aiMemoInput.value = "";
+  els.aiMemoFileInput.value = "";
+  els.aiMemoFileName.textContent = "ファイル未選択";
+  updateAiPrivacyPreview();
+  closeAiImportDialog(false);
+  openEntryDialog(null, { draft, isAiDraft: true });
+}
+
 async function handleEntrySubmit(event) {
   event.preventDefault();
   if (state.entrySavePending) return;
@@ -725,7 +953,8 @@ async function handleEntrySubmit(event) {
   }
 
   const celebration = getEntryCelebration(entry, baseEntry);
-  const handoffTrack = draftEntry?.trackType || "";
+  const draftKind = state.entryDraftKind;
+  const handoffTrack = draftKind === "handoff" ? draftEntry?.trackType || "" : "";
   state.entrySavePending = true;
   updateEntrySaveButton();
 
@@ -762,6 +991,8 @@ async function handleEntrySubmit(event) {
       showCelebration(savedEntry, celebration);
     } else if (handoffTrack) {
       showToast(`${handoffTrack}として新しく引き継ぎました。`);
+    } else if (draftKind === "ai") {
+      showToast("AIのカード案を保存しました。");
     } else {
       showToast(existingEntry ? "更新しました。" : "保存しました。");
     }
@@ -3087,10 +3318,13 @@ function openEntryDialog(entry = null, options = {}) {
   state.editingId = entry?.id || null;
   state.editingBaseEntry = entry ? normalizeEntry(entry) : null;
   state.entryDraft = draft;
+  state.entryDraftKind = options.isHandoff ? "handoff" : options.isAiDraft ? "ai" : draft ? "draft" : null;
   els.entryFormTitle.textContent = entry
     ? "企業・選考を編集"
     : options.isHandoff
       ? "次の選考へ引き継ぐ"
+      : options.isAiDraft
+        ? "AIのカード案を確認"
       : "企業・選考を追加";
   els.deleteEntryButton.hidden = !entry;
   fillEntryForm(entry || draft);
@@ -3132,6 +3366,7 @@ function resetEntryForm() {
   state.editingId = null;
   state.editingBaseEntry = null;
   state.entryDraft = null;
+  state.entryDraftKind = null;
   els.entryForm.reset();
   els.entryFormTitle.textContent = "企業・選考を追加";
   els.deleteEntryButton.hidden = true;
@@ -3146,7 +3381,7 @@ function updateEntrySaveButton() {
   } else if (state.editingId) {
     els.saveEntryButton.textContent = "更新";
   } else if (state.entryDraft) {
-    els.saveEntryButton.textContent = "引き継いで追加";
+    els.saveEntryButton.textContent = state.entryDraftKind === "handoff" ? "引き継いで追加" : "確認して保存";
   } else {
     els.saveEntryButton.textContent = "保存";
   }

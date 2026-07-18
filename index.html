@@ -22,6 +22,7 @@
         <button class="secondary-button" id="importBackupButton" type="button">復元</button>
         <input id="importBackupInput" type="file" accept="application/json,.json" hidden />
         <button class="secondary-button" id="signOutButton" type="button" hidden>ログアウト</button>
+        <button class="ai-button" id="openAiImportButton" type="button"><span aria-hidden="true">✦</span> AIでメモ整理</button>
         <button class="primary-button" id="openFormButton" type="button">＋ 追加</button>
       </div>
     </header>
@@ -243,6 +244,64 @@
         </section>
       </div>
     </main>
+
+    <dialog class="ai-import-dialog" id="aiImportDialog">
+      <form class="ai-import-form" id="aiImportForm" method="dialog">
+        <div class="form-heading">
+          <div>
+            <p class="eyebrow">Online AI</p>
+            <h2>メモから企業カードを作る</h2>
+          </div>
+          <button class="icon-button" id="closeAiImportButton" type="button" aria-label="内容を消して閉じる">×</button>
+        </div>
+
+        <section class="ai-safety-banner" aria-label="AIの安全対策">
+          <span class="ai-local-badge">利用料 0円・どの端末でも利用可</span>
+          <div>
+            <strong>個人情報を隠してからAIに渡します</strong>
+            <p>氏名・メール・電話・住所・ID・パスワード・URL・識別コードを端末側とサーバー側の2段階で伏せます。元のメモは保存しません。</p>
+          </div>
+        </section>
+
+        <label>
+          メモ帳の内容
+          <textarea id="aiMemoInput" rows="10" maxlength="12000" placeholder="例：〇〇株式会社 IT企業。7/25 ES締切。第一志望。次は8/2に一次面接。\n複数社をまとめて貼ってもカード案を分けます。"></textarea>
+          <span class="field-hint">12,000文字まで。貼り付けるか、テキストファイルを選べます。</span>
+        </label>
+
+        <div class="ai-file-row">
+          <button class="secondary-button" id="selectAiMemoFileButton" type="button">メモ帳ファイルを選ぶ</button>
+          <input id="aiMemoFileInput" type="file" accept="text/plain,.txt,.md,text/markdown" hidden />
+          <span id="aiMemoFileName">ファイル未選択</span>
+        </div>
+
+        <section class="ai-privacy-check" aria-live="polite">
+          <div>
+            <strong>送信前のプライバシーチェック</strong>
+            <p id="aiPrivacySummary">メモを入れると、隠す情報を確認できます。</p>
+          </div>
+          <details>
+            <summary>AIに渡す文章を確認</summary>
+            <pre id="aiRedactedPreview">まだ文章がありません。</pre>
+          </details>
+        </section>
+
+        <div class="ai-connection-row">
+          <strong>ログイン中の利用者は、PC・スマホのどちらからでも使えます</strong>
+          <span class="ai-connection-status connected" id="aiConnectionStatus" role="status">オンライン</span>
+        </div>
+
+        <p class="ai-setup-note">AIに送るのは伏せ字処理後の文章だけです。使いすぎ防止のため、1人1日10回まで利用できます。</p>
+
+        <div class="ai-error" id="aiImportError" role="alert" hidden></div>
+        <div class="ai-result-list" id="aiResultList" aria-live="polite"></div>
+
+        <div class="form-actions ai-form-actions">
+          <span>AIの案は保存前に必ず入力画面で確認できます。</span>
+          <button class="primary-button" id="generateAiCardsButton" type="submit">個人情報を隠してカード案を作る</button>
+        </div>
+      </form>
+    </dialog>
 
     <dialog class="entry-dialog" id="entryDialog">
       <form class="entry-form" id="entryForm" method="dialog">
@@ -561,6 +620,7 @@
     </div>
 
     <script src="./quotes.js"></script>
+    <script src="./ai.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>
