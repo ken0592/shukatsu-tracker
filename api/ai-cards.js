@@ -54,6 +54,13 @@ module.exports = async function handler(request, response) {
 
   const providerResponse = await runCloudflareAi(protectedMemo.text);
   if (!providerResponse.ok) {
+    const providerFailure = await safeJson(providerResponse);
+    console.error("Cloudflare AI request failed", {
+      status: providerResponse.status,
+      codes: Array.isArray(providerFailure?.errors)
+        ? providerFailure.errors.map((error) => error?.code).filter(Boolean).slice(0, 3)
+        : []
+    });
     if (providerResponse.status === 429) {
       return response.status(429).json({ error: "本日のAI無料枠を使い切りました。明日もう一度お試しください。" });
     }
