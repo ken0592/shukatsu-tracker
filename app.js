@@ -12,6 +12,11 @@ const actionScopes = ["today", "week"];
 const detailTabs = ["basic", "es"];
 const detailEsModes = ["read", "edit"];
 const trashFilterValue = "trash";
+const companyNameCollator = new Intl.Collator("ja", {
+  usage: "sort",
+  sensitivity: "base",
+  numeric: true
+});
 const activeStatuses = ["気になる", "応募予定", "応募済み", "ES提出済み", "Webテスト", "一次面接", "二次面接", "最終面接", "結果待ち", "選考通過", "インターン選考通過", "インターン参加決定"];
 const finishedStatuses = ["内定", "落選", "辞退", "参加済み"];
 const celebrationStatuses = ["内定", "選考通過", "インターン選考通過", "インターン参加決定"];
@@ -3095,7 +3100,6 @@ function renderCompanyList() {
               ${companyIconMarkup(entry)}
               <span>${escapeHtml(entry.companyName)}</span>
             </button>
-            <button class="compact-reorder-button" data-company-reorder-handle type="button" aria-label="${escapeAttribute(entry.companyName)}を並べ替え">↕</button>
           </article>
         `;
       })
@@ -3135,7 +3139,6 @@ function renderCompanyList() {
             ${mediumLinks ? `<div class="company-medium-links">${mediumLinks}</div>` : ""}
             ${nextActionMarkup(entry, "compact")}
             <div class="company-medium-actions">
-              <button class="compact-reorder-button" data-company-reorder-handle type="button" aria-label="${escapeAttribute(entry.companyName)}を並べ替え">↕</button>
               <button class="detail-button" data-detail-id="${entry.id}" type="button">詳細</button>
               <button class="edit-button" data-edit-id="${entry.id}" type="button">編集</button>
             </div>
@@ -3164,7 +3167,6 @@ function renderCompanyList() {
               </div>
             </div>
             <div class="card-actions">
-              <button class="reorder-button" data-company-reorder-handle type="button">並べ替え</button>
               <button class="detail-button" data-detail-id="${entry.id}" type="button">詳細</button>
               <button class="edit-button" data-edit-id="${entry.id}" type="button">編集</button>
               <button class="delete-button" data-delete-id="${entry.id}" type="button">削除</button>
@@ -4419,16 +4421,11 @@ function sortByClosestDate(a, b) {
 }
 
 function sortCompanyEntries(a, b) {
-  const aOrder = Number.isFinite(a.sortOrder) ? a.sortOrder : Number.MAX_SAFE_INTEGER;
-  const bOrder = Number.isFinite(b.sortOrder) ? b.sortOrder : Number.MAX_SAFE_INTEGER;
-  if (aOrder !== bOrder) return aOrder - bOrder;
-
-  if (state.deadlineFilter !== "all") {
-    const aDeadline = a.deadline || "9999-12-31";
-    const bDeadline = b.deadline || "9999-12-31";
-    return aDeadline.localeCompare(bDeadline);
-  }
-  return sortByClosestDate(a, b);
+  const aName = String(a.companyName || "").normalize("NFKC").trim();
+  const bName = String(b.companyName || "").normalize("NFKC").trim();
+  const nameOrder = companyNameCollator.compare(aName, bName);
+  if (nameOrder !== 0) return nameOrder;
+  return String(a.id || "").localeCompare(String(b.id || ""));
 }
 
 function sortTrashedEntries(a, b) {
