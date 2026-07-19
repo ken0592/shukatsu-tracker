@@ -878,14 +878,22 @@ function aiCardMarkup(card, index) {
     card.eventDate ? `予定 ${formatDate(card.eventDate)}` : "",
     card.priority && card.priority !== "未定" ? `志望度 ${card.priority}` : ""
   ].filter(Boolean);
-  const notes = [card.esContent, card.interviewNotes, card.memo].filter(Boolean).join("\n");
+  const esItems = Array.isArray(card.esItems) ? card.esItems : [];
+  const notes = [esItems.length ? "" : card.esContent, card.interviewNotes, card.memo].filter(Boolean).join("\n");
+  const esPreview = esItems.length
+    ? `<div class="ai-es-preview"><strong>ES ${esItems.length}問に分割</strong><ul>${esItems.map((item, itemIndex) => {
+        const question = String(item.question || "").trim() || `質問 ${itemIndex + 1}`;
+        return `<li>${escapeHtml(question)}</li>`;
+      }).join("")}</ul></div>`
+    : "";
 
   return `
     <article class="ai-result-card">
       <div class="ai-result-card-main">
         <strong>${escapeHtml(card.companyName)}</strong>
         <div class="ai-result-meta">${meta.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
-        ${notes ? `<p>${escapeHtml(notes.slice(0, 260))}${notes.length > 260 ? "…" : ""}</p>` : '<p class="ai-empty-note">メモ欄は空です。</p>'}
+        ${esPreview}
+        ${notes ? `<p>${escapeHtml(notes.slice(0, 260))}${notes.length > 260 ? "…" : ""}</p>` : esItems.length ? "" : '<p class="ai-empty-note">メモ欄は空です。</p>'}
       </div>
       <button class="primary-button" data-ai-card-index="${index}" type="button">入力画面で確認</button>
     </article>
@@ -899,17 +907,13 @@ function openAiCardDraft(index) {
   const draft = normalizeEntry({
     ...card,
     id: createId(),
-    esItems: normalizeEsItems([], card.esContent),
+    esItems: normalizeEsItems(card.esItems, card.esContent),
     createdAt: now,
     updatedAt: now,
     sortOrder: nextCompanySortOrder()
   });
 
-  els.aiMemoInput.value = "";
-  els.aiMemoFileInput.value = "";
-  els.aiMemoFileName.textContent = "ファイル未選択";
-  updateAiPrivacyPreview();
-  closeAiImportDialog(false);
+  closeAiImportDialog(true);
   openEntryDialog(null, { draft, isAiDraft: true });
 }
 

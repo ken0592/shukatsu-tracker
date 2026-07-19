@@ -2015,6 +2015,30 @@ button:disabled {
   color: var(--muted);
 }
 
+.ai-es-preview {
+  display: grid;
+  gap: 5px;
+  padding: 9px 11px;
+  border: 1px solid #cfe4dd;
+  border-radius: 8px;
+  background: #f3fbf8;
+}
+
+.ai-es-preview > strong {
+  color: #17644f;
+  font-size: 12px;
+}
+
+.ai-es-preview ul {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding-left: 20px;
+  color: #344054;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .ai-result-meta {
   display: flex;
   flex-wrap: wrap;

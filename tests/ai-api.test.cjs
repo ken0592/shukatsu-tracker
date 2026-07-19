@@ -58,6 +58,16 @@ async function testProtectedPublicApi() {
                   eventDate: "2026-08-02",
                   eventType: "面接",
                   priority: "高",
+                  esItems: [
+                    {
+                      question: "志望動機を教えてください。",
+                      variants: [{ label: "400字", answer: "顧客課題を解決したいからです。" }]
+                    },
+                    {
+                      question: "学生時代に力を入れたことを教えてください。",
+                      variants: [{ label: "", answer: "研究活動で改善を重ねました。" }]
+                    }
+                  ],
                   esContent: "",
                   interviewNotes: "",
                   memo: ""
@@ -83,6 +93,7 @@ async function testProtectedPublicApi() {
 
     assert.equal(response.statusCode, 200);
     assert.equal(response.body.cards.length, 1);
+    assert.equal(response.body.cards[0].esItems.length, 2);
     assert.equal(response.body.remainingToday, 9);
 
     const providerCall = calls.find((call) => call.url.includes("api.cloudflare.com"));

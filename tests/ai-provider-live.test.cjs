@@ -7,7 +7,13 @@ async function main() {
   assert.ok(accountId, "CLOUDFLARE_ACCOUNT_ID is required");
   assert.ok(token, "CLOUDFLARE_AI_TOKEN is required");
 
-  const memo = "株式会社サンプルテック。IT企業。本選考のES締切は2026年7月25日。志望度は高。2026年8月2日に一次面接。";
+  const memo = [
+    "株式会社サンプルテック。IT企業。本選考のES締切は2026年7月25日。志望度は高。2026年8月2日に一次面接。",
+    "ES質問1：志望動機を教えてください。",
+    "回答1：顧客課題を技術で解決したいからです。",
+    "ES質問2：学生時代に力を入れたことを教えてください。",
+    "回答2：研究活動で改善を重ねました。"
+  ].join("\n");
   const response = await fetch(
     `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/run/@cf/qwen/qwen3-30b-a3b-fp8`,
     {
@@ -31,6 +37,9 @@ async function main() {
   assert.match(cards[0].companyName, /サンプルテック/);
   assert.equal(cards[0].deadline, "2026-07-25");
   assert.equal(cards[0].eventDate, "2026-08-02");
+  assert.equal(cards[0].esItems.length, 2);
+  assert.match(cards[0].esItems[0].question, /志望動機/);
+  assert.match(cards[0].esItems[1].question, /学生時代/);
   assert.ok(
     ["気になる", "応募予定", "応募済み", "選考中"].includes(cards[0].status),
     `Unexpected status: ${cards[0].status}`
