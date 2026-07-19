@@ -29,13 +29,38 @@
             eventDate: { type: "string" },
             eventType: { type: "string", enum: allowedEventTypes },
             priority: { type: "string", enum: allowedPriorities },
+            esItems: {
+              type: "array",
+              maxItems: 30,
+              items: {
+                type: "object",
+                properties: {
+                  question: { type: "string" },
+                  variants: {
+                    type: "array",
+                    maxItems: 6,
+                    items: {
+                      type: "object",
+                      properties: {
+                        label: { type: "string" },
+                        answer: { type: "string" }
+                      },
+                      required: ["label", "answer"],
+                      additionalProperties: false
+                    }
+                  }
+                },
+                required: ["question", "variants"],
+                additionalProperties: false
+              }
+            },
             esContent: { type: "string" },
             interviewNotes: { type: "string" },
             memo: { type: "string" }
           },
           required: [
             "companyName", "industry", "trackType", "status", "deadline", "eventDate", "eventType", "priority",
-            "esContent", "interviewNotes", "memo"
+            "esItems", "esContent", "interviewNotes", "memo"
           ],
           additionalProperties: false
         }
@@ -101,7 +126,7 @@
     return {
       stream: false,
       temperature: 0,
-      max_tokens: 4000,
+      max_tokens: 6000,
       response_format: { type: "json_schema", json_schema: cardSchema },
       messages: [
         {
@@ -115,7 +140,11 @@
             "priorityは志望度が明記されている場合だけ高・中・低にし、不明なら必ず未定にしてください。",
             "日付は文脈と本日の日付から判断できる場合だけYYYY-MM-DDにしてください。年が不明なら最も近い将来の日付を選び、判断できなければ空欄にしてください。",
             "伏せ字を復元・推測しないでください。伏せ字そのものも出力に含めないでください。",
-            "ESの質問や回答はesContent、面接準備や逆質問はinterviewNotes、その他の事実はmemoに整理してください。",
+            "ESは必ず質問ごとにesItemsの別要素へ分けてください。複数の質問を1つのquestionやanswerへまとめてはいけません。",
+            "各esItems要素のquestionには質問文だけを入れ、variantsにはその質問への回答だけを入れてください。Q1・設問1・回答1などの番号や見出しは取り除いてください。",
+            "同じ質問に400字版・600字版など複数回答がある場合だけvariantsを複数にし、labelへ400字・600字などの違いを入れてください。通常はlabelを空文字にした回答1件です。",
+            "質問だけで回答がない場合もesItemsを作り、variantsは空配列にしてください。質問を特定できないESの断片だけesContentへ入れ、esItemsとesContentに同じ内容を重複させないでください。",
+            "面接準備や逆質問はinterviewNotes、その他の事実はmemoに整理してください。",
             `本日は${today}です。出力は次のJSON Schemaに厳密に従ってください: ${schemaText}`
           ].join("\n")
         },
@@ -217,10 +246,30 @@
       eventDate: cleanDate(card.eventDate),
       eventType: allowedEventTypes.includes(card.eventType) ? card.eventType : "",
       priority: allowedPriorities.includes(card.priority) ? card.priority : "未定",
+      esItems: sanitizeEsItems(card.esItems),
       esContent: cleanText(card.esContent, 6000),
       interviewNotes: cleanText(card.interviewNotes, 6000),
       memo: cleanText(card.memo, 6000)
     };
+  }
+
+  function sanitizeEsItems(items) {
+    if (!Array.isArray(items)) return [];
+    return items
+      .slice(0, 30)
+      .map((item) => ({
+        question: cleanText(item?.question, 1000),
+        variants: Array.isArray(item?.variants)
+          ? item.variants
+              .slice(0, 6)
+              .map((variant) => ({
+                label: cleanText(variant?.label, 120),
+                answer: cleanText(variant?.answer, 6000)
+              }))
+              .filter((variant) => variant.label || variant.answer)
+          : []
+      }))
+      .filter((item) => item.question || item.variants.length > 0);
   }
 
   function cleanText(value, maxLength) {

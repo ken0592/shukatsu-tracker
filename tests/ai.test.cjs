@@ -40,6 +40,8 @@ function testRequestUsesOnlyProvidedRedactedText() {
   assert.equal(request.stream, false);
   assert.equal(request.temperature, 0);
   assert.equal(request.response_format.type, "json_schema");
+  assert.ok(request.response_format.json_schema.properties.cards.items.required.includes("esItems"));
+  assert.match(request.messages[0].content, /複数の質問を1つ/);
 }
 
 function testProviderResponseParsing() {
@@ -57,6 +59,16 @@ function testProviderResponseParsing() {
               eventDate: "",
               eventType: "ES締切",
               priority: "未定",
+              esItems: [
+                {
+                  question: "志望動機を教えてください。",
+                  variants: [{ label: "400字", answer: "顧客課題を技術で解決したいからです。" }]
+                },
+                {
+                  question: "学生時代に力を入れたことを教えてください。",
+                  variants: [{ label: "", answer: "研究活動で改善を重ねました。" }]
+                }
+              ],
               esContent: "",
               interviewNotes: "",
               memo: ""
@@ -70,6 +82,10 @@ function testProviderResponseParsing() {
   assert.equal(cards.length, 1);
   assert.equal(cards[0].companyName, "株式会社サンプル");
   assert.equal(cards[0].deadline, "2026-07-25");
+  assert.equal(cards[0].esItems.length, 2);
+  assert.equal(cards[0].esItems[0].question, "志望動機を教えてください。");
+  assert.equal(cards[0].esItems[0].variants[0].label, "400字");
+  assert.equal(cards[0].esItems[1].variants[0].answer, "研究活動で改善を重ねました。");
 }
 
 function testCardValidation() {
@@ -83,6 +99,15 @@ function testCardValidation() {
       eventDate: "2026-08-02",
       eventType: "面接",
       priority: "最高",
+      esItems: [
+        {
+          question: "[IDを非表示] 志望動機",
+          variants: [
+            { label: "400字", answer: "[メールを非表示] 顧客課題を解決したい" },
+            { label: "", answer: "" }
+          ]
+        }
+      ],
       esContent: "[IDを非表示] 志望動機",
       interviewNotes: "逆質問",
       memo: "<script>alert(1)</script>",
@@ -99,6 +124,10 @@ function testCardValidation() {
   assert.equal(cards[0].eventDate, "2026-08-02");
   assert.equal(cards[0].priority, "未定");
   assert.equal(cards[0].esContent, "志望動機");
+  assert.equal(cards[0].esItems.length, 1);
+  assert.equal(cards[0].esItems[0].question, "志望動機");
+  assert.equal(cards[0].esItems[0].variants.length, 1);
+  assert.equal(cards[0].esItems[0].variants[0].answer, "顧客課題を解決したい");
   assert.equal("mypageId" in cards[0], false);
 }
 
