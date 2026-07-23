@@ -31,6 +31,7 @@ Production、Preview、Developmentのうち、利用する環境を選びます�
 - ブラウザで氏名、メール、電話、住所、ID、パスワード、URL、識別コードを伏せてから送ります。
 - Vercel Functionでも同じ伏せ字処理をもう一度行います。
 - Cloudflareへ送るのは伏せ字処理後の文章だけです。
-- ログイン状態をサーバーで確認し、1人1日10回に制限します。
+- ログイン状態をサーバーで確認し、AI FAQとメモ整理を合わせて1人1日30回に制限します。
+- 既にSupabaseを設定済みの場合も、更新後の `supabase-schema.sql` をSQL Editorで再実行すると、既存データを消さずに上限を更新できます。
 - 元のメモをlocalStorage、Supabase、Vercel Functionへ保存しません。
 - AIの結果は項目と文字数を検査し、利用者が確認するまで企業カードとして保存しません。

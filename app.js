@@ -126,6 +126,9 @@ const state = {
   editingTemplateId: null,
   aiCards: [],
   aiGeneratePending: false,
+  aiGenerateRequestId: 0,
+  faqPending: false,
+  faqRequestId: 0,
   calendarYear: initialCalendarDate.getFullYear(),
   calendarMonth: initialCalendarDate.getMonth()
 };
@@ -247,6 +250,7 @@ const els = {
   closeMascotHelpButton: document.querySelector("#closeMascotHelpButton"),
   mascotHelpForm: document.querySelector("#mascotHelpForm"),
   mascotHelpInput: document.querySelector("#mascotHelpInput"),
+  mascotHelpSubmitButton: document.querySelector("#mascotHelpSubmitButton"),
   mascotHelpLog: document.querySelector("#mascotHelpLog"),
   toast: document.querySelector("#toast")
 };
@@ -368,6 +372,7 @@ function bindEvents() {
   });
   els.closeMascotHelpButton.addEventListener("click", closeMascotHelp);
   els.mascotHelpForm.addEventListener("submit", handleMascotHelpSubmit);
+  els.mascotHelpInput.addEventListener("input", () => els.mascotHelpInput.setCustomValidity(""));
   els.closeCelebrationButton.addEventListener("click", closeCelebration);
   els.celebrationOverlay.addEventListener("click", (event) => {
     if (event.target === els.celebrationOverlay) closeCelebration();
@@ -737,11 +742,14 @@ function closeAiImportDialog(clearAll = false) {
 }
 
 function clearAiImportData() {
+  state.aiGenerateRequestId += 1;
+  state.aiGeneratePending = false;
   els.aiMemoInput.value = "";
   els.aiMemoFileInput.value = "";
   els.aiMemoFileName.textContent = "ファイル未選択";
   state.aiCards = [];
   setAiImportError("");
+  updateAiGenerateButton();
   updateAiPrivacyPreview();
   renderAiCards();
 }
@@ -749,6 +757,15 @@ function clearAiImportData() {
 async function handleAiMemoFile(event) {
   const file = event.target.files?.[0];
   if (!file) return;
+  const previousMemo = els.aiMemoInput.value;
+  const previousFileName = els.aiMemoFileName.textContent;
+  const extension = file.name.toLowerCase().match(/\.[^.]+$/u)?.[0] || "";
+  const allowedMimeTypes = new Set(["", "text/plain", "text/markdown", "text/x-markdown", "application/octet-stream"]);
+  if (!new Set([".txt", ".md"]).has(extension) || !allowedMimeTypes.has(String(file.type || "").toLowerCase())) {
+    setAiImportError("TXTまたはMarkdownファイルを選んでください。ファイル名だけを変更した形式は読み込めません。");
+    event.target.value = "";
+    return;
+  }
   if (file.size > 256 * 1024) {
     setAiImportError("ファイルが大きすぎます。256KB以下のテキストファイルを選んでください。");
     event.target.value = "";
@@ -756,14 +773,120 @@ async function handleAiMemoFile(event) {
   }
 
   try {
-    const content = await file.text();
-    els.aiMemoInput.value = content.slice(0, localAi?.maxMemoChars || 12000);
-    els.aiMemoFileName.textContent = file.name;
-    setAiImportError(content.length > (localAi?.maxMemoChars || 12000) ? "先頭12,000文字を読み込みました。" : "");
+    if (!localAi?.decodeMemoBytes) throw new Error("安全なTXT読込処理を読み込めませんでした。画面を再読み込みしてください。");
+    const decoded = localAi.decodeMemoBytes(await file.arrayBuffer());
+    const maxLength = localAi.maxMemoChars || 12000;
+    if (countAiCharacters(decoded.text) > maxLength) {
+      throw new Error(`TXTは${maxLength.toLocaleString("ja-JP")}文字以内にしてください。途中で切ると会社やESが欠けるため、ファイルを分けてお試しください。`);
+    }
+    const analysis = localAi.deriveMemoBlocks(decoded.text);
+    const candidateCount = countAiCandidateSections(analysis);
+    if (candidateCount > (localAi.maxCards || 12)) {
+      throw new Error(`AIに送る会社・選考候補が${candidateCount}件あります。一度に整理できるのは${localAi.maxCards || 12}件までのため、TXTを分けてください。`);
+    }
+    const questionCount = analysis.blocks.reduce((total, block) => (
+      total + (block.qaHints || []).filter((hint) => hint.kind === "question").length
+    ), 0);
+    els.aiMemoInput.value = decoded.text;
+    const details = [
+      decoded.encoding !== "utf-8" ? decoded.warning.replace(/。$/u, "") : "",
+      analysis.detectedBoundaries ? `区切り候補 ${analysis.blocks.length}件` : "",
+      questionCount ? `質問候補 ${questionCount}件` : ""
+    ].filter(Boolean);
+    els.aiMemoFileName.textContent = details.length ? `${file.name}（${details.join("・")}）` : file.name;
+    setAiImportError("");
     updateAiPrivacyPreview();
-  } catch {
-    setAiImportError("ファイルを読み込めませんでした。文字をコピーして貼り付けてください。");
+  } catch (error) {
+    els.aiMemoInput.value = previousMemo;
+    els.aiMemoFileName.textContent = previousFileName;
+    event.target.value = "";
+    setAiImportError(error?.message || "ファイルを読み込めませんでした。UTF-8のTXTとして保存し直してください。");
+    updateAiPrivacyPreview();
   }
+}
+
+function countAiCharacters(value) {
+  return typeof localAi?.countCharacters === "function"
+    ? localAi.countCharacters(value)
+    : Array.from(String(value || "")).length;
+}
+
+function countAiCandidateSections(analysis) {
+  if (typeof localAi?.countMemoCardCandidates === "function") {
+    return localAi.countMemoCardCandidates(analysis);
+  }
+  const blocks = Array.isArray(analysis?.blocks) ? analysis.blocks : [];
+  const identities = new Set();
+  let unidentifiedCount = 0;
+
+  blocks.forEach((block) => {
+    const company = extractAiBlockCompany(block);
+    if (!company) {
+      unidentifiedCount += 1;
+      return;
+    }
+    identities.add(`${normalizeAiCompanyKey(company)}\u0000${detectAiBlockTrack(block?.text)}`);
+  });
+
+  return identities.size + unidentifiedCount;
+}
+
+function extractAiBlockCompany(block) {
+  const lines = String(block?.text || "").split("\n").map((line) => line.trim()).filter(Boolean);
+  if (!lines.length) return "";
+
+  if (block?.reason === "table-row") {
+    const tableLines = lines.filter((line) => line.includes("\t"));
+    const header = tableLines[0]?.split("\t").map((cell) => cell.trim()) || [];
+    const companyIndex = header.findIndex((cell) => /^(?:会社名|企業名|社名)$/u.test(cell.normalize("NFKC")));
+    const row = tableLines[1]?.split("\t").map((cell) => cell.trim()) || [];
+    if (companyIndex >= 0 && row[companyIndex]) return stripAiTrackSuffix(row[companyIndex]);
+  }
+
+  const explicit = lines.find((line) => /^\s*(?:会社名|企業名|社名|company)\s*[：:]/iu.test(line));
+  if (explicit) {
+    return stripAiTrackSuffix(explicit.replace(/^\s*(?:会社名|企業名|社名|company)\s*[：:]\s*/iu, ""));
+  }
+
+  const headingPatterns = {
+    "markdown-heading": /^#{1,6}\s+/u,
+    "decorated-heading": /^(?:\d+(?:[.)、])?\s*)?(?:[■◆●]|[【\[])/u,
+    "company-name-line": /(?:株式会社|有限会社|合同会社|合資会社|\((?:株|有)\)|ホールディングス|銀行|証券|生命|損保|商事|Inc\.?|Ltd\.?|Corp\.?)/iu
+  };
+  const headingPattern = headingPatterns[block?.reason];
+  if (!headingPattern) return "";
+  const headingLine = lines.find((line) => headingPattern.test(line.normalize("NFKC")));
+  if (!headingLine) return "";
+
+  const heading = headingLine
+    .normalize("NFKC")
+    .replace(/^#{1,6}\s+/u, "")
+    .replace(/^(?:\d+(?:[.)、])?\s*)?[■◆●]\s*/u, "")
+    .replace(/^(?:\d+(?:[.)、])?\s*)?[【\[](.+)[】\]]$/u, "$1")
+    .trim();
+  return stripAiTrackSuffix(heading);
+}
+
+function stripAiTrackSuffix(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s*[（(【\[]\s*(?:インターン|早期選考|本選考|説明会|面談|OB\s*\/\s*OG訪問)\s*[）)】\]]\s*$/iu, "")
+    .replace(/\s*[-‐–—|｜/：:]\s*(?:インターン|早期選考|本選考|説明会|面談|OB\s*\/\s*OG訪問)\s*$/iu, "")
+    .trim();
+}
+
+function normalizeAiCompanyKey(value) {
+  return String(value || "").normalize("NFKC").toLocaleLowerCase("ja").replace(/[\s　]+/gu, "").trim();
+}
+
+function detectAiBlockTrack(value) {
+  const text = String(value || "").normalize("NFKC");
+  if (/OB\s*\/\s*OG訪問/iu.test(text)) return "OB/OG訪問";
+  if (/早期選考/u.test(text)) return "早期選考";
+  if (/インターン/u.test(text)) return "インターン";
+  if (/説明会/u.test(text)) return "説明会";
+  if (/面談/u.test(text)) return "面談";
+  return "本選考";
 }
 
 function updateAiPrivacyPreview() {
@@ -799,12 +922,33 @@ async function handleAiGenerate(event) {
     return;
   }
 
-  const redacted = localAi.redactSensitiveMemo(source);
+  if (countAiCharacters(source) > localAi.maxMemoChars) {
+    setAiImportError(`メモは${localAi.maxMemoChars.toLocaleString("ja-JP")}文字以内にしてください。途中で切らず、内容を分けてお試しください。`);
+    return;
+  }
+
+  let normalizedSource;
+  try {
+    normalizedSource = localAi.normalizeMemoText(source);
+  } catch (error) {
+    setAiImportError(error.message);
+    return;
+  }
+
+  const analysis = localAi.deriveMemoBlocks(normalizedSource);
+  const candidateCount = countAiCandidateSections(analysis);
+  if (candidateCount > localAi.maxCards) {
+    setAiImportError(`AIに送る会社・選考候補が${candidateCount}件あります。一度に整理できるのは${localAi.maxCards}件までのため、内容を分けてお試しください。`);
+    return;
+  }
+
+  const redacted = localAi.redactSensitiveMemo(normalizedSource);
   if (!redacted.text.trim()) {
     setAiImportError("個人情報を隠すと整理できる文章が残りませんでした。企業名や締切などだけにしてお試しください。");
     return;
   }
 
+  const requestId = ++state.aiGenerateRequestId;
   state.aiGeneratePending = true;
   state.aiCards = [];
   updateAiGenerateButton();
@@ -814,6 +958,7 @@ async function handleAiGenerate(event) {
 
   try {
     const cards = await localAi.generateCards(redacted.text, { accessToken });
+    if (requestId !== state.aiGenerateRequestId) return;
     state.aiCards = cards;
     if (cards.length) {
       setAiConnectionStatus("接続OK", "connected");
@@ -822,12 +967,15 @@ async function handleAiGenerate(event) {
       setAiImportError("企業名を含むカード案を作れませんでした。会社ごとに企業名と予定を書いて、もう一度お試しください。");
     }
   } catch (error) {
+    if (requestId !== state.aiGenerateRequestId) return;
     setAiConnectionStatus("接続できません", "error");
     setAiImportError(error.message);
   } finally {
-    state.aiGeneratePending = false;
-    updateAiGenerateButton();
-    renderAiCards();
+    if (requestId === state.aiGenerateRequestId) {
+      state.aiGeneratePending = false;
+      updateAiGenerateButton();
+      renderAiCards();
+    }
   }
 }
 
@@ -4120,23 +4268,91 @@ function showToast(message) {
 
 function openMascotHelp() {
   els.mascotHelpPanel.hidden = false;
+  els.mascot.setAttribute("aria-expanded", "true");
   showMascotBubble("相談のるよ");
   window.setTimeout(() => els.mascotHelpInput.focus(), 80);
 }
 
 function closeMascotHelp() {
+  state.faqRequestId += 1;
+  setFaqPending(false);
+  els.mascotHelpLog.querySelectorAll(".help-message.pending").forEach((message) => message.remove());
   els.mascotHelpPanel.hidden = true;
+  els.mascot.setAttribute("aria-expanded", "false");
+  els.mascot.focus({ preventScroll: true });
 }
 
-function handleMascotHelpSubmit(event) {
+async function handleMascotHelpSubmit(event) {
   event.preventDefault();
+  if (state.faqPending) return;
   const question = els.mascotHelpInput.value.trim();
   if (!question) return;
+  const maxFaqChars = localAi?.maxFaqChars || 500;
+  if (countAiCharacters(question) > maxFaqChars) {
+    els.mascotHelpInput.setCustomValidity(`質問は${maxFaqChars.toLocaleString("ja-JP")}文字以内にしてください。`);
+    els.mascotHelpInput.reportValidity();
+    els.mascotHelpInput.focus();
+    return;
+  }
+  els.mascotHelpInput.setCustomValidity("");
 
   appendHelpMessage(question, "user");
-  appendHelpMessage(getMascotHelpAnswer(question), "assistant");
   els.mascotHelpInput.value = "";
+  const localAnswer = getMascotHelpAnswer(question);
+  if (localAnswer) {
+    appendHelpMessage(localAnswer, "assistant");
+    els.mascotHelpLog.scrollTop = els.mascotHelpLog.scrollHeight;
+    els.mascotHelpInput.focus();
+    return;
+  }
+
+  if (state.mode === "local") {
+    appendHelpMessage(`${getMascotHelpFallback()} この端末版ではAI FAQを利用できません。`, "assistant");
+    els.mascotHelpLog.scrollTop = els.mascotHelpLog.scrollHeight;
+    els.mascotHelpInput.focus();
+    return;
+  }
+
+  if (!state.session?.access_token) {
+    appendHelpMessage(`${getMascotHelpFallback()} AIで詳しく聞くにはログインしてください。`, "assistant");
+    els.mascotHelpLog.scrollTop = els.mascotHelpLog.scrollHeight;
+    els.mascotHelpInput.focus();
+    return;
+  }
+
+  if (!localAi?.askFaq) {
+    appendHelpMessage(`${getMascotHelpFallback()} 現在AI FAQを利用できません。画面を再読み込みしてお試しください。`, "assistant");
+    els.mascotHelpLog.scrollTop = els.mascotHelpLog.scrollHeight;
+    els.mascotHelpInput.focus();
+    return;
+  }
+
+  const requestId = ++state.faqRequestId;
+  const pendingMessage = appendHelpMessage("AIがこのアプリの使い方を確認中…", "assistant pending");
+  setFaqPending(true);
   els.mascotHelpLog.scrollTop = els.mascotHelpLog.scrollHeight;
+
+  try {
+    const normalized = localAi.normalizeMemoText(question);
+    const protectedQuestion = localAi.redactSensitiveMemo(normalized, localAi.maxFaqChars);
+    if (!protectedQuestion.text.trim()) throw new Error("個人情報を除くと質問が残りませんでした。使い方だけを書いてください。");
+    const result = await localAi.askFaq(protectedQuestion.text, { accessToken: state.session.access_token });
+    if (requestId !== state.faqRequestId) return;
+    const remaining = Number.isFinite(result.remainingToday) ? `（本日のAI残り${result.remainingToday}回）` : "";
+    pendingMessage.textContent = `${result.answer}${remaining}`;
+    pendingMessage.classList.remove("pending");
+  } catch (error) {
+    if (requestId !== state.faqRequestId) return;
+    pendingMessage.textContent = `${getMascotHelpFallback()} AI FAQ: ${error.message}`;
+    pendingMessage.classList.remove("pending");
+    pendingMessage.classList.add("error");
+  } finally {
+    if (requestId === state.faqRequestId) {
+      setFaqPending(false);
+      els.mascotHelpLog.scrollTop = els.mascotHelpLog.scrollHeight;
+      if (!els.mascotHelpPanel.hidden) els.mascotHelpInput.focus();
+    }
+  }
 }
 
 function appendHelpMessage(message, role) {
@@ -4144,40 +4360,26 @@ function appendHelpMessage(message, role) {
   paragraph.className = `help-message ${role}`;
   paragraph.textContent = message;
   els.mascotHelpLog.append(paragraph);
+  while (els.mascotHelpLog.querySelectorAll(".help-message").length > 20) {
+    els.mascotHelpLog.querySelector(".help-message")?.remove();
+  }
+  return paragraph;
+}
+
+function setFaqPending(pending) {
+  state.faqPending = pending;
+  els.mascotHelpInput.disabled = pending;
+  els.mascotHelpSubmitButton.disabled = pending;
+  els.mascotHelpSubmitButton.textContent = pending ? "確認中…" : "聞く";
+  els.mascotHelpForm.setAttribute("aria-busy", String(pending));
 }
 
 function getMascotHelpAnswer(question) {
-  const text = question.toLowerCase();
+  return localAi?.findLocalFaqAnswer?.(question) || "";
+}
 
-  if (text.includes("es") || text.includes("ガクチカ") || text.includes("自己pr") || text.includes("文字") || text.includes("質問")) {
-    return "企業カードの「詳細」を押すと、ESを質問ごとに管理できます。同じ質問に400字版・600字版など複数回答を保存でき、検索欄で質問や文字数から探せます。";
-  }
-
-  if (text.includes("型") || text.includes("テンプレ") || text.includes("使い回") || text.includes("使いまわ")) {
-    return "画面の「ES・ガクチカの型」によく使う文章を保存できます。企業詳細でES質問カードを開くと、回答欄の上に型の選択欄が出ます。「この回答に入れる」でその回答だけに追加できます。";
-  }
-
-  if (text.includes("締切") || text.includes("予定") || text.includes("カレンダー") || text.includes("面接")) {
-    return "締切日と次の予定日を入れると、上の近日リストとカレンダーに出ます。カレンダーは前月・翌月ボタンで別の月も見られます。";
-  }
-
-  if (text.includes("同期") || text.includes("スマホ") || text.includes("iphone") || text.includes("ログイン") || text.includes("supabase")) {
-    return "同じメールアドレスとパスワードでログインすると、PCとiPhoneで同じデータを見られます。新規登録後は確認メールを押してからログインしてください。";
-  }
-
-  if (text.includes("バックアップ") || text.includes("復元") || text.includes("引き継") || text.includes("移行")) {
-    return "画面上部の「バックアップ」でJSONファイルを書き出せます。別のPCや同じアプリで「復元」を押してそのファイルを選ぶと、企業データとESの型を読み込めます。";
-  }
-
-  if (text.includes("アイコン") || text.includes("ロゴ")) {
-    return "企業公式サイトURLやマイページURLからアイコン候補を自動で探します。違う画像になったら、企業アイコン画像URLに好きな画像URLを入れれば上書きできます。";
-  }
-
-  if (text.includes("落選") || text.includes("内定") || text.includes("通過")) {
-    return "ステータスを内定・選考通過・インターン選考通過にすると派手に祝います。落選にしたときは怒り顔で励ます演出になります。";
-  }
-
-  return "まずは「＋追加」で企業を登録して、締切日・次の予定日・ステータスを入れるのがおすすめ。詳しく書きたい企業は「詳細」からESや面接メモを編集できます。";
+function getMascotHelpFallback() {
+  return "このFAQでは詳しい答えを確認できませんでした。「＋追加」で企業を登録し、カードの「詳細」からESや面接メモを編集できます。";
 }
 
 function getTodayActions(limit = 5) {

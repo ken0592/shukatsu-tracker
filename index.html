@@ -259,14 +259,14 @@
           <span class="ai-local-badge">利用料 0円・どの端末でも利用可</span>
           <div>
             <strong>個人情報を隠してからAIに渡します</strong>
-            <p>氏名・メール・電話・住所・ID・パスワード・URL・識別コードを端末側とサーバー側の2段階で伏せます。元のメモは保存しません。</p>
+            <p>氏名・メール・電話・住所・ID・パスワード・URLなどを端末側とサーバー側の2段階で検出して伏せます。完全な検出は保証できないため、送信前の文章を確認し、個人情報や秘密情報は入力しないでください。元のメモは保存しません。</p>
           </div>
         </section>
 
         <label>
           メモ帳の内容
-          <textarea id="aiMemoInput" rows="10" maxlength="12000" placeholder="例：〇〇株式会社 IT企業。7/25 ES締切。第一志望。次は8/2に一次面接。\n複数社をまとめて貼ってもカード案を分けます。"></textarea>
-          <span class="field-hint">12,000文字まで。貼り付けるか、テキストファイルを選べます。</span>
+          <textarea id="aiMemoInput" rows="10" placeholder="例：〇〇株式会社 IT企業。7/25 ES締切。第一志望。次は8/2に一次面接。\n複数社をまとめて貼ってもカード案を分けます。"></textarea>
+          <span class="field-hint">12,000文字まで。UTF-8・Shift_JIS・BOM付きUTF-16のTXT/Markdownに対応し、会社見出しやQ/A表記を解析します。長い文章は途中で切らず、ファイルを分けてください。</span>
         </label>
 
         <div class="ai-file-row">
@@ -291,7 +291,7 @@
           <span class="ai-connection-status connected" id="aiConnectionStatus" role="status">オンライン</span>
         </div>
 
-        <p class="ai-setup-note">AIに送るのは伏せ字処理後の文章だけです。使いすぎ防止のため、1人1日10回まで利用できます。</p>
+        <p class="ai-setup-note">AIに送るのは伏せ字処理後の文章だけです。AI FAQとメモ整理を合わせて、1人1日30回まで利用できます。</p>
 
         <div class="ai-error" id="aiImportError" role="alert" hidden></div>
         <div class="ai-result-list" id="aiResultList" aria-live="polite"></div>
@@ -583,25 +583,26 @@
       </form>
     </dialog>
 
-    <section class="mascot-help-panel" id="mascotHelpPanel" hidden aria-label="使い方ヘルプ">
+    <section class="mascot-help-panel" id="mascotHelpPanel" hidden role="dialog" aria-labelledby="mascotHelpTitle">
       <div class="mascot-help-heading">
         <div>
           <p class="eyebrow">FAQ</p>
-          <h2>使い方FAQ</h2>
+          <h2 id="mascotHelpTitle">使い方FAQ</h2>
         </div>
         <button class="icon-button" id="closeMascotHelpButton" type="button" aria-label="閉じる">×</button>
       </div>
       <div class="help-chat-log" id="mascotHelpLog" aria-live="polite">
-        <p class="help-message assistant">「ES」「締切」「同期」「型」みたいに入力すると、使い方を表示します。</p>
+        <p class="help-message assistant">使い方を自由な言葉で聞いてください。基本FAQにない質問は、ログイン中ならAIがこのアプリの案内だけを回答します。</p>
       </div>
+      <p class="help-chat-note" id="mascotHelpNote">AIには保存済みデータを渡しません。個人情報・ID・パスワードは入力しないでください。AI回答はメモ整理と共通で1日30回までです。</p>
       <form class="help-chat-form" id="mascotHelpForm">
-        <input id="mascotHelpInput" autocomplete="off" placeholder="例: ESの文字数はどこで見る？" />
-        <button class="primary-button" type="submit">聞く</button>
+        <input id="mascotHelpInput" autocomplete="off" aria-label="使い方FAQへの質問" aria-describedby="mascotHelpNote" placeholder="例: ESの文字数はどこで見る？" />
+        <button class="primary-button" id="mascotHelpSubmitButton" type="submit">聞く</button>
       </form>
     </section>
 
     <div class="toast" id="toast" role="status" hidden></div>
-    <button class="mascot" id="mascot" type="button" aria-label="応援キャラクター">
+    <button class="mascot" id="mascot" type="button" aria-label="使い方FAQを開く" aria-controls="mascotHelpPanel" aria-expanded="false">
       <span class="mascot-fallback" aria-hidden="true">祝</span>
       <img src="./assets/mascot-summer-smile.png" alt="" />
       <span class="mascot-bubble" id="mascotBubble">今日もいける！</span>

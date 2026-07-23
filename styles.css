@@ -1405,7 +1405,11 @@ button:disabled {
   display: grid;
   gap: 12px;
   width: min(380px, calc(100% - 36px));
+  max-height: calc(100vh - 164px);
+  max-height: calc(100dvh - 164px);
   padding: 14px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.96);
@@ -1418,10 +1422,14 @@ button:disabled {
 }
 
 .mascot-help-heading {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  background: rgba(255, 255, 255, 0.96);
 }
 
 .help-chat-log {
@@ -1454,10 +1462,34 @@ button:disabled {
   color: #fff;
 }
 
+.help-message.pending {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.help-message.error {
+  background: #fff0ee;
+  color: #9f2d20;
+}
+
+.help-chat-note {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fff8e8;
+  color: #6f5722;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 .help-chat-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
+}
+
+.help-chat-form[aria-busy="true"] {
+  opacity: 0.75;
 }
 
 .mascot {
@@ -2861,6 +2893,8 @@ textarea {
     right: 12px;
     bottom: 118px;
     width: calc(100% - 24px);
+    max-height: calc(100vh - 130px);
+    max-height: calc(100dvh - 130px);
   }
 
   .mascot-bubble {
