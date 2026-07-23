@@ -179,7 +179,7 @@ declare
   current_user_id uuid := auth.uid();
   today_jst date := (now() at time zone 'Asia/Tokyo')::date;
   current_count integer;
-  daily_limit constant integer := 10;
+  daily_limit constant integer := 30;
 begin
   if current_user_id is null then
     raise exception 'authentication required';
