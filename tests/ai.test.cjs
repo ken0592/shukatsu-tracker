@@ -44,6 +44,42 @@ function testRequestUsesOnlyProvidedRedactedText() {
   assert.match(request.messages[0].content, /複数の質問を1つ/);
 }
 
+function testCommonLoginSecretLabelsAreRedacted() {
+  const source = [
+    "企業名: A社",
+    "ログイン先: portal.example.com/sso/ABCD1234",
+    "URL: portal.example.com:8443/sso/PORT-SECRET",
+    "接続先: 192.0.2.1/sso/IP-SECRET",
+    "IPv6: [::ffff:192.0.2.1]/sso/V6-MAPPED-SECRET",
+    "IPv6 zone: [fe80::1%25eth0]:8443/sso/V6-ZONE-SECRET",
+    "ユーザー名: candidate_01",
+    "パス: hunter2",
+    "合言葉: secret phrase",
+    "パスワードは DEMO-JP-WA",
+    "Password is DEMO-IS-SECRET,DEMO-IS-TAIL",
+    "PW DEMO-PW-SPACE",
+    "-----BEGIN PRIVATE KEY-----",
+    "DUMMY-PRIVATE-KEY-BODY",
+    "-----END PRIVATE KEY-----"
+  ].join("\n");
+  const redacted = ai.redactSensitiveMemo(source);
+  const request = ai.buildRequest(redacted.text, "2026-07-26");
+  const serialized = JSON.stringify(request);
+
+  for (const secret of [
+    "portal.example.com", "ABCD1234", "PORT-SECRET", "192.0.2.1", "IP-SECRET",
+    "V6-MAPPED-SECRET", "fe80::1%25eth0", "V6-ZONE-SECRET",
+    "candidate_01", "hunter2", "secret phrase", "DEMO-JP-WA", "DEMO-IS-SECRET",
+    "DEMO-IS-TAIL", "DEMO-PW-SPACE", "DUMMY-PRIVATE-KEY-BODY"
+  ]) {
+    assert.equal(redacted.text.includes(secret), false, `${secret} should be redacted`);
+    assert.equal(serialized.includes(secret), false, `${secret} must not reach the AI request`);
+  }
+  assert.ok(redacted.total >= 12);
+  assert.match(redacted.text, /企業名: A社/u);
+  assert.match(ai.redactSensitiveMemo("キャリアパス: エンジニアからPMへ").text, /エンジニアからPMへ/u);
+}
+
 function testProviderResponseParsing() {
   const payload = {
     result: {
@@ -158,6 +194,7 @@ function testFaqProviderParsingAndSanitizing() {
 
 testRedaction();
 testRequestUsesOnlyProvidedRedactedText();
+testCommonLoginSecretLabelsAreRedacted();
 testProviderResponseParsing();
 testCardValidation();
 testFaqKnowledgeAndPromptSafety();

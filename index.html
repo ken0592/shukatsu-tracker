@@ -7,7 +7,7 @@
     <title>就活管理</title>
     <link rel="manifest" href="./manifest.json" />
     <link rel="stylesheet" href="./styles.css" />
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.8/dist/umd/supabase.min.js" crossorigin="anonymous"></script>
     <script src="./config.js"></script>
   </head>
   <body>
@@ -245,40 +245,42 @@
       </div>
     </main>
 
-    <dialog class="ai-import-dialog" id="aiImportDialog">
+    <dialog class="ai-import-dialog" id="aiImportDialog" aria-labelledby="aiImportTitle">
       <form class="ai-import-form" id="aiImportForm" method="dialog">
         <div class="form-heading">
           <div>
             <p class="eyebrow">Online AI</p>
-            <h2>メモから企業カードを作る</h2>
+            <h2 id="aiImportTitle">TXT・CSVから企業カードを作る</h2>
           </div>
-          <button class="icon-button" id="closeAiImportButton" type="button" aria-label="内容を消して閉じる">×</button>
+          <button class="icon-button" id="closeAiImportButton" type="button" aria-label="内容を保持して閉じる">×</button>
         </div>
 
         <section class="ai-safety-banner" aria-label="AIの安全対策">
           <span class="ai-local-badge">利用料 0円・どの端末でも利用可</span>
           <div>
-            <strong>個人情報を隠してからAIに渡します</strong>
-            <p>氏名・メール・電話・住所・ID・パスワード・URLなどを端末側とサーバー側の2段階で検出して伏せます。完全な検出は保証できないため、送信前の文章を確認し、個人情報や秘密情報は入力しないでください。元のメモは保存しません。</p>
+            <strong>TXTだけを伏せ字にしてAIへ、CSVは端末内だけで解析します</strong>
+            <p>CSVのマイページIDやURLはAIへ送りません。TXT・Markdown内のラベル付きIDも、会社を端末内で安全に特定できた場合だけカード案へ戻し、AIへ送る文章では伏せ字にします。パスワードと保管場所の列は取り込まず、メモなどに紛れた認証情報も保存前に伏せ字にします。元ファイルは保存しません。</p>
           </div>
         </section>
 
         <label>
-          メモ帳の内容
+          TXT・貼り付けメモ
           <textarea id="aiMemoInput" rows="10" placeholder="例：〇〇株式会社 IT企業。7/25 ES締切。第一志望。次は8/2に一次面接。\n複数社をまとめて貼ってもカード案を分けます。"></textarea>
-          <span class="field-hint">12,000文字まで。UTF-8・Shift_JIS・BOM付きUTF-16のTXT/Markdownに対応し、会社見出しやQ/A表記を解析します。長い文章は途中で切らず、ファイルを分けてください。</span>
+          <span class="field-hint">TXTは合計12,000文字まで。CSVとTXT/Markdownをまとめて選べます。Notionからコピーした表や、書き出したCSV・Markdownにも対応します。UTF-8・Shift_JIS・BOM付きUTF-16を読めます。</span>
+          <span class="field-hint">伏せ字は完全ではありません。パスワード・合言葉・秘密情報は入力しないでください。</span>
         </label>
 
         <div class="ai-file-row">
-          <button class="secondary-button" id="selectAiMemoFileButton" type="button">メモ帳ファイルを選ぶ</button>
-          <input id="aiMemoFileInput" type="file" accept="text/plain,.txt,.md,text/markdown" hidden />
-          <span id="aiMemoFileName">ファイル未選択</span>
+          <button class="secondary-button" id="selectAiMemoFileButton" type="button" aria-describedby="aiMemoFileName">TXT・CSVファイルを選ぶ</button>
+          <input id="aiMemoFileInput" type="file" accept="text/plain,.txt,.md,text/markdown,.csv,text/csv,application/csv,application/vnd.ms-excel" multiple hidden />
+          <span id="aiMemoFileName" role="status" aria-live="polite">ファイル未選択</span>
         </div>
+        <div class="ai-import-notice" id="aiImportNotice" role="status" hidden></div>
 
         <section class="ai-privacy-check" aria-live="polite">
           <div>
-            <strong>送信前のプライバシーチェック</strong>
-            <p id="aiPrivacySummary">メモを入れると、隠す情報を確認できます。</p>
+            <strong>TXTの送信前プライバシーチェック</strong>
+            <p id="aiPrivacySummary">TXTを入れると、AIに送る前に隠す情報を確認できます。CSVはここへ送信しません。</p>
           </div>
           <details>
             <summary>AIに渡す文章を確認</summary>
@@ -291,19 +293,21 @@
           <span class="ai-connection-status connected" id="aiConnectionStatus" role="status">オンライン</span>
         </div>
 
-        <p class="ai-setup-note">AIに送るのは伏せ字処理後の文章だけです。AI FAQとメモ整理を合わせて、1人1日30回まで利用できます。</p>
+        <p class="ai-setup-note">CSVだけならAI利用回数を消費しません。TXTを一緒に整理するときだけ、AI FAQと合わせて1人1日30回の上限に数えます。</p>
 
         <div class="ai-error" id="aiImportError" role="alert" hidden></div>
-        <div class="ai-result-list" id="aiResultList" aria-live="polite"></div>
+        <p class="visually-hidden" id="aiResultStatus" role="status" aria-live="polite"></p>
+        <div class="ai-result-list" id="aiResultList"></div>
 
         <div class="form-actions ai-form-actions">
-          <span>AIの案は保存前に必ず入力画面で確認できます。</span>
-          <button class="primary-button" id="generateAiCardsButton" type="submit">個人情報を隠してカード案を作る</button>
+          <span>既存の同じ企業・種類には新情報だけを足し、重複カードを防ぎます。</span>
+          <button class="secondary-button" id="clearAiImportButton" type="button">取込内容をクリア</button>
+          <button class="primary-button" id="generateAiCardsButton" type="submit">情報を統合してカード案を作る</button>
         </div>
       </form>
     </dialog>
 
-    <dialog class="entry-dialog" id="entryDialog">
+    <dialog class="entry-dialog" id="entryDialog" aria-labelledby="entryFormTitle">
       <form class="entry-form" id="entryForm" method="dialog">
         <div class="form-heading">
           <div>
@@ -312,6 +316,8 @@
           </div>
           <button class="icon-button" id="closeFormButton" type="button" aria-label="閉じる">×</button>
         </div>
+
+        <div class="entry-import-conflict" id="entryImportConflictNotice" role="note" hidden></div>
 
         <label>
           企業名
@@ -336,8 +342,9 @@
         </label>
 
         <label>
-          企業アイコン画像URL（任意）
+          企業アイコン画像URL（クラウド利用時のみ・任意）
           <input id="logoUrlInput" name="logoUrl" type="url" placeholder="https://www.example.co.jp/logo.png" />
+          <span class="field-hint">手入力した公開HTTPS画像だけを表示します。CSV・バックアップ内の画像URLは取り込まず、ローカル版では頭文字を表示します。</span>
         </label>
 
         <label>
@@ -601,6 +608,37 @@
       </form>
     </section>
 
+    <dialog class="es-review-dialog" id="esReviewDialog" aria-labelledby="esReviewTitle">
+      <div class="form-heading">
+        <div><p class="eyebrow">ES Check</p><h2 id="esReviewTitle">ESチェック・AI添削</h2></div>
+        <button class="icon-button" id="closeEsReviewButton" type="button" aria-label="ESチェックを閉じる">×</button>
+      </div>
+      <section class="es-review-section">
+        <h3>提出前のチェック</h3>
+        <p id="esReviewCount"></p>
+        <ul id="esReviewChecks"></ul>
+        <p class="es-review-note">字数は見出し・設問から読み取った目安です。空白・改行も数えます。提出先の数え方も確認してください。</p>
+      </section>
+      <section class="es-review-section">
+        <h3>AIに送る文章</h3>
+        <p class="es-review-note">この質問と回答だけをCloudflareのAIに送ります。伏せ字の漏れがあれば閉じて修正してください。</p>
+        <pre class="es-review-preview" id="esReviewPreview"></pre>
+        <p id="esReviewStatus" role="status" aria-live="polite"></p>
+        <button class="primary-button" id="generateEsReviewButton" type="button">この内容でAI添削する（1回）</button>
+        <p class="es-review-note">メモ整理・FAQと共通で1日30回まで。AIが事実や字数を間違えることもあるため、取り込む前に確認してください。</p>
+      </section>
+      <section class="es-review-section" id="esReviewResult" hidden>
+        <h3>添削結果</h3>
+        <p id="esReviewSummary"></p>
+        <h4>良いところ</h4><ul id="esReviewStrengths"></ul>
+        <h4>見直すとよいところ</h4><ul id="esReviewImprovements"></ul>
+        <h4>推敲案</h4><pre class="es-review-preview" id="esReviewRevised"></pre>
+        <p id="esReviewRevisedCount"></p>
+        <button class="secondary-button" id="applyEsReviewButton" type="button">別の回答として追加</button>
+        <p class="es-review-note">元の回答を残して追加します。伏せ字を補い、企業詳細の「詳細を保存」で保存してください。</p>
+      </section>
+    </dialog>
+
     <div class="toast" id="toast" role="status" hidden></div>
     <button class="mascot" id="mascot" type="button" aria-label="使い方FAQを開く" aria-controls="mascotHelpPanel" aria-expanded="false">
       <span class="mascot-fallback" aria-hidden="true">祝</span>
@@ -622,6 +660,7 @@
 
     <script src="./quotes.js"></script>
     <script src="./ai.js"></script>
+    <script src="./csv-import.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>

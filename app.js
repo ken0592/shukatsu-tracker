@@ -85,6 +85,7 @@ ensureMascotDom();
 
 const appConfig = window.SHUKATSU_CONFIG || {};
 const localAi = window.SHUKATSU_AI || null;
+const localCsv = window.SHUKATSU_CSV || null;
 const hasCloudConfig = Boolean(appConfig.supabaseUrl && appConfig.supabaseAnonKey && window.supabase);
 const supabaseClient = hasCloudConfig
   ? window.supabase.createClient(appConfig.supabaseUrl, appConfig.supabaseAnonKey)
@@ -106,6 +107,7 @@ const state = {
     : "today",
   mode: hasCloudConfig ? "cloud" : "local",
   session: null,
+  userScopeVersion: 0,
   loading: true,
   cloudSortOrderAvailable: true,
   cloudTemplateSortOrderAvailable: true,
@@ -115,18 +117,31 @@ const state = {
   editingBaseEntry: null,
   entryDraft: null,
   entryDraftKind: null,
+  entryImportConflictDetails: [],
+  entryImportReviewKey: "",
+  entryImportValueApplied: false,
   entrySavePending: false,
   detailEditingId: null,
   detailBaseEntry: null,
   detailSavePending: false,
+  esReviewDraft: null,
   detailTab: "basic",
   detailEsMode: "read",
   pendingEntryConflict: null,
   trashDeletePending: false,
   editingTemplateId: null,
   aiCards: [],
+  aiCsvCards: [],
+  aiCsvFileCount: 0,
+  aiLoadedText: "",
+  aiImportFileNames: [],
+  aiImportWarnings: [],
+  aiReviewedConflictKeys: new Set(),
+  aiFileReadPending: false,
+  aiFileReadRequestId: 0,
   aiGeneratePending: false,
   aiGenerateRequestId: 0,
+  aiReturnAfterCelebration: false,
   faqPending: false,
   faqRequestId: 0,
   calendarYear: initialCalendarDate.getFullYear(),
@@ -139,14 +154,17 @@ const els = {
   aiImportDialog: document.querySelector("#aiImportDialog"),
   aiImportForm: document.querySelector("#aiImportForm"),
   closeAiImportButton: document.querySelector("#closeAiImportButton"),
+  clearAiImportButton: document.querySelector("#clearAiImportButton"),
   aiMemoInput: document.querySelector("#aiMemoInput"),
   selectAiMemoFileButton: document.querySelector("#selectAiMemoFileButton"),
   aiMemoFileInput: document.querySelector("#aiMemoFileInput"),
   aiMemoFileName: document.querySelector("#aiMemoFileName"),
+  aiImportNotice: document.querySelector("#aiImportNotice"),
   aiPrivacySummary: document.querySelector("#aiPrivacySummary"),
   aiRedactedPreview: document.querySelector("#aiRedactedPreview"),
   aiConnectionStatus: document.querySelector("#aiConnectionStatus"),
   aiImportError: document.querySelector("#aiImportError"),
+  aiResultStatus: document.querySelector("#aiResultStatus"),
   aiResultList: document.querySelector("#aiResultList"),
   generateAiCardsButton: document.querySelector("#generateAiCardsButton"),
   closeFormButton: document.querySelector("#closeFormButton"),
@@ -173,6 +191,7 @@ const els = {
   entryDialog: document.querySelector("#entryDialog"),
   entryForm: document.querySelector("#entryForm"),
   entryFormTitle: document.querySelector("#entryFormTitle"),
+  entryImportConflictNotice: document.querySelector("#entryImportConflictNotice"),
   saveEntryButton: document.querySelector("#saveEntryButton"),
   companyDetailDialog: document.querySelector("#companyDetailDialog"),
   companyDetailForm: document.querySelector("#companyDetailForm"),
@@ -322,14 +341,30 @@ init();
 
 function bindEvents() {
   els.openAiImportButton.addEventListener("click", openAiImportDialog);
-  els.closeAiImportButton.addEventListener("click", () => closeAiImportDialog(true));
+  els.closeAiImportButton.addEventListener("click", () => closeAiImportDialog(false));
+  els.clearAiImportButton.addEventListener("click", clearAiImportData);
   els.aiImportDialog.addEventListener("cancel", (event) => {
     event.preventDefault();
-    closeAiImportDialog(true);
+    closeAiImportDialog(false);
   });
   els.aiImportForm.addEventListener("submit", handleAiGenerate);
-  els.aiMemoInput.addEventListener("input", updateAiPrivacyPreview);
-  els.selectAiMemoFileButton.addEventListener("click", () => els.aiMemoFileInput.click());
+  els.aiMemoInput.addEventListener("input", () => {
+    if (state.aiGeneratePending) {
+      state.aiGenerateRequestId += 1;
+      state.aiGeneratePending = false;
+    }
+    if (state.aiCards.length) {
+      state.aiCards = [];
+      renderAiCards();
+    }
+    state.aiReviewedConflictKeys.clear();
+    updateAiPrivacyPreview();
+    updateAiGenerateButton();
+  });
+  els.selectAiMemoFileButton.addEventListener("click", () => {
+    els.aiMemoFileInput.value = "";
+    els.aiMemoFileInput.click();
+  });
   els.aiMemoFileInput.addEventListener("change", handleAiMemoFile);
   els.aiResultList.addEventListener("click", (event) => {
     const button = event.target.closest("[data-ai-card-index]");
@@ -345,15 +380,17 @@ function bindEvents() {
     openEntryDialog();
   });
 
-  els.closeFormButton.addEventListener("click", () => {
-    resetEntryForm();
-    els.entryDialog.close();
+  els.closeFormButton.addEventListener("click", closeEntryFormDialog);
+  els.entryDialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeEntryFormDialog();
   });
 
   els.deleteEntryButton.addEventListener("click", () => {
     if (state.editingId) handleDeleteEntry(state.editingId);
   });
   els.entryForm.addEventListener("submit", handleEntrySubmit);
+  els.entryImportConflictNotice.addEventListener("click", handleImportConflictValueChoice);
   els.authForm.addEventListener("submit", (event) => event.preventDefault());
   els.signInButton.addEventListener("click", handleSignIn);
   els.signUpButton.addEventListener("click", handleSignUp);
@@ -378,6 +415,13 @@ function bindEvents() {
     if (event.target === els.celebrationOverlay) closeCelebration();
   });
   els.closeDetailButton.addEventListener("click", closeCompanyDetail);
+  document.querySelector("#closeEsReviewButton").addEventListener("click", closeEsReview);
+  document.querySelector("#generateEsReviewButton").addEventListener("click", generateEsReview);
+  document.querySelector("#applyEsReviewButton").addEventListener("click", applyEsReview);
+  document.querySelector("#esReviewDialog").addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeEsReview();
+  });
   els.companyDetailForm.addEventListener("submit", handleDetailSubmit);
   els.detailTabs.forEach((tab) => {
     tab.addEventListener("click", () => setDetailTab(tab.dataset.detailTab));
@@ -405,6 +449,11 @@ function bindEvents() {
   });
   els.detailEsList.addEventListener("input", handleDetailEsInput);
   els.detailEsList.addEventListener("click", (event) => {
+    const reviewButton = event.target.closest("[data-es-review]");
+    if (reviewButton) {
+      openEsReview(reviewButton.closest("[data-es-variant-id]"));
+      return;
+    }
     const variantTab = event.target.closest("[data-es-variant-tab]");
     if (variantTab) {
       selectEsVariant(variantTab.closest(".es-editor-card"), variantTab.dataset.esVariantTab);
@@ -647,10 +696,19 @@ async function init() {
   }
 
   state.session = data?.session || null;
-  supabaseClient.auth.onAuthStateChange(async (_event, session) => {
+  supabaseClient.auth.onAuthStateChange((_event, session) => {
+    const previousUserId = state.session?.user?.id || "";
+    const nextUserId = session?.user?.id || "";
     state.session = session;
+    if (previousUserId !== nextUserId) {
+      clearUserScopedUiState({ loading: Boolean(session) });
+      render();
+    }
     if (session) {
-      await loadCloudData();
+      const scope = captureUserScope();
+      window.setTimeout(() => {
+        if (isCurrentUserScope(scope)) void loadCloudData();
+      }, 0);
     } else {
       state.entries = [];
       state.templates = [];
@@ -669,6 +727,62 @@ async function init() {
   }
 }
 
+function clearUserScopedUiState(options = {}) {
+  state.userScopeVersion += 1;
+  state.entries = [];
+  state.templates = [];
+  state.loading = Boolean(options.loading);
+  state.entrySavePending = false;
+  state.detailSavePending = false;
+  state.trashDeletePending = false;
+  state.filter = "all";
+  state.searchQuery = "";
+  state.industryFilter = "all";
+  state.deadlineFilter = "all";
+  state.priorityFilter = "all";
+  els.authForm.reset();
+  els.companySearchInput.value = "";
+  els.industryFilterInput.value = "all";
+  els.deadlineFilterInput.value = "all";
+  els.priorityFilterInput.value = "all";
+  clearAiImportData();
+  closeAiImportDialog(false);
+  clearFaqUserScopedUiState();
+  resetEntryForm();
+  resetTemplateForm();
+  if (els.entryDialog.open) els.entryDialog.close();
+  if (els.companyDetailDialog.open) closeCompanyDetail();
+  if (state.pendingEntryConflict) finishEntryConflict(null);
+  if (!els.celebrationOverlay.hidden) closeCelebration();
+}
+
+function captureUserScope() {
+  return {
+    version: state.userScopeVersion,
+    userId: state.session?.user?.id || ""
+  };
+}
+
+function isCurrentUserScope(scope) {
+  return Boolean(scope)
+    && scope.version === state.userScopeVersion
+    && scope.userId === (state.session?.user?.id || "");
+}
+
+function clearFaqUserScopedUiState() {
+  state.faqRequestId += 1;
+  setFaqPending(false);
+  els.mascotHelpInput.value = "";
+  els.mascotHelpInput.setCustomValidity("");
+  els.mascotHelpLog.textContent = "";
+  appendHelpMessage(
+    "使い方を自由な言葉で聞いてください。基本FAQにない質問は、ログイン中ならAIがこのアプリの案内だけを回答します。",
+    "assistant"
+  );
+  els.mascotHelpPanel.hidden = true;
+  els.mascot.setAttribute("aria-expanded", "false");
+}
+
 async function handleSignIn() {
   const credentials = getAuthCredentials();
   if (!credentials) return;
@@ -684,6 +798,7 @@ async function handleSignIn() {
     return;
   }
 
+  els.authPasswordInput.value = "";
   setAuthMessage("");
   showToast("ログインしました。");
 }
@@ -703,6 +818,7 @@ async function handleSignUp() {
     return;
   }
 
+  els.authPasswordInput.value = "";
   if (data.session) {
     setAuthMessage("");
     showToast("登録しました。");
@@ -719,11 +835,12 @@ async function handleSignOut() {
     showToast(error.message);
     return;
   }
+  els.authForm.reset();
   highlightSignInButton(false);
   showToast("ログアウトしました。");
 }
 
-function openAiImportDialog() {
+function openAiImportDialog(options = {}) {
   updateAiPrivacyPreview();
   renderAiCards();
   setAiImportError("");
@@ -733,7 +850,10 @@ function openAiImportDialog() {
   } else {
     els.aiImportDialog.setAttribute("open", "");
   }
-  els.aiMemoInput.focus();
+  const nextResultButton = options.focusResults
+    ? els.aiResultList.querySelector("[data-ai-card-index]:not(:disabled)")
+    : null;
+  (nextResultButton || els.aiMemoInput).focus();
 }
 
 function closeAiImportDialog(clearAll = false) {
@@ -743,65 +863,316 @@ function closeAiImportDialog(clearAll = false) {
 
 function clearAiImportData() {
   state.aiGenerateRequestId += 1;
+  state.aiFileReadRequestId += 1;
   state.aiGeneratePending = false;
+  state.aiFileReadPending = false;
+  state.aiReturnAfterCelebration = false;
   els.aiMemoInput.value = "";
   els.aiMemoFileInput.value = "";
   els.aiMemoFileName.textContent = "ファイル未選択";
   state.aiCards = [];
+  state.aiCsvCards = [];
+  state.aiCsvFileCount = 0;
+  state.aiLoadedText = "";
+  state.aiImportFileNames = [];
+  state.aiImportWarnings = [];
+  state.aiReviewedConflictKeys.clear();
   setAiImportError("");
+  setAiImportNotice("");
+  setAiConnectionStatus("オンライン", "connected");
   updateAiGenerateButton();
   updateAiPrivacyPreview();
   renderAiCards();
 }
 
+function csvImportCardsWithConflicts(imported) {
+  const conflictsByIdentity = new Map();
+  imported.mergeConflicts.forEach((conflict) => {
+    if (conflict.field === "logoUrl") return;
+    const key = aiImportIdentityKey(conflict);
+    if (!conflictsByIdentity.has(key)) conflictsByIdentity.set(key, []);
+    conflictsByIdentity.get(key).push({
+      field: conflict.field,
+      existingValue: conflict.existingValue,
+      incomingValue: conflict.incomingValue,
+      rowNumber: conflict.rowNumber
+    });
+  });
+  return imported.cards.map((card) => {
+    const conflictDetails = mergeImportConflictDetails(
+      conflictsByIdentity.get(aiImportIdentityKey(card)) || []
+    );
+    return {
+      ...card,
+      // CSV is untrusted input. Never turn an imported image URL into an
+      // automatic request; users can add a logo URL themselves later.
+      logoUrl: "",
+      _importConflicts: Array.from(new Set(conflictDetails.map((detail) => detail.field))),
+      _importConflictDetails: conflictDetails
+    };
+  });
+}
+
+function csvImportWarningMessages(imported) {
+  const warnings = [];
+  const ignoredLogoUrlCount = imported.cards.filter((card) => (
+    typeof card?.logoUrl === "string" && card.logoUrl.trim()
+  )).length + imported.mergeConflicts.filter((conflict) => conflict.field === "logoUrl").length;
+  if (ignoredLogoUrlCount) {
+    warnings.push(`CSVの企業アイコン画像URL${ignoredLogoUrlCount}件は、自動アクセス防止のため取り込みませんでした。`);
+  }
+  if (imported.duplicateRows.length) {
+    warnings.push(`CSV内の同じ企業・種類${imported.duplicateRows.length}行を1枚にまとめました。`);
+  }
+  const reviewableMergeConflictCount = imported.mergeConflicts.filter((conflict) => conflict.field !== "logoUrl").length;
+  if (reviewableMergeConflictCount) {
+    warnings.push(`CSV内で値が異なる項目${reviewableMergeConflictCount}件は、先の行を保持して要確認にしました。`);
+  }
+  if (imported.ignoredSensitiveColumns.length) {
+    warnings.push(`安全のためパスワード関連の列${imported.ignoredSensitiveColumns.length}個を取り込みませんでした。`);
+  }
+  const maskedSecretFieldCount = (imported.maskedSecretValues || []).reduce((sum, item) => sum + item.fields.length, 0);
+  if (maskedSecretFieldCount) {
+    warnings.push(`メモなどに含まれていたパスワード・認証情報${maskedSecretFieldCount}項目を伏せ字にしました。`);
+  }
+  if (imported.ignoredColumns.length) {
+    warnings.push(`カード項目に対応しない列${imported.ignoredColumns.length}個を読み飛ばしました。`);
+  }
+  const missingCompanyRows = imported.skippedRows.filter((row) => row.reason === "missing-company-name").length;
+  const unknownTrackRows = imported.skippedRows.filter((row) => row.reason === "unrecognized-track").length;
+  if (missingCompanyRows) warnings.push(`企業名がないCSV行${missingCompanyRows}件を読み飛ばしました。`);
+  if (unknownTrackRows) warnings.push(`選考区分を判定できないCSV行${unknownTrackRows}件を読み飛ばしました。`);
+  const unsafeUrlCount = imported.ignoredUnsafeUrls.reduce((sum, item) => sum + item.fields.length, 0);
+  if (unsafeUrlCount) warnings.push(`安全なWeb URLとして確認できない値${unsafeUrlCount}件を取り込みませんでした。`);
+  const invalidStatusCount = imported.invalidValues.reduce((sum, item) => (
+    sum + item.fields.filter((field) => field === "status").length
+  ), 0);
+  const invalidScheduleCount = imported.invalidValues.reduce((sum, item) => (
+    sum + item.fields.filter((field) => field !== "status").length
+  ), 0);
+  if (invalidScheduleCount) warnings.push(`日付・日数として読めない値${invalidScheduleCount}件を空欄にして要確認にしました。`);
+  if (invalidStatusCount) warnings.push(`状態として判定できない値${invalidStatusCount}件を「気になる」にして要確認にしました。`);
+  return warnings;
+}
+
+function preserveManualMemoText(currentText, loadedFileText) {
+  const current = String(currentText || "");
+  const loaded = String(loadedFileText || "");
+  if (!loaded) return current;
+  if (current === loaded) return "";
+  const loadedIndex = current.indexOf(loaded);
+  if (loadedIndex < 0) return current;
+  const before = current.slice(0, loadedIndex);
+  const after = current.slice(loadedIndex + loaded.length);
+  const beforeIsBoundary = !before
+    || /(?:[ \t]*\r?\n)+$/u.test(before)
+    || /(?:^|\r?\n)[ \t]*---[ \t]*\r?\n[ \t]*$/u.test(before);
+  const afterIsBoundary = !after
+    || /^(?:[ \t]*\r?\n)+/u.test(after)
+    || /^[ \t]*\r?\n?[ \t]*---[ \t]*(?:\r?\n|$)/u.test(after);
+  if (!beforeIsBoundary || !afterIsBoundary) return current;
+  return `${before}\n${after}`
+    .replace(/^(?:\s*---\s*)+/u, "")
+    .replace(/(?:\s*---\s*)+$/u, "")
+    .trim();
+}
+
+function mergeLocalMemoIdsIntoCards(cards, extracted = {}) {
+  const merged = (Array.isArray(cards) ? cards : []).map((card) => ({
+    ...card,
+    _importConflicts: Array.isArray(card?._importConflicts) ? [...card._importConflicts] : [],
+    _importConflictDetails: Array.isArray(card?._importConflictDetails) ? [...card._importConflictDetails] : []
+  }));
+  const records = Array.isArray(extracted.records) ? extracted.records : [];
+  const companyKey = (value) => String(value || "").normalize("NFKC").toLowerCase().replace(/[\s　]+/gu, "").trim();
+  let resolvedCount = 0;
+  let addedCount = 0;
+  let conflictCount = 0;
+  let unresolvedCount = Number.isSafeInteger(extracted.unresolvedCount) ? extracted.unresolvedCount : 0;
+
+  records.forEach((record) => {
+    const key = companyKey(record?.companyName);
+    const mypageId = String(record?.mypageId || "").trim();
+    if (!key || !mypageId) {
+      unresolvedCount += 1;
+      return;
+    }
+    const companyMatches = merged
+      .map((card, index) => ({ card, index }))
+      .filter(({ card }) => companyKey(card.companyName) === key);
+    const matches = record.trackType
+      ? companyMatches.filter(({ card }) => card.trackType === record.trackType)
+      : companyMatches;
+    if (matches.length !== 1) {
+      unresolvedCount += 1;
+      return;
+    }
+
+    const target = matches[0].card;
+    const currentId = String(target.mypageId || "").trim();
+    resolvedCount += 1;
+    if (!currentId) {
+      target.mypageId = mypageId;
+      addedCount += 1;
+      return;
+    }
+    if (currentId.normalize("NFKC") === mypageId.normalize("NFKC")) return;
+    target._importConflicts = Array.from(new Set([...target._importConflicts, "mypageId"]));
+    target._importConflictDetails = mergeImportConflictDetails(target._importConflictDetails, [{
+      field: "mypageId",
+      existingValue: currentId,
+      incomingValue: mypageId
+    }]);
+    conflictCount += 1;
+  });
+
+  return { cards: merged, resolvedCount, addedCount, conflictCount, unresolvedCount };
+}
+
 async function handleAiMemoFile(event) {
-  const file = event.target.files?.[0];
-  if (!file) return;
+  const files = Array.from(event.target.files || []);
+  if (!files.length) return;
+  const fileReadRequestId = ++state.aiFileReadRequestId;
+  state.aiFileReadPending = true;
+  updateAiGenerateButton();
   const previousMemo = els.aiMemoInput.value;
   const previousFileName = els.aiMemoFileName.textContent;
-  const extension = file.name.toLowerCase().match(/\.[^.]+$/u)?.[0] || "";
-  const allowedMimeTypes = new Set(["", "text/plain", "text/markdown", "text/x-markdown", "application/octet-stream"]);
-  if (!new Set([".txt", ".md"]).has(extension) || !allowedMimeTypes.has(String(file.type || "").toLowerCase())) {
-    setAiImportError("TXTまたはMarkdownファイルを選んでください。ファイル名だけを変更した形式は読み込めません。");
-    event.target.value = "";
-    return;
-  }
-  if (file.size > 256 * 1024) {
-    setAiImportError("ファイルが大きすぎます。256KB以下のテキストファイルを選んでください。");
-    event.target.value = "";
-    return;
-  }
+  const previousCsvCards = state.aiCsvCards;
+  const previousCsvFileCount = state.aiCsvFileCount;
+  const previousAiCards = state.aiCards;
+  const previousLoadedText = state.aiLoadedText;
+  const previousImportFileNames = state.aiImportFileNames;
+  const previousWarnings = state.aiImportWarnings;
+  state.aiCards = [];
+  els.aiMemoFileName.textContent = `選択した${files.length}件を安全に読み込み中...`;
+  renderAiCards();
+  const allowedExtensions = new Set([".txt", ".md", ".csv"]);
+  const allowedMimeTypes = new Set([
+    "", "text/plain", "text/markdown", "text/x-markdown", "text/csv", "application/csv",
+    "application/vnd.ms-excel", "application/octet-stream"
+  ]);
 
   try {
-    if (!localAi?.decodeMemoBytes) throw new Error("安全なTXT読込処理を読み込めませんでした。画面を再読み込みしてください。");
-    const decoded = localAi.decodeMemoBytes(await file.arrayBuffer());
-    const maxLength = localAi.maxMemoChars || 12000;
-    if (countAiCharacters(decoded.text) > maxLength) {
-      throw new Error(`TXTは${maxLength.toLocaleString("ja-JP")}文字以内にしてください。途中で切ると会社やESが欠けるため、ファイルを分けてお試しください。`);
+    if (!localAi?.decodeMemoBytes || !localCsv?.importCsv) {
+      throw new Error("安全なファイル読込処理を読み込めませんでした。画面を再読み込みしてください。");
     }
-    const analysis = localAi.deriveMemoBlocks(decoded.text);
+    if (files.length > 20) throw new Error("一度に選べるファイルは20個までです。");
+    const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+    if (totalBytes > 2 * 1024 * 1024) throw new Error("選んだファイルの合計を2MB以下にしてください。");
+
+    const textParts = [];
+    const csvCards = [];
+    const warnings = [];
+    const encodingWarnings = [];
+    let csvFileCount = 0;
+    let textFileCount = 0;
+    let csvDataRows = 0;
+
+    for (const file of files) {
+      const extension = file.name.toLowerCase().match(/\.[^.]+$/u)?.[0] || "";
+      const mimeType = String(file.type || "").toLowerCase();
+      if (!allowedExtensions.has(extension) || !allowedMimeTypes.has(mimeType)) {
+        throw new Error("TXT・Markdown・CSVだけを選んでください。ファイル名だけを変更した形式は読み込めません。");
+      }
+      if (file.size > 512 * 1024) {
+        throw new Error(`${file.name} が大きすぎます。1ファイル512KB以下にしてください。`);
+      }
+
+      const decoded = localAi.decodeMemoBytes(await file.arrayBuffer());
+      if (fileReadRequestId !== state.aiFileReadRequestId) return;
+      if (decoded.encoding !== "utf-8") encodingWarnings.push(decoded.warning.replace(/。$/u, ""));
+      const csvMimeType = new Set(["text/csv", "application/csv", "application/vnd.ms-excel"]);
+      const shouldUseCsvParser = extension === ".csv"
+        || csvMimeType.has(mimeType)
+        || localCsv.looksLikeCsv(decoded.text);
+      if (shouldUseCsvParser) {
+        const imported = localCsv.importCsv(decoded.text, {
+          maxInputChars: 600000,
+          maxRows: 501,
+          maxColumns: 80,
+          maxFieldChars: 12000
+        });
+        csvFileCount += 1;
+        csvDataRows += imported.dataRowCount;
+        csvCards.push(...csvImportCardsWithConflicts(imported));
+        warnings.push(...csvImportWarningMessages(imported));
+      } else {
+        textFileCount += 1;
+        if (decoded.text.trim()) textParts.push(decoded.text.trim());
+      }
+    }
+
+    if (fileReadRequestId !== state.aiFileReadRequestId) return;
+    const selectedText = textParts.join("\n\n---\n\n");
+    const manualText = preserveManualMemoText(previousMemo, previousLoadedText);
+    const removedPreviousFileText = !textParts.length
+      && Boolean(previousLoadedText)
+      && previousMemo.includes(previousLoadedText)
+      && !manualText.includes(previousLoadedText);
+    const retainedEditedFileText = !textParts.length && Boolean(previousLoadedText) && !removedPreviousFileText;
+    const text = textParts.length
+      ? [selectedText, manualText].filter(Boolean).join("\n\n---\n\n")
+      : manualText;
+    if (removedPreviousFileText) warnings.push("前回ファイルから読み込んだTXTは今回の取込対象から外しました。");
+    if (retainedEditedFileText) warnings.push("編集された前回TXTは、手入力メモとして残しました。");
+    const maxLength = localAi.maxMemoChars || 12000;
+    if (countAiCharacters(text) > maxLength) {
+      throw new Error(`TXTの合計は${maxLength.toLocaleString("ja-JP")}文字以内にしてください。内容を分けてお試しください。`);
+    }
+    const analysis = localAi.deriveMemoBlocks(text);
     const candidateCount = countAiCandidateSections(analysis);
     if (candidateCount > (localAi.maxCards || 12)) {
-      throw new Error(`AIに送る会社・選考候補が${candidateCount}件あります。一度に整理できるのは${localAi.maxCards || 12}件までのため、TXTを分けてください。`);
+      throw new Error(`TXT内の会社・選考候補が${candidateCount}件あります。AIで一度に整理できるのは${localAi.maxCards || 12}件までです。`);
     }
-    const questionCount = analysis.blocks.reduce((total, block) => (
-      total + (block.qaHints || []).filter((hint) => hint.kind === "question").length
-    ), 0);
-    els.aiMemoInput.value = decoded.text;
+    const mergedCsvCards = consolidateAiImportCards(csvCards);
+    if (mergedCsvCards.length > 200) throw new Error("CSVから作れるカードは一度に200件までです。CSVを分けてください。");
+
+    els.aiMemoInput.value = text;
+    state.aiGenerateRequestId += 1;
+    state.aiGeneratePending = false;
+    state.aiCards = [];
+    state.aiCsvCards = mergedCsvCards;
+    state.aiCsvFileCount = csvFileCount;
+    state.aiLoadedText = textParts.length ? selectedText : "";
+    state.aiImportFileNames = files.map((file) => file.name);
+    state.aiImportWarnings = Array.from(new Set(warnings));
+    state.aiReviewedConflictKeys.clear();
     const details = [
-      decoded.encoding !== "utf-8" ? decoded.warning.replace(/。$/u, "") : "",
-      analysis.detectedBoundaries ? `区切り候補 ${analysis.blocks.length}件` : "",
-      questionCount ? `質問候補 ${questionCount}件` : ""
+      textFileCount ? `TXT ${textFileCount}件` : "",
+      csvFileCount ? `CSV ${csvFileCount}件・${csvDataRows}行から${mergedCsvCards.length}カード` : "",
+      !textFileCount && text ? "貼り付けメモあり" : "",
+      encodingWarnings.length ? "文字コードを自動判定" : ""
     ].filter(Boolean);
-    els.aiMemoFileName.textContent = details.length ? `${file.name}（${details.join("・")}）` : file.name;
+    const visibleNames = state.aiImportFileNames.slice(0, 4).join("、");
+    const hiddenNameCount = Math.max(0, state.aiImportFileNames.length - 4);
+    els.aiMemoFileName.textContent = `${visibleNames}${hiddenNameCount ? `、ほか${hiddenNameCount}件` : ""}${details.length ? `（${details.join("・")}）` : ""}`;
     setAiImportError("");
+    const noticeParts = [];
+    if (csvFileCount) noticeParts.push("CSVは端末内だけで解析し、AIへ送信しません。");
+    noticeParts.push(...state.aiImportWarnings);
+    setAiImportNotice(noticeParts.join(" "));
+    setAiConnectionStatus(text ? "TXTは送信前です" : "CSVは端末内で準備完了", "connected");
     updateAiPrivacyPreview();
+    updateAiGenerateButton();
+    renderAiCards();
   } catch (error) {
+    if (fileReadRequestId !== state.aiFileReadRequestId) return;
     els.aiMemoInput.value = previousMemo;
     els.aiMemoFileName.textContent = previousFileName;
+    state.aiCsvCards = previousCsvCards;
+    state.aiCsvFileCount = previousCsvFileCount;
+    state.aiCards = previousAiCards;
+    state.aiLoadedText = previousLoadedText;
+    state.aiImportFileNames = previousImportFileNames;
+    state.aiImportWarnings = previousWarnings;
     event.target.value = "";
-    setAiImportError(error?.message || "ファイルを読み込めませんでした。UTF-8のTXTとして保存し直してください。");
+    setAiImportError(error?.message || "ファイルを読み込めませんでした。CSVまたはTXTとして保存し直してください。");
     updateAiPrivacyPreview();
+  } finally {
+    if (fileReadRequestId === state.aiFileReadRequestId) {
+      state.aiFileReadPending = false;
+      updateAiGenerateButton();
+    }
   }
 }
 
@@ -896,56 +1267,117 @@ function updateAiPrivacyPreview() {
     return;
   }
 
-  const result = localAi.redactSensitiveMemo(els.aiMemoInput.value);
-  els.aiPrivacySummary.textContent = localAi.privacySummary(result);
-  els.aiRedactedPreview.textContent = result.text.trim() || "まだ文章がありません。";
+  const source = els.aiMemoInput.value;
+  if (source.trim() && localCsv?.looksLikeCsv(source)) {
+    els.aiPrivacySummary.textContent = "CSV形式を検出しました。内容はAIへ送らず、端末内だけで解析します。";
+    els.aiRedactedPreview.textContent = "CSVのセル内容は安全のためここには表示しません。";
+    return;
+  }
+
+  const result = localAi.redactSensitiveMemo(source);
+  const csvSummary = state.aiCsvCards.length
+    ? ` CSVの${state.aiCsvCards.length}カード分はAIへ送らず、端末内で統合します。`
+    : "";
+  const textSummary = source.trim()
+    ? localAi.privacySummary(result)
+    : "TXTを入れると、AIに送る前に隠す情報を確認できます。";
+  els.aiPrivacySummary.textContent = `${textSummary}${csvSummary}`;
+  els.aiRedactedPreview.textContent = result.text.trim() || (state.aiCsvCards.length
+    ? "TXTはありません。CSVはAIへ送信しません。"
+    : "まだ文章がありません。");
 }
 
 async function handleAiGenerate(event) {
   event.preventDefault();
-  if (state.aiGeneratePending) return;
-  if (!localAi) {
+  if (state.aiGeneratePending || state.aiFileReadPending) return;
+  if (!localAi || !localCsv) {
     setAiImportError("安全処理を読み込めませんでした。画面を再読み込みしてください。");
     return;
   }
 
-  const accessToken = state.session?.access_token;
-  if (!accessToken) {
-    setAiImportError("ログインしてからAIメモ整理をお使いください。");
-    return;
+  let source = els.aiMemoInput.value.trim();
+  if (source && localCsv.looksLikeCsv(source)) {
+    try {
+      const imported = localCsv.importCsv(source, {
+        maxInputChars: 600000,
+        maxRows: 501,
+        maxColumns: 80,
+        maxFieldChars: 12000
+      });
+      const importedCards = csvImportCardsWithConflicts(imported);
+      const importWarnings = csvImportWarningMessages(imported);
+      if (!importedCards.length) {
+        throw new Error(["企業名と選考区分を確認できる行がありません。", ...importWarnings].join(" "));
+      }
+      state.aiCsvCards = consolidateAiImportCards([
+        ...state.aiCsvCards,
+        ...importedCards
+      ]);
+      state.aiCsvFileCount += 1;
+      state.aiImportWarnings = Array.from(new Set([
+        ...state.aiImportWarnings,
+        ...importWarnings
+      ]));
+      els.aiMemoInput.value = "";
+      state.aiLoadedText = "";
+      source = "";
+      setAiImportNotice([
+        "貼り付けたCSVは端末内だけで解析し、AIへ送信しません。",
+        ...state.aiImportWarnings
+      ].join(" "));
+      updateAiPrivacyPreview();
+      updateAiGenerateButton();
+    } catch (error) {
+      setAiImportError(`貼り付けた内容はCSVとして検出しましたが、安全に読み込めませんでした。${error.message}`);
+      return;
+    }
   }
 
-  const source = els.aiMemoInput.value.trim();
-  if (!source) {
-    setAiImportError("メモ帳の内容を貼り付けるか、ファイルを選んでください。");
+  const hasCsvCards = state.aiCsvCards.length > 0;
+  if (!source && !hasCsvCards) {
+    setAiImportError("TXT・CSVを選ぶか、メモを貼り付けてください。");
     els.aiMemoInput.focus();
     return;
   }
 
-  if (countAiCharacters(source) > localAi.maxMemoChars) {
-    setAiImportError(`メモは${localAi.maxMemoChars.toLocaleString("ja-JP")}文字以内にしてください。途中で切らず、内容を分けてお試しください。`);
-    return;
-  }
+  let redactedText = "";
+  let localMemoCredentials = { records: [], unresolvedCount: 0, detectedCount: 0 };
+  if (source) {
+    const accessToken = state.session?.access_token;
+    if (!accessToken) {
+      setAiImportError("TXTをAIで整理するにはログインしてください。CSVだけならログイン前でも端末内でカード案を確認できます。");
+      return;
+    }
+    if (countAiCharacters(source) > localAi.maxMemoChars) {
+      setAiImportError(`TXTは${localAi.maxMemoChars.toLocaleString("ja-JP")}文字以内にしてください。内容を分けてお試しください。`);
+      return;
+    }
 
-  let normalizedSource;
-  try {
-    normalizedSource = localAi.normalizeMemoText(source);
-  } catch (error) {
-    setAiImportError(error.message);
-    return;
-  }
+    let normalizedSource;
+    try {
+      normalizedSource = localAi.normalizeMemoText(source);
+    } catch (error) {
+      setAiImportError(error.message);
+      return;
+    }
 
-  const analysis = localAi.deriveMemoBlocks(normalizedSource);
-  const candidateCount = countAiCandidateSections(analysis);
-  if (candidateCount > localAi.maxCards) {
-    setAiImportError(`AIに送る会社・選考候補が${candidateCount}件あります。一度に整理できるのは${localAi.maxCards}件までのため、内容を分けてお試しください。`);
-    return;
-  }
+    const analysis = localAi.deriveMemoBlocks(normalizedSource);
+    const candidateCount = countAiCandidateSections(analysis);
+    if (candidateCount > localAi.maxCards) {
+      setAiImportError(`TXT内の会社・選考候補が${candidateCount}件あります。一度にAIで整理できるのは${localAi.maxCards}件までです。`);
+      return;
+    }
 
-  const redacted = localAi.redactSensitiveMemo(normalizedSource);
-  if (!redacted.text.trim()) {
-    setAiImportError("個人情報を隠すと整理できる文章が残りませんでした。企業名や締切などだけにしてお試しください。");
-    return;
+    if (typeof localAi.extractLocalCredentialRecords === "function") {
+      localMemoCredentials = localAi.extractLocalCredentialRecords(analysis);
+    }
+
+    const redacted = localAi.redactSensitiveMemo(normalizedSource);
+    if (!redacted.text.trim()) {
+      setAiImportError("個人情報を隠すと整理できる文章が残りませんでした。企業名や締切などだけにしてお試しください。");
+      return;
+    }
+    redactedText = redacted.text;
   }
 
   const requestId = ++state.aiGenerateRequestId;
@@ -954,17 +1386,29 @@ async function handleAiGenerate(event) {
   updateAiGenerateButton();
   renderAiCards();
   setAiImportError("");
-  setAiConnectionStatus("オンラインで整理中...", "checking");
+  setAiConnectionStatus(source ? "TXTをオンラインで整理中..." : "CSVを端末内で整理中...", "checking");
 
   try {
-    const cards = await localAi.generateCards(redacted.text, { accessToken });
+    const aiCards = source
+      ? await localAi.generateCards(redactedText, { accessToken: state.session.access_token })
+      : [];
     if (requestId !== state.aiGenerateRequestId) return;
-    state.aiCards = cards;
-    if (cards.length) {
-      setAiConnectionStatus("接続OK", "connected");
-      showToast(`${cards.length}件のカード案を作りました。`);
+    const consolidatedCards = consolidateAiImportCards([...state.aiCsvCards, ...aiCards]);
+    const localIdMerge = mergeLocalMemoIdsIntoCards(consolidatedCards, localMemoCredentials);
+    state.aiCards = localIdMerge.cards;
+    if (source && localMemoCredentials.detectedCount) {
+      const credentialNotices = [
+        localIdMerge.addedCount ? `TXT内のマイページID ${localIdMerge.addedCount}件を端末内だけでカード案へ追加しました。` : "",
+        localIdMerge.conflictCount ? `IDが異なる${localIdMerge.conflictCount}件は自動上書きせず要確認にしました。` : "",
+        localIdMerge.unresolvedCount ? `会社を安全に特定できないID ${localIdMerge.unresolvedCount}件は自動追加しませんでした。` : ""
+      ].filter(Boolean);
+      setAiImportNotice([...state.aiImportWarnings, ...credentialNotices].join(" "));
+    }
+    if (state.aiCards.length) {
+      setAiConnectionStatus(source ? "接続OK" : "端末内で解析済み", "connected");
+      showToast(`${state.aiCards.length}件のカード案を作りました。`);
     } else {
-      setAiImportError("企業名を含むカード案を作れませんでした。会社ごとに企業名と予定を書いて、もう一度お試しください。");
+      setAiImportError("企業名を含むカード案を作れませんでした。CSVの企業名列やTXTの会社名を確認してください。");
     }
   } catch (error) {
     if (requestId !== state.aiGenerateRequestId) return;
@@ -980,10 +1424,27 @@ async function handleAiGenerate(event) {
 }
 
 function updateAiGenerateButton() {
-  els.generateAiCardsButton.disabled = state.aiGeneratePending;
-  els.generateAiCardsButton.textContent = state.aiGeneratePending
-    ? "AIが整理中..."
-    : "個人情報を隠してカード案を作る";
+  const busy = state.aiGeneratePending || state.aiFileReadPending;
+  const pastedCsv = Boolean(els.aiMemoInput.value.trim() && localCsv?.looksLikeCsv(els.aiMemoInput.value));
+  els.generateAiCardsButton.disabled = busy;
+  els.selectAiMemoFileButton.disabled = busy;
+  els.aiMemoInput.readOnly = busy;
+  els.aiImportForm.setAttribute("aria-busy", String(busy));
+  if (state.aiFileReadPending) {
+    els.generateAiCardsButton.textContent = "ファイルを安全に読込中...";
+  } else if (state.aiGeneratePending) {
+    els.generateAiCardsButton.textContent = "情報を統合中...";
+  } else if (pastedCsv && state.aiCsvCards.length) {
+    els.generateAiCardsButton.textContent = "貼り付けCSVと選択済みCSVを統合する";
+  } else if (pastedCsv) {
+    els.generateAiCardsButton.textContent = "貼り付けCSVからカード案を作る";
+  } else if (state.aiCsvCards.length && els.aiMemoInput.value.trim()) {
+    els.generateAiCardsButton.textContent = "CSVとTXTを統合する";
+  } else if (state.aiCsvCards.length) {
+    els.generateAiCardsButton.textContent = "CSVからカード案を作る";
+  } else {
+    els.generateAiCardsButton.textContent = "個人情報を隠してカード案を作る";
+  }
 }
 
 function setAiConnectionStatus(message, tone) {
@@ -998,26 +1459,369 @@ function setAiImportError(message) {
   els.aiImportError.hidden = !message;
 }
 
+function setAiImportNotice(message) {
+  if (!els.aiImportNotice) return;
+  els.aiImportNotice.textContent = message;
+  els.aiImportNotice.hidden = !message;
+}
+
+const importFieldLabels = {
+  industry: "業種",
+  mypageId: "マイページID",
+  officialUrl: "企業公式サイト",
+  logoUrl: "企業アイコン",
+  status: "現在の状況",
+  deadline: "締切日",
+  eventDate: "次の予定日",
+  eventType: "予定の内容",
+  priority: "志望度",
+  mypageUrl: "企業マイページ",
+  esItems: "ES",
+  interviewNotes: "面接対策メモ",
+  memo: "その他メモ"
+};
+
+function aiImportIdentityKey(entry) {
+  if (typeof localCsv?.cardIdentityKey === "function") return localCsv.cardIdentityKey(entry);
+  const company = String(entry?.companyName || "").normalize("NFKC").toLowerCase().replace(/[\s　]+/gu, "").trim();
+  return company ? `${company}\u0000${entry?.trackType || "本選考"}` : "";
+}
+
+function consolidateAiImportCards(cards) {
+  const mergedCards = [];
+  const indexes = new Map();
+
+  (Array.isArray(cards) ? cards : []).forEach((rawCard) => {
+    if (!rawCard || typeof rawCard !== "object") return;
+    const safeRawCard = {
+      ...rawCard,
+      logoUrl: "",
+      _importConflicts: Array.isArray(rawCard._importConflicts)
+        ? rawCard._importConflicts.filter((field) => field !== "logoUrl")
+        : [],
+      _importConflictDetails: Array.isArray(rawCard._importConflictDetails)
+        ? rawCard._importConflictDetails.filter((detail) => detail?.field !== "logoUrl")
+        : []
+    };
+    const key = aiImportIdentityKey(safeRawCard);
+    if (!key) return;
+    if (!indexes.has(key)) {
+      const normalized = normalizeEntry(safeRawCard);
+      normalized.esItems = normalizeEsItems(safeRawCard.esItems, safeRawCard.esContent);
+      normalized.esContent = esItemsToLegacyText(normalized.esItems);
+      normalized._importConflicts = [...safeRawCard._importConflicts];
+      normalized._importConflictDetails = mergeImportConflictDetails(safeRawCard._importConflictDetails);
+      indexes.set(key, mergedCards.length);
+      mergedCards.push(normalized);
+      return;
+    }
+
+    const index = indexes.get(key);
+    const result = mergeImportedEntry(mergedCards[index], safeRawCard);
+    result.entry._importConflicts = Array.from(new Set([
+      ...(mergedCards[index]._importConflicts || []),
+      ...safeRawCard._importConflicts,
+      ...result.conflicts
+    ]));
+    result.entry._importConflictDetails = mergeImportConflictDetails(
+      mergedCards[index]._importConflictDetails,
+      safeRawCard._importConflictDetails,
+      result.conflictDetails
+    );
+    mergedCards[index] = result.entry;
+  });
+
+  return mergedCards;
+}
+
+function mergeImportedEntry(existingEntry, incomingEntry, options = {}) {
+  const merged = normalizeEntry(existingEntry);
+  const addedFields = [];
+  const conflicts = [];
+  const conflictDetails = [];
+  const hadExistingEventDate = Boolean(String(existingEntry?.eventDate || "").trim());
+  const hasIncomingEventDate = Boolean(String(incomingEntry?.eventDate || "").trim());
+  const scalarFields = [
+    "industry", "mypageId", "officialUrl", "logoUrl", "deadline", "eventDate", "mypageUrl"
+  ];
+
+  scalarFields.forEach((field) => {
+    mergeImportedScalar(merged, incomingEntry, field, addedFields, conflicts, conflictDetails);
+  });
+  mergeImportedScalar(merged, incomingEntry, "eventType", addedFields, conflicts, conflictDetails, {
+    incomingMissing: (value) => !value || !hasIncomingEventDate,
+    existingMissing: (value) => !value || !hadExistingEventDate
+  });
+
+  mergeImportedScalar(merged, incomingEntry, "status", addedFields, conflicts, conflictDetails, {
+    incomingMissing: (value) => !value || value === "気になる",
+    existingMissing: (value) => !value || value === "気になる"
+  });
+  mergeImportedScalar(merged, incomingEntry, "priority", addedFields, conflicts, conflictDetails, {
+    incomingMissing: (value) => !value || value === "未定",
+    existingMissing: (value) => !value || value === "未定"
+  });
+
+  const esMerge = mergeImportedEsItems(merged, incomingEntry);
+  if (esMerge.addedCount) {
+    merged.esItems = esMerge.items;
+    merged.esContent = esItemsToLegacyText(esMerge.items);
+    addedFields.push("esItems");
+  }
+
+  const textLimit = Number.isFinite(options.textLimit) ? options.textLimit : 6000;
+  for (const field of ["interviewNotes", "memo"]) {
+    const textMerge = mergeImportedText(merged[field], incomingEntry?.[field], textLimit);
+    if (textMerge.addedCount) {
+      merged[field] = textMerge.value;
+      addedFields.push(field);
+    }
+    if (textMerge.truncated) {
+      conflicts.push(field);
+      conflictDetails.push({
+        field,
+        existingValue: merged[field],
+        incomingValue: String(incomingEntry?.[field] || "").trim()
+      });
+    }
+  }
+
+  return {
+    entry: normalizeEntry(merged),
+    addedFields: Array.from(new Set(addedFields)),
+    conflicts: Array.from(new Set(conflicts)),
+    conflictDetails,
+    hasChanges: addedFields.length > 0
+  };
+}
+
+function mergeImportedScalar(target, source, field, addedFields, conflicts, conflictDetails, options = {}) {
+  const incoming = String(source?.[field] ?? "").trim();
+  const existing = String(target?.[field] ?? "").trim();
+  const incomingMissing = options.incomingMissing || ((value) => !value);
+  const existingMissing = options.existingMissing || ((value) => !value);
+  if (incomingMissing(incoming)) return;
+  if (existingMissing(existing)) {
+    target[field] = incoming;
+    addedFields.push(field);
+    return;
+  }
+  if (normalizeAiImportText(existing) !== normalizeAiImportText(incoming)) {
+    conflicts.push(field);
+    conflictDetails.push({ field, existingValue: existing, incomingValue: incoming });
+  }
+}
+
+function mergeImportedText(existingValue, incomingValue, maxCharacters) {
+  const existing = String(existingValue || "").trim();
+  const incomingLines = String(incomingValue || "")
+    .replace(/\r\n?/gu, "\n")
+    .split(/\n+/u)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const seen = new Set(existing.split(/\n+/u).map(normalizeAiImportText).filter(Boolean));
+  const additions = [];
+  let value = existing;
+  let truncated = false;
+
+  incomingLines.forEach((line) => {
+    const key = normalizeAiImportText(line);
+    if (!key || seen.has(key)) return;
+    const candidate = [value, line].filter(Boolean).join("\n");
+    if (Array.from(candidate).length > maxCharacters) {
+      truncated = true;
+      return;
+    }
+    seen.add(key);
+    additions.push(line);
+    value = candidate;
+  });
+
+  return { value, addedCount: additions.length, truncated };
+}
+
+function mergeImportedEsItems(existingEntry, incomingEntry) {
+  const merged = normalizeEsItems(existingEntry?.esItems, existingEntry?.esContent)
+    .map((item) => cloneEntryFieldValue(item));
+  const incoming = normalizeEsItems(incomingEntry?.esItems, incomingEntry?.esContent);
+  const indexes = new Map();
+  merged.forEach((item, index) => indexes.set(normalizeAiImportText(item.question) || "__questionless__", index));
+  let addedCount = 0;
+
+  incoming.forEach((item) => {
+    const key = normalizeAiImportText(item.question) || "__questionless__";
+    if (!indexes.has(key)) {
+      indexes.set(key, merged.length);
+      merged.push(cloneEntryFieldValue(item));
+      addedCount += 1;
+      return;
+    }
+
+    const target = merged[indexes.get(key)];
+    const variantKeys = new Set(target.variants.map((variant) => (
+      `${normalizeAiImportText(variant.label)}\u0000${normalizeAiImportText(variant.answer)}`
+    )));
+    item.variants.forEach((variant) => {
+      const variantKey = `${normalizeAiImportText(variant.label)}\u0000${normalizeAiImportText(variant.answer)}`;
+      if (variantKeys.has(variantKey)) return;
+      variantKeys.add(variantKey);
+      target.variants.push(cloneEntryFieldValue(variant));
+      addedCount += 1;
+    });
+  });
+
+  return { items: merged, addedCount };
+}
+
+function normalizeAiImportText(value) {
+  return String(value || "").normalize("NFKC").toLowerCase().replace(/[\s　]+/gu, "").trim();
+}
+
+function importConflictValueKey(value) {
+  if (value == null) return "";
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value).normalize("NFKC").trim();
+}
+
+function mergeImportConflictDetails(...groups) {
+  const details = [];
+  const seen = new Set();
+  groups.flatMap((group) => (Array.isArray(group) ? group : [])).forEach((detail) => {
+    const field = String(detail?.field || "").trim();
+    if (!field) return;
+    const normalized = {
+      field,
+      existingValue: detail.existingValue ?? "",
+      incomingValue: detail.incomingValue ?? "",
+      ...(Number.isFinite(detail.rowNumber) ? { rowNumber: detail.rowNumber } : {})
+    };
+    const signature = [
+      field,
+      importConflictValueKey(normalized.existingValue),
+      importConflictValueKey(normalized.incomingValue)
+    ].join("\u0000");
+    if (seen.has(signature)) return;
+    seen.add(signature);
+    details.push(normalized);
+  });
+  return details;
+}
+
+function aiConflictReviewKey(card, conflicts = [], conflictDetails = [], existingEntry = null) {
+  const identity = aiImportIdentityKey(card);
+  const fields = Array.from(new Set([
+    ...(Array.isArray(conflicts) ? conflicts : []),
+    ...mergeImportConflictDetails(conflictDetails).map((detail) => detail.field)
+  ].filter(Boolean))).sort();
+  if (!identity || !fields.length) return "";
+  const details = mergeImportConflictDetails(conflictDetails);
+  const importedValues = fields.map((field) => ({
+    field,
+    cardValue: importConflictValueKey(card?.[field]),
+    existingValue: importConflictValueKey(existingEntry?.[field]),
+    alternatives: details
+      .filter((detail) => detail.field === field)
+      .map((detail) => importConflictValueKey(detail.incomingValue))
+      .sort()
+  }));
+  return `${identity}\u0001${JSON.stringify(importedValues)}`;
+}
+
+function buildAiImportPlan(card) {
+  const key = aiImportIdentityKey(card);
+  const matches = key ? state.entries.filter((entry) => aiImportIdentityKey(entry) === key) : [];
+  const internalConflicts = Array.isArray(card?._importConflicts) ? card._importConflicts : [];
+  const internalConflictDetails = mergeImportConflictDetails(card?._importConflictDetails);
+  if (matches.length > 1) {
+    return {
+      kind: "ambiguous",
+      card,
+      conflicts: internalConflicts,
+      conflictDetails: internalConflictDetails
+    };
+  }
+  if (matches.length === 1 && isTrashed(matches[0])) {
+    return {
+      kind: "trashed",
+      card,
+      existing: matches[0],
+      conflicts: internalConflicts,
+      conflictDetails: internalConflictDetails
+    };
+  }
+  if (matches.length === 1) {
+    const merge = mergeImportedEntry(matches[0], card);
+    const conflicts = Array.from(new Set([...internalConflicts, ...merge.conflicts]));
+    const conflictDetails = mergeImportConflictDetails(internalConflictDetails, merge.conflictDetails);
+    const reviewKey = aiConflictReviewKey(card, conflicts, internalConflictDetails, matches[0]);
+    const conflictsReviewed = Boolean(reviewKey && state.aiReviewedConflictKeys?.has?.(reviewKey));
+    return {
+      kind: merge.hasChanges ? "existing" : conflicts.length && !conflictsReviewed ? "conflict" : "unchanged",
+      card,
+      existing: matches[0],
+      merged: merge.entry,
+      addedFields: merge.addedFields,
+      conflicts: conflictsReviewed ? [] : conflicts,
+      conflictDetails: conflictsReviewed ? [] : conflictDetails,
+      reviewKey,
+      conflictsReviewed
+    };
+  }
+  return {
+    kind: "new",
+    card,
+    conflicts: internalConflicts,
+    conflictDetails: internalConflictDetails,
+    reviewKey: aiConflictReviewKey(card, internalConflicts, internalConflictDetails),
+    addedFields: []
+  };
+}
+
 function renderAiCards() {
   if (state.aiGeneratePending) {
+    els.aiResultStatus.textContent = "情報を整理しています。";
     els.aiResultList.innerHTML = '<div class="ai-loading-card"><span aria-hidden="true"></span><strong>メモを企業ごとに整理しています</strong><p>通常は数秒から数十秒ほどかかります。</p></div>';
     return;
   }
   if (!state.aiCards.length) {
+    els.aiResultStatus.textContent = "";
     els.aiResultList.textContent = "";
     return;
   }
 
+  const plans = state.aiCards.map(buildAiImportPlan);
+  const newCount = plans.filter((plan) => plan.kind === "new").length;
+  const updateCount = plans.filter((plan) => plan.kind === "existing").length;
+  const unchangedCount = plans.filter((plan) => plan.kind === "unchanged").length;
+  const conflictCount = plans.filter((plan) => plan.kind === "conflict").length;
+  const trashCount = plans.filter((plan) => plan.kind === "trashed").length;
+  const ambiguousCount = plans.filter((plan) => plan.kind === "ambiguous").length;
+  const summary = [
+    newCount ? `新規 ${newCount}件` : "",
+    updateCount ? `既存へ追加 ${updateCount}件` : "",
+    conflictCount ? `値の違いを確認 ${conflictCount}件` : "",
+    unchangedCount ? `追加なし ${unchangedCount}件` : "",
+    trashCount ? `ゴミ箱に一致 ${trashCount}件` : "",
+    ambiguousCount ? `重複あり ${ambiguousCount}件` : ""
+  ].filter(Boolean).join("・");
+  els.aiResultStatus.textContent = `${state.aiCards.length}件のカード案。${summary || "内容を確認してください。"}`;
+
   els.aiResultList.innerHTML = `
     <div class="ai-result-heading">
-      <div><strong>${state.aiCards.length}件のカード案</strong><span>内容を選ぶと、通常の入力画面で修正できます。</span></div>
-      <span class="ai-review-badge">未保存</span>
+      <div><strong>${state.aiCards.length}件のカード案</strong><span>${escapeHtml(summary || "入力画面で内容を確認できます。")}</span></div>
+      <span class="ai-review-badge">確認待ち</span>
     </div>
-    ${state.aiCards.map((card, index) => aiCardMarkup(card, index)).join("")}
+    ${state.aiCards.map((card, index) => aiCardMarkup(card, index, plans[index])).join("")}
   `;
 }
 
-function aiCardMarkup(card, index) {
+function aiCardMarkup(card, index, plan = buildAiImportPlan(card)) {
   const meta = [
     card.industry,
     card.trackType,
@@ -1034,23 +1838,127 @@ function aiCardMarkup(card, index) {
         return `<li>${escapeHtml(question)}</li>`;
       }).join("")}</ul></div>`
     : "";
+  const planLabels = {
+    new: plan.conflicts?.length ? "要確認・新規" : "新規カード",
+    existing: "既存カードに追加",
+    conflict: "既存値と相違あり",
+    unchanged: "登録済み・追加なし",
+    trashed: "ゴミ箱に登録済み",
+    ambiguous: "重複カードあり"
+  };
+  const buttonLabels = {
+    new: "入力画面で確認",
+    existing: "追加内容を確認",
+    conflict: "違いを見ながら編集",
+    unchanged: "追加情報なし",
+    trashed: "先にゴミ箱から復元",
+    ambiguous: "先に重複を整理"
+  };
+  const addedLabels = (plan.addedFields || []).map((field) => importFieldLabels[field]).filter(Boolean);
+  const conflictLabels = Array.from(new Set((plan.conflicts || []).map((field) => importFieldLabels[field] || "CSV内の異なる値")));
+  const conflictDetailMarkup = importConflictDetailsMarkup(plan.conflictDetails);
+  const disabled = ["unchanged", "trashed", "ambiguous"].includes(plan.kind);
 
   return `
-    <article class="ai-result-card">
+    <article class="ai-result-card ai-result-${escapeAttribute(plan.kind)}">
       <div class="ai-result-card-main">
-        <strong>${escapeHtml(card.companyName)}</strong>
+        <div class="ai-result-card-title">
+          <strong>${escapeHtml(card.companyName)}</strong>
+          <span class="ai-import-plan-badge ${escapeAttribute(plan.kind)}">${escapeHtml(planLabels[plan.kind] || "要確認")}</span>
+        </div>
         <div class="ai-result-meta">${meta.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
+        ${addedLabels.length ? `<p class="ai-import-diff">追加する項目: ${escapeHtml(addedLabels.join("・"))}</p>` : ""}
+        ${conflictLabels.length ? `<p class="ai-import-conflict">先に見つかった値を保持・要確認: ${escapeHtml(conflictLabels.join("・"))}</p>` : ""}
+        ${conflictDetailMarkup}
         ${esPreview}
         ${notes ? `<p>${escapeHtml(notes.slice(0, 260))}${notes.length > 260 ? "…" : ""}</p>` : esItems.length ? "" : '<p class="ai-empty-note">メモ欄は空です。</p>'}
       </div>
-      <button class="primary-button" data-ai-card-index="${index}" type="button">入力画面で確認</button>
+      <button class="primary-button" data-ai-card-index="${index}" type="button" aria-label="${escapeAttribute(`${card.companyName}の${buttonLabels[plan.kind] || "入力画面で確認"}`)}" ${disabled ? "disabled" : ""}>${escapeHtml(buttonLabels[plan.kind] || "入力画面で確認")}</button>
     </article>
   `;
 }
 
+function importConflictDetailsMarkup(details, options = {}) {
+  if (!Array.isArray(details) || !details.length) return "";
+  const sensitiveFields = new Set(["mypageId", "officialUrl", "logoUrl", "mypageUrl"]);
+  const editableFields = new Set([
+    "industry", "mypageId", "officialUrl", "logoUrl", "status", "deadline",
+    "eventDate", "eventType", "priority", "mypageUrl", "interviewNotes", "memo"
+  ]);
+  const items = details.map((detail, index) => {
+    const label = importFieldLabels[detail.field] || detail.field;
+    if (!options.embedded && sensitiveFields.has(detail.field)) {
+      return `<li><strong>${escapeHtml(label)}</strong>: 値は確認画面の中だけで表示します。</li>`;
+    }
+    const existingValue = String(detail.existingValue || "未入力");
+    const incomingValue = String(detail.incomingValue || "未入力");
+    const action = options.embedded && editableFields.has(detail.field)
+      ? `<button class="secondary-button import-conflict-use-button" type="button" data-import-conflict-index="${index}">取込値を使用</button>`
+      : "";
+    return `<li><span><strong>${escapeHtml(label)}</strong>: 現在「${escapeHtml(existingValue.slice(0, 180))}${existingValue.length > 180 ? "…" : ""}」／取込「${escapeHtml(incomingValue.slice(0, 180))}${incomingValue.length > 180 ? "…" : ""}」</span>${action}</li>`;
+  }).join("");
+  const guidance = options.embedded
+    ? "現在の入力欄の値を維持する項目はそのままにし、変更したい項目だけ「取込値を使用」を押してから保存してください。"
+    : "値は自動上書きしていません。確認画面で項目ごとに選べます。";
+  const content = `<strong>${escapeHtml(guidance)}</strong><ul>${items}</ul>`;
+  return options.embedded ? content : `<div class="ai-import-conflict-list">${content}</div>`;
+}
+
+function handleImportConflictValueChoice(event) {
+  const button = event.target.closest("[data-import-conflict-index]");
+  if (!button) return;
+  const index = Number(button.dataset.importConflictIndex);
+  const detail = state.entryImportConflictDetails[index];
+  const field = detail?.field;
+  const input = field ? els.entryForm.elements.namedItem(field) : null;
+  if (!input || typeof input.value === "undefined") return;
+  input.value = String(detail.incomingValue ?? "");
+  state.entryImportValueApplied = true;
+  if (field === "trackType") updateTrackTypeHint();
+  updateEntrySaveButton();
+  input.focus();
+  showToast(`${importFieldLabels[field] || "項目"}に取込値を反映しました。保存するまで確定しません。`);
+}
+
 function openAiCardDraft(index) {
+  if (state.aiFileReadPending || state.aiGeneratePending) return;
   const card = state.aiCards[index];
   if (!card) return;
+  const plan = buildAiImportPlan(card);
+  if (plan.kind === "unchanged") {
+    showToast("このカードに追加できる新情報はありません。");
+    return;
+  }
+  if (plan.kind === "trashed") {
+    showToast("同じカードがゴミ箱にあります。先に復元してください。");
+    return;
+  }
+  if (plan.kind === "ambiguous") {
+    showToast("同じ企業・種類のカードが複数あります。先に重複を整理してください。");
+    return;
+  }
+
+  if (plan.kind === "conflict") {
+    closeAiImportDialog(false);
+    openEntryDialog(plan.existing, {
+      isAiConflict: true,
+      conflictDetails: plan.conflictDetails,
+      importReviewKey: plan.reviewKey
+    });
+    return;
+  }
+
+  if (plan.kind === "existing") {
+    closeAiImportDialog(false);
+    openEntryDialog(plan.existing, {
+      draft: plan.merged,
+      isAiMerge: true,
+      conflictDetails: plan.conflictDetails,
+      importReviewKey: plan.reviewKey
+    });
+    return;
+  }
+
   const now = new Date().toISOString();
   const draft = normalizeEntry({
     ...card,
@@ -1061,8 +1969,13 @@ function openAiCardDraft(index) {
     sortOrder: nextCompanySortOrder()
   });
 
-  closeAiImportDialog(true);
-  openEntryDialog(null, { draft, isAiDraft: true });
+  closeAiImportDialog(false);
+  openEntryDialog(null, {
+    draft,
+    isAiDraft: true,
+    conflictDetails: plan.conflictDetails,
+    importReviewKey: plan.reviewKey
+  });
 }
 
 async function handleEntrySubmit(event) {
@@ -1074,10 +1987,16 @@ async function handleEntrySubmit(event) {
     ? state.entries.find((entry) => entry.id === state.editingId)
     : null;
   const baseEntry = existingEntry ? state.editingBaseEntry || existingEntry : null;
-  const draftEntry = !existingEntry ? state.entryDraft : null;
-  const sourceEntry = baseEntry || draftEntry;
+  const draftEntry = state.entryDraft;
+  const sourceEntry = draftEntry || baseEntry;
   const esContent = String(formData.get("esContent")).trim();
   const sourceEsText = sourceEntry ? entryEsText(sourceEntry) : "";
+  const requestedLogoUrl = String(formData.get("logoUrl") || "").trim();
+  const previousLogoUrl = String(sourceEntry?.logoUrl || "").trim();
+  if (requestedLogoUrl && requestedLogoUrl !== previousLogoUrl && !normalizeExternalImageUrl(requestedLogoUrl)) {
+    showToast("企業アイコンは、公開HTTPSの画像URL（クエリ・#・ログイン情報なし）を入力してください。");
+    return;
+  }
   const entry = normalizeEntry({
     id: baseEntry?.id || draftEntry?.id || createId(),
     companyName: String(formData.get("companyName")).trim(),
@@ -1090,7 +2009,7 @@ async function handleEntrySubmit(event) {
     priority: String(formData.get("priority")),
     mypageId: String(formData.get("mypageId")).trim(),
     officialUrl: String(formData.get("officialUrl")).trim(),
-    logoUrl: String(formData.get("logoUrl")).trim(),
+    logoUrl: requestedLogoUrl,
     mypageUrl: String(formData.get("mypageUrl")).trim(),
     esContent,
     esItems: sourceEntry?.esItems?.length && esContent === sourceEsText
@@ -1109,9 +2028,25 @@ async function handleEntrySubmit(event) {
     return;
   }
 
+  const entryKey = aiImportIdentityKey(entry);
+  const baseKey = existingEntry ? aiImportIdentityKey(existingEntry) : "";
+  if (!existingEntry || entryKey !== baseKey) {
+    const duplicate = state.entries.find((candidate) => (
+      candidate.id !== existingEntry?.id && aiImportIdentityKey(candidate) === entryKey
+    ));
+    if (duplicate) {
+      showToast(isTrashed(duplicate)
+        ? "同じ企業・種類のカードがゴミ箱にあります。先に復元してください。"
+        : "同じ企業・種類のカードは登録済みです。既存カードを編集してください。");
+      return;
+    }
+  }
+
   const celebration = getEntryCelebration(entry, baseEntry);
   const draftKind = state.entryDraftKind;
+  const importReviewKey = state.entryImportReviewKey;
   const handoffTrack = draftKind === "handoff" ? draftEntry?.trackType || "" : "";
+  const saveScope = state.mode === "cloud" ? captureUserScope() : null;
   state.entrySavePending = true;
   updateEntrySaveButton();
 
@@ -1141,21 +2076,39 @@ async function handleEntrySubmit(event) {
       state.entries = nextEntries;
     }
 
+    if (importReviewKey && ["ai", "ai-merge", "ai-conflict"].includes(draftKind)) {
+      state.aiReviewedConflictKeys.add(importReviewKey);
+      const importedCard = state.aiCards.find((card) => aiImportIdentityKey(card) === aiImportIdentityKey(savedEntry));
+      const postSaveReviewKey = importedCard ? buildAiImportPlan(importedCard).reviewKey : "";
+      if (postSaveReviewKey) state.aiReviewedConflictKeys.add(postSaveReviewKey);
+    }
     resetEntryForm();
     els.entryDialog.close();
     render();
+    const returnToImport = ["ai", "ai-merge", "ai-conflict"].includes(draftKind) && state.aiCards.length;
+    if (returnToImport && celebration) {
+      state.aiReturnAfterCelebration = true;
+    } else if (returnToImport) {
+      openAiImportDialog({ focusResults: true });
+    }
     if (celebration) {
       showCelebration(savedEntry, celebration);
     } else if (handoffTrack) {
       showToast(`${handoffTrack}として新しく引き継ぎました。`);
+    } else if (draftKind === "ai-merge") {
+      showToast("新情報を既存カードに追加しました。");
+    } else if (draftKind === "ai-conflict") {
+      showToast("違いを確認して既存カードを更新しました。");
     } else if (draftKind === "ai") {
-      showToast("AIのカード案を保存しました。");
+      showToast("取込カード案を保存しました。");
     } else {
       showToast(existingEntry ? "更新しました。" : "保存しました。");
     }
   } finally {
-    state.entrySavePending = false;
-    updateEntrySaveButton();
+    if (!saveScope || isCurrentUserScope(saveScope)) {
+      state.entrySavePending = false;
+      updateEntrySaveButton();
+    }
   }
 }
 
@@ -1273,6 +2226,7 @@ async function handlePermanentDeleteEntry(id) {
 
   if (!canUseCloudTrash()) return;
 
+  const deleteScope = state.mode === "cloud" ? captureUserScope() : null;
   state.trashDeletePending = true;
   renderCompanyList();
   try {
@@ -1283,6 +2237,7 @@ async function handlePermanentDeleteEntry(id) {
         .eq("id", id)
         .not("deleted_at", "is", null)
         .select("id");
+      if (!isCurrentUserScope(deleteScope)) return;
       if (error) {
         showToast(error.message);
         return;
@@ -1301,8 +2256,10 @@ async function handlePermanentDeleteEntry(id) {
     render();
     showToast(`「${entryToDelete.companyName}」を完全に削除しました。`);
   } finally {
-    state.trashDeletePending = false;
-    renderCompanyList();
+    if (!deleteScope || isCurrentUserScope(deleteScope)) {
+      state.trashDeletePending = false;
+      renderCompanyList();
+    }
   }
 }
 
@@ -1328,6 +2285,7 @@ async function handleEmptyTrash() {
   if (!canUseCloudTrash()) return;
 
   const idsToDelete = entriesToDelete.map((entry) => entry.id);
+  const deleteScope = state.mode === "cloud" ? captureUserScope() : null;
   state.trashDeletePending = true;
   renderCompanyList();
   try {
@@ -1338,6 +2296,7 @@ async function handleEmptyTrash() {
         .in("id", idsToDelete)
         .not("deleted_at", "is", null)
         .select("id");
+      if (!isCurrentUserScope(deleteScope)) return;
       if (error) {
         showToast(error.message);
         return;
@@ -1358,8 +2317,10 @@ async function handleEmptyTrash() {
     render();
     showToast(`ゴミ箱の企業 ${idsToDelete.length}件を完全に削除しました。`);
   } finally {
-    state.trashDeletePending = false;
-    renderCompanyList();
+    if (!deleteScope || isCurrentUserScope(deleteScope)) {
+      state.trashDeletePending = false;
+      renderCompanyList();
+    }
   }
 }
 
@@ -1398,6 +2359,7 @@ function openCompanyDetail(id) {
 }
 
 function closeCompanyDetail() {
+  closeEsReview();
   state.detailEditingId = null;
   state.detailBaseEntry = null;
   els.companyDetailForm.reset();
@@ -1625,8 +2587,9 @@ function esEditorCard(item) {
           <label>
             回答
             <textarea class="es-answer-input" data-es-answer rows="9" placeholder="回答をここに書く">${escapeHtml(variant.answer)}</textarea>
-            <span class="char-count" data-es-count>${formatCharCount(variant.answer)}</span>
+            <span class="char-count" data-es-count>${escapeHtml(esDraftCountText(value.question, variant))}</span>
           </label>
+          <button class="secondary-button small-button" data-es-review type="button">ESチェック・AI添削</button>
         </div>
       `;
     })
@@ -1671,7 +2634,7 @@ function esReadBlock(item) {
         <section class="es-read-answer" data-es-read-answer>
           <div class="es-read-answer-heading">
             <span class="tag">${escapeHtml(esVariantTitle(variant))}</span>
-            <span class="char-count">${formatCharCount(answer)}</span>
+            <span class="char-count">${escapeHtml(esDraftCountText(item.question, variant))}</span>
           </div>
           <p class="${empty ? "empty-answer" : ""}" data-es-read-answer-text>${escapeHtml(answer || "回答未入力")}</p>
           <button class="secondary-button small-button" data-es-copy-answer type="button" ${empty ? "disabled" : ""}>回答をコピー</button>
@@ -1762,6 +2725,10 @@ function selectEsVariant(card, variantId) {
 function addEsVariant(card) {
   if (!card) return;
   const item = collectEsItemFromCard(card);
+  if (item.variants.length >= 20) {
+    showToast("回答は1つの質問につき20件までです。不要な回答を整理してから追加してください。");
+    return;
+  }
   const variant = createEsVariant(`${item.variants.length + 1}案`, "");
   item.variants.push(variant);
   item.activeVariantId = variant.id;
@@ -2249,9 +3216,11 @@ async function persistCompanyOrderFromDom() {
 }
 
 async function saveCloudCompanyOrder() {
+  const scope = captureUserScope();
   const results = await Promise.all(
     state.entries.map((entry) => supabaseClient.from("entries").update({ sort_order: entry.sortOrder }).eq("id", entry.id))
   );
+  if (!isCurrentUserScope(scope)) return;
   const error = results.find((result) => result.error)?.error;
   if (!error) return;
 
@@ -2283,9 +3252,11 @@ async function persistTemplateOrderFromDom() {
 }
 
 async function saveCloudTemplateOrder() {
+  const scope = captureUserScope();
   const results = await Promise.all(
     state.templates.map((template) => supabaseClient.from("es_templates").update({ sort_order: template.sortOrder }).eq("id", template.id))
   );
+  if (!isCurrentUserScope(scope)) return;
   const error = results.find((result) => result.error)?.error;
   if (!error) return;
 
@@ -2312,6 +3283,7 @@ async function handleDetailSubmit(event) {
     memo: els.detailMemoInput.value.trim()
   });
 
+  const saveScope = state.mode === "cloud" ? captureUserScope() : null;
   state.detailSavePending = true;
   updateDetailSaveButton();
   try {
@@ -2335,8 +3307,10 @@ async function handleDetailSubmit(event) {
     render();
     showToast("詳細を保存しました。");
   } finally {
-    state.detailSavePending = false;
-    updateDetailSaveButton();
+    if (!saveScope || isCurrentUserScope(saveScope)) {
+      state.detailSavePending = false;
+      updateDetailSaveButton();
+    }
   }
 }
 
@@ -2352,12 +3326,135 @@ function handleOpenBasicEditFromDetail() {
   openEntryDialog(entry);
 }
 
+function esDraftCountText(question, variant) {
+  const result = localAi?.checkEsDraft?.({ question, ...variant });
+  if (!result?.limit) return formatCharCount(variant.answer);
+  const remaining = result.limit - result.count;
+  return `${result.count.toLocaleString("ja-JP")} / ${result.limit.toLocaleString("ja-JP")}文字（目安・${remaining < 0 ? `${-remaining}文字超過` : `あと${remaining}文字`}）`;
+}
+
+function esReviewElement(name) {
+  return document.querySelector(`#esReview${name}`);
+}
+
+function closeEsReview() {
+  state.esReviewDraft?.controller?.abort();
+  state.esReviewDraft = null;
+  const dialog = esReviewElement("Dialog");
+  if (dialog?.open) dialog.close();
+  for (const name of ["Preview", "Summary", "Strengths", "Improvements", "Revised", "Status"]) {
+    const element = esReviewElement(name);
+    if (element) element.textContent = "";
+  }
+}
+
+function openEsReview(pane) {
+  if (!pane || !localAi?.prepareEsReview) return;
+  const card = pane.closest(".es-editor-card");
+  const question = card.querySelector("[data-es-question]").value;
+  const answer = pane.querySelector("[data-es-answer]").value;
+  const label = pane.querySelector("[data-es-variant-label]").value;
+  const check = localAi.checkEsDraft({ question, answer, label });
+  closeEsReview();
+  const draft = { card, entryId: state.detailEditingId, variantId: pane.dataset.esVariantId, question, answer, label,
+    userId: state.session?.user?.id, targetCharacters: check.limit, pending: false, review: null };
+  state.esReviewDraft = draft;
+  esReviewElement("Count").textContent = esDraftCountText(question, { answer, label });
+  esReviewElement("Checks").innerHTML = (check.issues.length ? check.issues : ["字数・未入力・仮の文言のチェックでは問題は見つかりませんでした。"])
+    .map((issue) => `<li>${escapeHtml(issue)}</li>`).join("");
+  esReviewElement("Result").hidden = true;
+  const button = document.querySelector("#generateEsReviewButton");
+  button.textContent = "この内容でAI添削する（1回）";
+  button.disabled = true;
+  document.querySelector("#applyEsReviewButton").disabled = false;
+  try {
+    const prepared = localAi.prepareEsReview(draft);
+    draft.input = prepared.value;
+    esReviewElement("Preview").textContent = `質問：${prepared.value.question}\n\n回答：${prepared.value.answer}`;
+    const canUseAi = state.mode === "cloud" && Boolean(state.session?.access_token);
+    esReviewElement("Status").textContent = canUseAi
+      ? `質問は1000文字、回答は2000文字まで。${prepared.total ? `${prepared.total}件を伏せ字にしました。` : "個人情報らしい箇所は見つかりませんでした。"}`
+      : "字数チェックはこのまま使えます。AI添削はクラウド版にログインすると利用できます。";
+    button.disabled = !canUseAi;
+  } catch (error) {
+    esReviewElement("Status").textContent = error.message;
+  }
+  esReviewElement("Dialog").showModal();
+}
+
+function isCurrentEsReview(draft) {
+  return state.esReviewDraft === draft && state.detailEditingId === draft.entryId
+    && state.session?.user?.id === draft.userId && draft.card.isConnected;
+}
+
+async function generateEsReview() {
+  const draft = state.esReviewDraft;
+  if (!draft?.input || draft.pending || !isCurrentEsReview(draft) || !state.session?.access_token) return;
+  draft.pending = true;
+  draft.controller = new AbortController();
+  const button = document.querySelector("#generateEsReviewButton");
+  button.disabled = true;
+  button.textContent = "添削しています…";
+  esReviewElement("Status").textContent = "通常は数秒から数十秒かかります。";
+  try {
+    const result = await localAi.reviewEs(draft.input, { accessToken: state.session.access_token, signal: draft.controller.signal });
+    if (!isCurrentEsReview(draft)) return;
+    draft.review = result.review;
+    esReviewElement("Summary").textContent = result.review.summary;
+    for (const name of ["Strengths", "Improvements"]) {
+      const items = result.review[name.toLowerCase()];
+      esReviewElement(name).innerHTML = (items.length ? items : ["特になし"]).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+    }
+    esReviewElement("Revised").textContent = result.review.revisedAnswer;
+    esReviewElement("RevisedCount").textContent = esDraftCountText(draft.question, { label: draft.label, answer: result.review.revisedAnswer });
+    esReviewElement("Result").hidden = false;
+    esReviewElement("Status").textContent = `添削できました。${Number.isFinite(result.remainingToday) ? `本日のAI残り${result.remainingToday}回。` : ""}内容を確認して取り込んでください。`;
+    esReviewElement("Result").scrollIntoView({ block: "start", behavior: "smooth" });
+  } catch (error) {
+    if (isCurrentEsReview(draft)) esReviewElement("Status").textContent = error.message;
+  } finally {
+    if (isCurrentEsReview(draft)) {
+      draft.pending = false;
+      button.disabled = Boolean(draft.review);
+      button.textContent = draft.review ? "添削済み" : "もう一度AI添削する（1回）";
+    }
+  }
+}
+
+function applyEsReview() {
+  const draft = state.esReviewDraft;
+  if (!draft?.review || !isCurrentEsReview(draft)) return;
+  const item = collectEsItemFromCard(draft.card);
+  const original = item.variants.find((variant) => variant.id === draft.variantId);
+  if (!original || original.answer !== draft.answer.trim() || item.question !== draft.question.trim() || original.label !== draft.label.trim()) {
+    esReviewElement("Status").textContent = "元の回答が変更されています。閉じてからもう一度チェックしてください。";
+    return;
+  }
+  if (item.variants.length >= 20) {
+    esReviewElement("Status").textContent = "回答は1つの質問につき20件までです。不要な回答を整理してから追加してください。";
+    return;
+  }
+  const variant = createEsVariant(`${original.label || "回答"}・AI添削`, draft.review.revisedAnswer);
+  item.variants.push(variant);
+  item.activeVariantId = variant.id;
+  replaceEsCard(draft.card, item, true);
+  closeEsReview();
+  els.detailEsList.querySelector(`[data-es-variant-id="${cssEscape(variant.id)}"] [data-es-answer]`)?.focus();
+  showToast("元の回答を残して添削案を追加しました。確認後に「詳細を保存」を押してください。");
+}
+
 function updateDetailEsCharCounts() {
   els.detailEsList.querySelectorAll(".es-editor-card").forEach((card) => {
     card.querySelectorAll("[data-es-variant-id]").forEach((pane) => {
       const answer = pane.querySelector("[data-es-answer]");
       const count = pane.querySelector("[data-es-count]");
-      if (count) count.textContent = formatCharCount(answer?.value || "");
+      const question = card.querySelector("[data-es-question]")?.value || "";
+      const label = pane.querySelector("[data-es-variant-label]")?.value || "";
+      if (count) {
+        count.textContent = esDraftCountText(question, { label, answer: answer?.value || "" });
+        const check = localAi?.checkEsDraft?.({ question, label, answer: answer?.value || "" });
+        count.classList.toggle("es-over-limit", Boolean(check?.limit && check.count > check.limit));
+      }
     });
     updateEsCardSummary(card);
   });
@@ -2518,7 +3615,9 @@ async function handleDeleteTemplate(id) {
   if (!shouldDelete) return;
 
   if (state.mode === "cloud") {
+    const scope = captureUserScope();
     const { error } = await supabaseClient.from("es_templates").delete().eq("id", id);
+    if (!isCurrentUserScope(scope)) return;
     if (error) {
       showToast(error.message);
       return;
@@ -2564,6 +3663,11 @@ async function handleImportBackup(event) {
   const file = event.target.files?.[0];
   event.target.value = "";
   if (!file) return;
+  if (file.size > 10 * 1024 * 1024) {
+    showToast("バックアップファイルは10MB以下にしてください。");
+    return;
+  }
+  const importScope = state.mode === "cloud" ? captureUserScope() : null;
 
   let backup;
   try {
@@ -2572,18 +3676,51 @@ async function handleImportBackup(event) {
     showToast("バックアップファイルを読めませんでした。");
     return;
   }
+  if (importScope && !isCurrentUserScope(importScope)) return;
 
   if (!isValidBackup(backup)) {
     showToast("就活管理のバックアップファイルではありません。");
     return;
   }
 
-  const entries = backup.entries.map(normalizeEntry);
-  const templates = backup.templates.map(normalizeTemplate);
+  const ignoredLogoUrlCount = backup.entries.filter((entry) => (
+    typeof entry.logoUrl === "string" && entry.logoUrl.trim()
+  )).length;
+  let entries;
+  let templates;
+  try {
+    entries = backup.entries.map((entry) => normalizeEntry({
+      ...entry,
+      id: normalizeImportedRecordId(entry.id),
+      // A backup can come from another person or an older import. Requiring
+      // the user to add the image again prevents an automatic tracking GET.
+      logoUrl: ""
+    }));
+    templates = backup.templates.map((template) => normalizeTemplate({
+      ...template,
+      id: normalizeImportedRecordId(template.id)
+    }));
+  } catch {
+    showToast("バックアップ内のデータ形式が壊れているため、復元しませんでした。");
+    return;
+  }
+  if (entries.some((entry) => !entry.companyName)) {
+    showToast("企業名を確認できないカードがあるため、復元しませんでした。");
+    return;
+  }
+  const entryRestorePlan = prepareBackupEntryRestore(state.entries, entries);
+  if (entryRestorePlan.blockingIssues.length) {
+    showToast(`既存カードへ安全に統合できない長いメモが${entryRestorePlan.blockingIssues.length}件あるため、復元を中止しました。先にバックアップ内のメモを分けてください。`);
+    return;
+  }
+  const templateRestorePlan = prepareBackupTemplateRestore(state.templates, templates);
   const activeEntryCount = entries.filter((entry) => !isTrashed(entry)).length;
   const trashedEntryCount = entries.filter(isTrashed).length;
+  const logoNotice = ignoredLogoUrlCount
+    ? `\n企業アイコン画像URL ${ignoredLogoUrlCount}件は、安全のため除外します。`
+    : "";
   const shouldImport = window.confirm(
-    `バックアップを復元しますか？\n企業 ${activeEntryCount}件、ゴミ箱 ${trashedEntryCount}件、ESの型 ${templates.length}件を読み込みます。\n同じデータは上書きし、新しいデータは追加します。`
+    `バックアップを復元しますか？\n企業 ${activeEntryCount}件、ゴミ箱 ${trashedEntryCount}件、ESの型 ${templates.length}件を読み込みます。\n同じ企業・種類のカードは既存内容を残し、空欄と新しいメモだけを追加します。${logoNotice}`
   );
   if (!shouldImport) return;
 
@@ -2592,36 +3729,79 @@ async function handleImportBackup(event) {
       showToast("ログインすると復元できます。");
       return;
     }
+    const scope = importScope || captureUserScope();
 
     if (!state.cloudDeletedAtAvailable && entries.some(isTrashed)) {
       showToast("ゴミ箱入りデータを復元するにはSupabaseのSQL更新が必要です。");
       return;
     }
 
-    const entryPayload = entries.map(toDbEntry);
-    const templatePayload = templates.map(toDbTemplate);
+    const [entryProbe, templateProbe, entrySortProbe, templateSortProbe] = await Promise.all([
+      supabaseClient.from("entries").select("id").limit(1),
+      supabaseClient.from("es_templates").select("id").limit(1),
+      supabaseClient.from("entries").select("sort_order").limit(1),
+      supabaseClient.from("es_templates").select("sort_order").limit(1)
+    ]);
+    if (!isCurrentUserScope(scope)) return;
+    if (entryProbe.error || templateProbe.error) {
+      showToast("復元先を確認できませんでした。SupabaseのSQLを更新してから再実行してください。");
+      return;
+    }
+    state.cloudSortOrderAvailable = !entrySortProbe.error;
+    state.cloudTemplateSortOrderAvailable = !templateSortProbe.error;
+    const entryPayload = entryRestorePlan.upserts.map((entry) => toDbEntry(entry, {
+      includeSortOrder: !entrySortProbe.error
+    }));
+    const templatePayload = templateRestorePlan.upserts.map((template) => toDbTemplate(template, {
+      includeSortOrder: !templateSortProbe.error
+    }));
     if (entryPayload.length > 0) {
       const { error } = await supabaseClient.from("entries").upsert(entryPayload, { onConflict: "id" });
+      if (!isCurrentUserScope(scope)) return;
       if (error) {
-        showToast(error.message);
+        showToast(cloudEntryErrorMessage(error));
         return;
       }
     }
     if (templatePayload.length > 0) {
       const { error } = await supabaseClient.from("es_templates").upsert(templatePayload, { onConflict: "id" });
+      if (!isCurrentUserScope(scope)) return;
       if (error) {
-        showToast(error.message);
+        await loadCloudData();
+        if (!isCurrentUserScope(scope)) return;
+        showToast(`企業カードは復元しましたが、ESの型は復元できませんでした: ${error.message}`);
         return;
       }
     }
     await loadCloudData();
+    if (!isCurrentUserScope(scope)) return;
   } else {
     const previousEntries = state.entries;
-    const nextEntries = mergeById(state.entries, entries).map(normalizeEntry);
-    const nextTemplates = mergeById(state.templates, templates).map(normalizeTemplate);
+    const previousTemplates = state.templates;
+    const previousEntriesRaw = localStorage.getItem(storageKey);
+    const previousTemplatesRaw = localStorage.getItem(templateStorageKey);
+    const nextEntries = entryRestorePlan.entries;
+    const nextTemplates = templateRestorePlan.templates;
     if (!saveLocalEntries(nextEntries)) return;
     if (!saveLocalTemplates(nextTemplates)) {
-      saveLocalEntries(previousEntries);
+      const entriesRolledBack = restoreLocalCollectionSnapshot(
+        storageKey,
+        storagePendingKey,
+        storageBackupKey,
+        previousEntriesRaw
+      );
+      const templatesRolledBack = restoreLocalCollectionSnapshot(
+        templateStorageKey,
+        templateStoragePendingKey,
+        templateStorageBackupKey,
+        previousTemplatesRaw
+      );
+      state.entries = previousEntries;
+      state.templates = previousTemplates;
+      render();
+      showToast(entriesRolledBack && templatesRolledBack
+        ? "復元を完了できなかったため、直前のデータへ戻しました。"
+        : "復元に失敗しました。画面上の直前データをバックアップとして書き出してください。");
       return;
     }
     state.entries = nextEntries;
@@ -2629,15 +3809,75 @@ async function handleImportBackup(event) {
     render();
   }
 
-  showToast("バックアップを復元しました。");
+  showToast(
+    state.mode === "cloud" && (!state.cloudSortOrderAvailable || !state.cloudTemplateSortOrderAvailable)
+      ? "バックアップを復元しました。並び順も戻すにはSupabaseのSQLを更新してください。"
+      : "バックアップを復元しました。"
+  );
 }
 
 function isValidBackup(value) {
   return Boolean(
-    value &&
+    isPlainRecord(value) &&
     value.app === "shukatsu-tracker" &&
+    Number.isInteger(value.version) &&
+    value.version >= 1 &&
+    value.version <= 3 &&
     Array.isArray(value.entries) &&
-    Array.isArray(value.templates)
+    value.entries.length <= 5_000 &&
+    value.entries.every(isValidBackupEntryRecord) &&
+    Array.isArray(value.templates) &&
+    value.templates.length <= 1_000 &&
+    value.templates.every(isValidBackupTemplateRecord)
+  );
+}
+
+function isValidBackupEntryRecord(value) {
+  if (!isPlainRecord(value) || typeof value.companyName !== "string" || !value.companyName.trim()) return false;
+  const textFields = [
+    "id", "companyName", "industry", "mypageId", "officialUrl", "logoUrl", "trackType", "status",
+    "deadline", "eventDate", "eventType", "priority", "mypageUrl", "esContent", "interviewNotes", "memo",
+    "createdAt", "updatedAt", "deletedAt"
+  ];
+  if (!textFields.every((field) => !Object.hasOwn(value, field) || typeof value[field] === "string")) return false;
+  if (!isValidBackupSortOrder(value)) return false;
+  if (Object.hasOwn(value, "esItems") && (
+    !Array.isArray(value.esItems) ||
+    value.esItems.length > 200 ||
+    !value.esItems.every(isValidBackupEsItemRecord)
+  )) return false;
+  return true;
+}
+
+function isValidBackupEsItemRecord(value) {
+  if (!isPlainRecord(value)) return false;
+  for (const field of ["id", "question", "answer", "activeVariantId"]) {
+    if (Object.hasOwn(value, field) && typeof value[field] !== "string") return false;
+  }
+  if (Object.hasOwn(value, "variants") && (
+    !Array.isArray(value.variants) ||
+    value.variants.length > 20 ||
+    !value.variants.every((variant) => (
+      isPlainRecord(variant) &&
+      ["id", "label", "answer"].every((field) => (
+        !Object.hasOwn(variant, field) || typeof variant[field] === "string"
+      ))
+    ))
+  )) return false;
+  return true;
+}
+
+function isValidBackupTemplateRecord(value) {
+  if (!isPlainRecord(value)) return false;
+  for (const field of ["id", "kind", "title", "body", "createdAt", "updatedAt"]) {
+    if (Object.hasOwn(value, field) && typeof value[field] !== "string") return false;
+  }
+  return isValidBackupSortOrder(value);
+}
+
+function isValidBackupSortOrder(value) {
+  return !Object.hasOwn(value, "sortOrder") || value.sortOrder === null || (
+    typeof value.sortOrder === "number" && Number.isFinite(value.sortOrder)
   );
 }
 
@@ -2671,30 +3911,39 @@ async function handleImportLocalEntries() {
   const shouldImport = window.confirm("この端末に残っているデータをクラウドへ移しますか？");
   if (!shouldImport) return;
 
-  const payload = localEntries.map((entry) => toDbEntry(entry));
-  const { error } = await supabaseClient.from("entries").upsert(payload, { onConflict: "id" });
-  if (error) {
-    showToast(error.message);
-    return;
+  const scope = captureUserScope();
+  const restorePlan = prepareBackupEntryRestore(state.entries, localEntries);
+  const payload = restorePlan.upserts.map((entry) => toDbEntry(entry));
+  if (payload.length > 0) {
+    const { error } = await supabaseClient.from("entries").upsert(payload, { onConflict: "id" });
+    if (!isCurrentUserScope(scope)) return;
+    if (error) {
+      showToast(cloudEntryErrorMessage(error));
+      return;
+    }
   }
 
   localStorage.removeItem(storageKey);
   localStorage.removeItem(storagePendingKey);
   localStorage.removeItem(storageBackupKey);
   await loadCloudData();
+  if (!isCurrentUserScope(scope)) return;
   showToast("端末データをクラウドへ移しました。");
 }
 
 async function loadCloudData() {
   if (!state.session) return;
+  const scope = captureUserScope();
 
   state.loading = true;
   renderMode();
-  await refreshCloudEntryColumnSupport();
+  await refreshCloudEntryColumnSupport(scope);
+  if (!isCurrentUserScope(scope)) return;
   const [entriesResult, templatesResult] = await Promise.all([
     supabaseClient.from("entries").select("*").order("created_at", { ascending: false }),
     supabaseClient.from("es_templates").select("*").order("updated_at", { ascending: false })
   ]);
+  if (!isCurrentUserScope(scope)) return;
   state.loading = false;
 
   if (entriesResult.error) {
@@ -2715,11 +3964,14 @@ async function loadCloudData() {
 
 async function loadCloudEntries() {
   if (!state.session) return;
+  const scope = captureUserScope();
 
   state.loading = true;
   renderMode();
-  await refreshCloudEntryColumnSupport();
+  await refreshCloudEntryColumnSupport(scope);
+  if (!isCurrentUserScope(scope)) return;
   const { data, error } = await supabaseClient.from("entries").select("*").order("created_at", { ascending: false });
+  if (!isCurrentUserScope(scope)) return;
   state.loading = false;
 
   if (error) {
@@ -2732,10 +3984,11 @@ async function loadCloudEntries() {
   render();
 }
 
-async function refreshCloudEntryColumnSupport() {
+async function refreshCloudEntryColumnSupport(scope = captureUserScope()) {
   if (!state.session) return;
 
   const { error } = await supabaseClient.from("entries").select("id, deleted_at").limit(1);
+  if (!isCurrentUserScope(scope)) return;
   state.cloudDeletedAtAvailable = !error;
 
   if (error && !state.cloudDeletedAtWarningShown) {
@@ -2752,24 +4005,134 @@ function canUseCloudTrash() {
   return false;
 }
 
-async function createCloudEntry(entry) {
+function mergeBackupEntries(currentItems, importedItems, blockingIssues = []) {
+  const merged = (Array.isArray(currentItems) ? currentItems : []).map(normalizeEntry);
+  const indexesById = new Map();
+  const indexesByIdentity = new Map();
+
+  const remember = (entry, index) => {
+    indexesById.set(entry.id, index);
+    const identity = aiImportIdentityKey(entry);
+    if (identity && !indexesByIdentity.has(identity)) indexesByIdentity.set(identity, index);
+  };
+  merged.forEach(remember);
+
+  (Array.isArray(importedItems) ? importedItems : []).forEach((rawEntry) => {
+    const incoming = normalizeEntry({ ...rawEntry, logoUrl: "" });
+    if (!incoming.companyName) return;
+    const identity = aiImportIdentityKey(incoming);
+    const identityIndex = identity ? indexesByIdentity.get(identity) : undefined;
+    const idIndex = indexesById.get(incoming.id);
+    const targetIndex = identityIndex ?? idIndex;
+
+    if (targetIndex !== undefined) {
+      const result = mergeImportedEntry(merged[targetIndex], incoming, { textLimit: 100_000 });
+      for (const field of ["interviewNotes", "memo"]) {
+        if (result.conflicts.includes(field)) {
+          blockingIssues.push({ entryId: merged[targetIndex].id, field });
+        }
+      }
+      const nextEntry = result.entry;
+      if (!Number.isFinite(nextEntry.sortOrder) && Number.isFinite(incoming.sortOrder)) {
+        nextEntry.sortOrder = incoming.sortOrder;
+      }
+      merged[targetIndex] = normalizeEntry(nextEntry);
+      remember(merged[targetIndex], targetIndex);
+      return;
+    }
+
+    const index = merged.length;
+    merged.push(incoming);
+    remember(incoming, index);
+  });
+
+  return merged;
+}
+
+function prepareBackupEntryRestore(currentItems, importedItems) {
+  const current = (Array.isArray(currentItems) ? currentItems : []).map(normalizeEntry);
+  const blockingIssues = [];
+  const entries = mergeBackupEntries(current, importedItems, blockingIssues);
+  const currentById = new Map(current.map((entry) => [entry.id, entry]));
+  const upserts = entries.filter((entry) => {
+    const previous = currentById.get(entry.id);
+    return !previous || JSON.stringify(previous) !== JSON.stringify(entry);
+  });
+  return { entries, upserts, blockingIssues };
+}
+
+function prepareBackupTemplateRestore(currentItems, importedItems) {
+  const templates = (Array.isArray(currentItems) ? currentItems : []).map(normalizeTemplate);
+  const indexesById = new Map(templates.map((template, index) => [template.id, index]));
+
+  (Array.isArray(importedItems) ? importedItems : []).forEach((rawTemplate) => {
+    const incoming = normalizeTemplate(rawTemplate);
+    if (!incoming.title && !incoming.body) return;
+    const index = indexesById.get(incoming.id);
+    if (index === undefined) {
+      indexesById.set(incoming.id, templates.length);
+      templates.push(incoming);
+      return;
+    }
+
+    const existing = templates[index];
+    templates[index] = normalizeTemplate({
+      ...existing,
+      kind: existing.kind || incoming.kind,
+      title: existing.title || incoming.title,
+      body: existing.body || incoming.body,
+      sortOrder: Number.isFinite(existing.sortOrder) ? existing.sortOrder : incoming.sortOrder
+    });
+  });
+
+  const currentById = new Map(
+    (Array.isArray(currentItems) ? currentItems : []).map(normalizeTemplate).map((template) => [template.id, template])
+  );
+  const upserts = templates.filter((template) => {
+    const previous = currentById.get(template.id);
+    return !previous || JSON.stringify(previous) !== JSON.stringify(template);
+  });
+  return { templates, upserts };
+}
+
+function normalizeImportedRecordId(value) {
+  const id = typeof value === "string" ? value.trim() : "";
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(id)
+    ? id
+    : createId();
+}
+
+function cloudEntryErrorMessage(error) {
+  const errorContext = [error?.constraint, error?.message, error?.details, error?.hint]
+    .filter(Boolean)
+    .join(" ");
+  const isDuplicate = error?.code === "23505"
+    && /entries_user_company_track_unique_idx/iu.test(errorContext);
+  return isDuplicate
+    ? "同じ企業・種類のカードは別の端末ですでに登録されました。同期更新して既存カードへ追記してください。"
+    : error?.message || "クラウドへ保存できませんでした。";
+}
+
+async function createCloudEntry(entry, scope = captureUserScope()) {
   const { data, error } = await supabaseClient.from("entries").insert(toDbEntry(entry)).select("*").single();
+  if (!isCurrentUserScope(scope)) return null;
   if (error) {
-    showToast(error.message);
+    showToast(cloudEntryErrorMessage(error));
     return null;
   }
   return fromDbEntry(data);
 }
 
-async function updateCloudEntry(entry, baseEntry = entry, retryCount = 0) {
+async function updateCloudEntry(entry, baseEntry = entry, retryCount = 0, scope = captureUserScope()) {
   const draft = normalizeEntry(entry);
   const base = normalizeEntry(baseEntry || entry);
   const { id, user_id, created_at, ...changes } = toDbEntry(draft);
   let request = supabaseClient.from("entries").update(changes).eq("id", id);
   if (base.updatedAt) request = request.eq("updated_at", base.updatedAt);
   const { data, error } = await request.select("*");
+  if (!isCurrentUserScope(scope)) return null;
   if (error) {
-    showToast(error.message);
+    showToast(cloudEntryErrorMessage(error));
     return null;
   }
 
@@ -2779,7 +4142,8 @@ async function updateCloudEntry(entry, baseEntry = entry, retryCount = 0) {
     return null;
   }
 
-  const latest = await fetchCloudEntry(id);
+  const latest = await fetchCloudEntry(id, scope);
+  if (!isCurrentUserScope(scope)) return null;
   if (!latest) {
     showToast("クラウド上の企業データを確認できませんでした。同期更新してからやり直してください。");
     return null;
@@ -2787,14 +4151,15 @@ async function updateCloudEntry(entry, baseEntry = entry, retryCount = 0) {
 
   const merge = mergeEntryVersions(base, draft, latest);
   if (merge.conflicts.length === 0) {
-    return updateCloudEntry(merge.entry, latest, retryCount + 1);
+    return updateCloudEntry(merge.entry, latest, retryCount + 1, scope);
   }
 
-  return requestEntryConflictResolution({ ...merge, draft, latest });
+  return requestEntryConflictResolution({ ...merge, draft, latest, scope });
 }
 
-async function fetchCloudEntry(id) {
+async function fetchCloudEntry(id, scope = captureUserScope()) {
   const { data, error } = await supabaseClient.from("entries").select("*").eq("id", id).limit(1);
+  if (!isCurrentUserScope(scope)) return null;
   if (error || !Array.isArray(data) || data.length !== 1) return null;
   return fromDbEntry(data[0]);
 }
@@ -2928,13 +4293,15 @@ async function handleConflictSubmit(event) {
     .eq("updated_at", pending.latest.updatedAt)
     .select("*");
 
+  if (!isCurrentUserScope(pending.scope) || state.pendingEntryConflict !== pending) return;
+
   if (error) {
     pending.saving = false;
     els.resolveConflictButton.disabled = false;
     els.closeConflictButton.disabled = false;
     els.cancelConflictButton.disabled = false;
     els.resolveConflictButton.textContent = "選んだ内容で安全に保存";
-    showToast(error.message);
+    showToast(cloudEntryErrorMessage(error));
     return;
   }
 
@@ -2966,8 +4333,9 @@ function finishEntryConflict(result) {
   pending.resolve(result);
 }
 
-async function createCloudTemplate(template) {
+async function createCloudTemplate(template, scope = captureUserScope()) {
   const { data, error } = await supabaseClient.from("es_templates").insert(toDbTemplate(template)).select("*").single();
+  if (!isCurrentUserScope(scope)) return null;
   if (error) {
     showToast(error.message);
     return null;
@@ -2975,9 +4343,10 @@ async function createCloudTemplate(template) {
   return fromDbTemplate(data);
 }
 
-async function updateCloudTemplate(template) {
+async function updateCloudTemplate(template, scope = captureUserScope()) {
   const { id, user_id, created_at, ...changes } = toDbTemplate(template);
   const { data, error } = await supabaseClient.from("es_templates").update(changes).eq("id", id).select("*").single();
+  if (!isCurrentUserScope(scope)) return null;
   if (error) {
     showToast(error.message);
     return null;
@@ -3209,6 +4578,8 @@ function renderCompanyList() {
   if (isTrashView) {
     els.companyList.innerHTML = entries
       .map((entry) => {
+        const officialUrl = normalizeExternalUrl(entry.officialUrl);
+        const mypageUrl = normalizeExternalUrl(entry.mypageUrl);
         return `
           <article class="company-card trash-card" data-company-card data-company-id="${escapeAttribute(entry.id)}">
             <div class="company-title-row">
@@ -3234,8 +4605,8 @@ function renderCompanyList() {
               ${entry.eventDate ? `<span>${formatDate(entry.eventDate)} 予定</span>` : ""}
             </div>
             ${entry.mypageId ? `<div class="credential-line"><strong>マイページID</strong><span>${escapeHtml(entry.mypageId)}</span></div>` : ""}
-            ${entry.officialUrl ? `<a class="mypage-link" href="${escapeAttribute(entry.officialUrl)}" target="_blank" rel="noopener noreferrer">企業公式サイトを開く</a>` : ""}
-            ${entry.mypageUrl ? `<a class="mypage-link" href="${escapeAttribute(entry.mypageUrl)}" target="_blank" rel="noopener noreferrer">企業マイページを開く</a>` : ""}
+            ${officialUrl ? `<a class="mypage-link" href="${escapeAttribute(officialUrl)}" target="_blank" rel="noopener noreferrer">企業公式サイトを開く</a>` : ""}
+            ${mypageUrl ? `<a class="mypage-link" href="${escapeAttribute(mypageUrl)}" target="_blank" rel="noopener noreferrer">企業マイページを開く</a>` : ""}
           </article>
         `;
       })
@@ -3291,8 +4662,8 @@ function renderCompanyList() {
             ${mediumLinks ? `<div class="company-medium-links">${mediumLinks}</div>` : ""}
             ${nextActionMarkup(entry, "compact")}
             <div class="company-medium-actions">
-              <button class="detail-button" data-detail-id="${entry.id}" type="button">詳細</button>
-              <button class="edit-button" data-edit-id="${entry.id}" type="button">編集</button>
+              <button class="detail-button" data-detail-id="${escapeAttribute(entry.id)}" type="button">詳細</button>
+              <button class="edit-button" data-edit-id="${escapeAttribute(entry.id)}" type="button">編集</button>
             </div>
           </article>
         `;
@@ -3303,6 +4674,8 @@ function renderCompanyList() {
 
   els.companyList.innerHTML = entries
     .map((entry) => {
+      const officialUrl = normalizeExternalUrl(entry.officialUrl);
+      const mypageUrl = normalizeExternalUrl(entry.mypageUrl);
       return `
         <article class="company-card" data-company-card data-company-id="${escapeAttribute(entry.id)}">
           <div class="company-title-row">
@@ -3319,9 +4692,9 @@ function renderCompanyList() {
               </div>
             </div>
             <div class="card-actions">
-              <button class="detail-button" data-detail-id="${entry.id}" type="button">詳細</button>
-              <button class="edit-button" data-edit-id="${entry.id}" type="button">編集</button>
-              <button class="delete-button" data-delete-id="${entry.id}" type="button">削除</button>
+              <button class="detail-button" data-detail-id="${escapeAttribute(entry.id)}" type="button">詳細</button>
+              <button class="edit-button" data-edit-id="${escapeAttribute(entry.id)}" type="button">編集</button>
+              <button class="delete-button" data-delete-id="${escapeAttribute(entry.id)}" type="button">削除</button>
             </div>
           </div>
           <div class="meta-row">
@@ -3331,8 +4704,8 @@ function renderCompanyList() {
           </div>
           ${nextActionMarkup(entry)}
           ${entry.mypageId ? `<div class="credential-line"><strong>マイページID</strong><span>${escapeHtml(entry.mypageId)}</span></div>` : ""}
-          ${entry.officialUrl ? `<a class="mypage-link" href="${escapeAttribute(entry.officialUrl)}" target="_blank" rel="noopener noreferrer">企業公式サイトを開く</a>` : ""}
-          ${entry.mypageUrl ? `<a class="mypage-link" href="${escapeAttribute(entry.mypageUrl)}" target="_blank" rel="noopener noreferrer">企業マイページを開く</a>` : ""}
+          ${officialUrl ? `<a class="mypage-link" href="${escapeAttribute(officialUrl)}" target="_blank" rel="noopener noreferrer">企業公式サイトを開く</a>` : ""}
+          ${mypageUrl ? `<a class="mypage-link" href="${escapeAttribute(mypageUrl)}" target="_blank" rel="noopener noreferrer">企業マイページを開く</a>` : ""}
           ${esPreviewBlock(entry)}
           ${entry.interviewNotes ? noteBlock("面接対策", entry.interviewNotes) : ""}
           ${entry.memo ? `<p class="memo">${escapeHtml(entry.memo)}</p>` : ""}
@@ -3373,9 +4746,9 @@ function renderTemplateList() {
             </button>
             <div class="template-card-actions">
               <button class="reorder-button" data-template-reorder-handle type="button">並べ替え</button>
-              <button class="detail-button" data-template-copy-id="${template.id}" type="button">コピー</button>
-              <button class="edit-button" data-template-edit-id="${template.id}" type="button">編集</button>
-              <button class="delete-button" data-template-delete-id="${template.id}" type="button">削除</button>
+              <button class="detail-button" data-template-copy-id="${escapeAttribute(template.id)}" type="button">コピー</button>
+              <button class="edit-button" data-template-edit-id="${escapeAttribute(template.id)}" type="button">編集</button>
+              <button class="delete-button" data-template-delete-id="${escapeAttribute(template.id)}" type="button">削除</button>
             </div>
           </div>
           <div class="template-card-body" data-template-body hidden>
@@ -3469,19 +4842,40 @@ function resetCalendarMonth() {
 
 function openEntryDialog(entry = null, options = {}) {
   const draft = options.draft ? normalizeEntry(options.draft) : null;
+  const conflictDetails = mergeImportConflictDetails(options.conflictDetails);
   state.editingId = entry?.id || null;
   state.editingBaseEntry = entry ? normalizeEntry(entry) : null;
   state.entryDraft = draft;
-  state.entryDraftKind = options.isHandoff ? "handoff" : options.isAiDraft ? "ai" : draft ? "draft" : null;
-  els.entryFormTitle.textContent = entry
-    ? "企業・選考を編集"
+  state.entryImportConflictDetails = conflictDetails;
+  state.entryImportReviewKey = String(options.importReviewKey || "");
+  state.entryImportValueApplied = false;
+  state.entryDraftKind = options.isAiMerge
+    ? "ai-merge"
+    : options.isAiConflict
+      ? "ai-conflict"
+    : options.isHandoff
+      ? "handoff"
+      : options.isAiDraft
+        ? "ai"
+        : draft
+          ? "draft"
+          : null;
+  els.entryFormTitle.textContent = options.isAiMerge
+    ? "新情報を既存カードに追加"
+    : options.isAiConflict
+      ? "取込内容との違いを確認"
+    : entry
+      ? "企業・選考を編集"
     : options.isHandoff
       ? "次の選考へ引き継ぐ"
       : options.isAiDraft
-        ? "AIのカード案を確認"
+        ? "取込カード案を確認"
       : "企業・選考を追加";
-  els.deleteEntryButton.hidden = !entry;
-  fillEntryForm(entry || draft);
+  els.deleteEntryButton.hidden = !entry || options.isAiMerge || options.isAiConflict;
+  fillEntryForm(options.isAiMerge ? draft : entry || draft);
+  const conflictMarkup = importConflictDetailsMarkup(conflictDetails, { embedded: true });
+  els.entryImportConflictNotice.innerHTML = conflictMarkup;
+  els.entryImportConflictNotice.hidden = !conflictMarkup;
   updateTrackTypeHint();
   updateEntrySaveButton();
 
@@ -3521,6 +4915,11 @@ function resetEntryForm() {
   state.editingBaseEntry = null;
   state.entryDraft = null;
   state.entryDraftKind = null;
+  state.entryImportConflictDetails = [];
+  state.entryImportReviewKey = "";
+  state.entryImportValueApplied = false;
+  els.entryImportConflictNotice.textContent = "";
+  els.entryImportConflictNotice.hidden = true;
   els.entryForm.reset();
   els.entryFormTitle.textContent = "企業・選考を追加";
   els.deleteEntryButton.hidden = true;
@@ -3528,10 +4927,25 @@ function resetEntryForm() {
   updateTrackTypeHint();
 }
 
+function closeEntryFormDialog() {
+  const returnToImport = ["ai", "ai-merge", "ai-conflict"].includes(state.entryDraftKind) && state.aiCards.length;
+  resetEntryForm();
+  if (els.entryDialog.open) els.entryDialog.close();
+  if (returnToImport) openAiImportDialog({ focusResults: true });
+}
+
 function updateEntrySaveButton() {
   els.saveEntryButton.disabled = state.entrySavePending;
   if (state.entrySavePending) {
     els.saveEntryButton.textContent = "安全に保存中...";
+  } else if (state.entryDraftKind === "ai-merge") {
+    els.saveEntryButton.textContent = state.entryImportValueApplied
+      ? "選んだ内容で新情報を追加"
+      : "新情報を追加（現在値は維持）";
+  } else if (state.entryDraftKind === "ai-conflict") {
+    els.saveEntryButton.textContent = state.entryImportValueApplied
+      ? "選んだ内容で更新"
+      : "現在値を維持して確認完了";
   } else if (state.editingId) {
     els.saveEntryButton.textContent = "更新";
   } else if (state.entryDraft) {
@@ -3691,7 +5105,7 @@ function isValidLocalCollection(raw) {
   }
 }
 
-function toDbEntry(entry) {
+function toDbEntry(entry, options = {}) {
   const values = normalizeEntry(entry);
   const payload = {
     id: values.id,
@@ -3714,6 +5128,10 @@ function toDbEntry(entry) {
     memo: values.memo,
     created_at: values.createdAt || new Date().toISOString()
   };
+
+  if (options.includeSortOrder && Number.isFinite(values.sortOrder)) {
+    payload.sort_order = values.sortOrder;
+  }
 
   if (state.cloudDeletedAtAvailable) {
     payload.deleted_at = values.deletedAt || null;
@@ -3748,38 +5166,98 @@ function fromDbEntry(row) {
   });
 }
 
-function normalizeEntry(entry) {
+function isPlainRecord(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function restoreLocalCollectionSnapshot(primaryKey, pendingKey, backupKey, rawSnapshot) {
+  try {
+    localStorage.removeItem(primaryKey);
+    localStorage.removeItem(pendingKey);
+    if (isValidLocalCollection(rawSnapshot)) {
+      localStorage.setItem(primaryKey, rawSnapshot);
+      localStorage.setItem(backupKey, rawSnapshot);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function normalizeStoredText(value, maxCharacters, options = {}) {
+  if (typeof value !== "string") return "";
+  let text = value
+    .replace(/\r\n?/gu, "\n")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/gu, "")
+    .replace(/[\u200B-\u200D\u2060\u202A-\u202E\u2066-\u2069]/gu, "")
+    .normalize("NFC");
+  if (options.singleLine) text = text.replace(/\s*\n\s*/gu, " ");
+  return Array.from(text).slice(0, maxCharacters).join("").trim();
+}
+
+function normalizeStoredDate(value) {
+  const text = normalizeStoredText(value, 10, { singleLine: true });
+  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/u);
+  if (!match) return "";
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+    ? text
+    : "";
+}
+
+function normalizeStoredTimestamp(value, fallback = "") {
+  const text = normalizeStoredText(value, 64, { singleLine: true });
+  return text && Number.isFinite(Date.parse(text)) ? text : fallback;
+}
+
+function normalizeEntry(entry = {}) {
+  const source = isPlainRecord(entry) ? entry : {};
+  const now = new Date().toISOString();
+  const createdAt = normalizeStoredTimestamp(source.createdAt, now);
+  const trackType = normalizeStoredText(source.trackType, 40, { singleLine: true });
+  const status = normalizeStoredText(source.status, 40, { singleLine: true });
+  const priority = normalizeStoredText(source.priority, 10, { singleLine: true });
+  const eventType = normalizeStoredText(source.eventType, 40, { singleLine: true });
+  const allowedEventTypes = new Set(["", "ES締切", "Webテスト", "面接", "説明会", "面談", "インターン", "その他"]);
   return {
-    id: entry.id || createId(),
-    companyName: entry.companyName || "",
-    industry: entry.industry || "",
-    mypageId: entry.mypageId || "",
-    officialUrl: entry.officialUrl || "",
-    logoUrl: entry.logoUrl || "",
-    trackType: entry.trackType || "本選考",
-    status: entry.status || "気になる",
-    deadline: entry.deadline || "",
-    eventDate: entry.eventDate || "",
-    eventType: entry.eventType == null ? "面接" : String(entry.eventType),
-    priority: entry.priority || "未定",
-    mypageUrl: entry.mypageUrl || "",
-    esContent: entry.esContent || "",
-    esItems: normalizeEsItems(entry.esItems, entry.esContent || ""),
-    interviewNotes: entry.interviewNotes || "",
-    memo: entry.memo || "",
-    createdAt: entry.createdAt || new Date().toISOString(),
-    updatedAt: entry.updatedAt || entry.createdAt || new Date().toISOString(),
-    sortOrder: Number.isFinite(Number(entry.sortOrder)) ? Number(entry.sortOrder) : Number.NaN,
-    deletedAt: entry.deletedAt || ""
+    id: normalizeStoredText(source.id, 120, { singleLine: true }) || createId(),
+    companyName: normalizeStoredText(source.companyName, 200, { singleLine: true }),
+    industry: normalizeStoredText(source.industry, 200, { singleLine: true }),
+    mypageId: normalizeStoredText(source.mypageId, 500, { singleLine: true }),
+    officialUrl: normalizeExternalUrl(source.officialUrl),
+    // Keep a valid web URL without loading it. Loading has a stricter policy
+    // in companyLogoSources, so older/unsupported URLs are not destroyed when
+    // an unrelated card is saved.
+    logoUrl: normalizeExternalUrl(source.logoUrl),
+    trackType: Object.hasOwn(trackTypeHints, trackType) ? trackType : "本選考",
+    status: [...activeStatuses, ...finishedStatuses].includes(status) ? status : "気になる",
+    deadline: normalizeStoredDate(source.deadline),
+    eventDate: normalizeStoredDate(source.eventDate),
+    eventType: allowedEventTypes.has(eventType) ? eventType : "",
+    priority: ["高", "中", "低", "未定"].includes(priority) ? priority : "未定",
+    mypageUrl: normalizeExternalUrl(source.mypageUrl),
+    esContent: normalizeStoredText(source.esContent, 200_000),
+    esItems: normalizeEsItems(source.esItems, source.esContent),
+    interviewNotes: normalizeStoredText(source.interviewNotes, 100_000),
+    memo: normalizeStoredText(source.memo, 100_000),
+    createdAt,
+    updatedAt: normalizeStoredTimestamp(source.updatedAt, createdAt),
+    sortOrder: typeof source.sortOrder === "number" && Number.isFinite(source.sortOrder) ? source.sortOrder : Number.NaN,
+    deletedAt: normalizeStoredTimestamp(source.deletedAt)
   };
 }
 
 function createEsItem(question = "", answer = "") {
-  const variant = createEsVariant("", answer);
+  const safeQuestion = normalizeStoredText(question, 2_000);
+  const safeAnswer = normalizeStoredText(answer, 200_000);
+  const variant = createEsVariant("", safeAnswer);
   return {
     id: createId(),
-    question: String(question || ""),
-    answer: String(answer || ""),
+    question: safeQuestion,
+    answer: safeAnswer,
     variants: [variant],
     activeVariantId: variant.id
   };
@@ -3788,34 +5266,37 @@ function createEsItem(question = "", answer = "") {
 function createEsVariant(label = "", answer = "") {
   return {
     id: createId(),
-    label: String(label || ""),
-    answer: String(answer || "")
+    label: normalizeStoredText(label, 200, { singleLine: true }),
+    answer: normalizeStoredText(answer, 200_000)
   };
 }
 
 function normalizeEsItems(items, legacyContent = "") {
   const normalized = Array.isArray(items)
-    ? items
+    ? items.slice(0, 200)
+        .filter(isPlainRecord)
         .map(normalizeEsItem)
         .filter((item) => item.question.trim() || item.variants.some((variant) => variant.label.trim() || variant.answer.trim()))
     : [];
 
   if (normalized.length > 0) return normalized;
 
-  const legacyAnswer = String(legacyContent || "").trim();
+  const legacyAnswer = normalizeStoredText(legacyContent, 200_000);
   return legacyAnswer ? [createEsItem("", legacyAnswer)] : [];
 }
 
 function normalizeEsItem(item = {}) {
-  const variants = normalizeEsVariants(item.variants, item.answer);
-  const activeVariantId = variants.some((variant) => variant.id === item.activeVariantId)
-    ? item.activeVariantId
+  const source = isPlainRecord(item) ? item : {};
+  const variants = normalizeEsVariants(source.variants, source.answer);
+  const requestedActiveId = normalizeStoredText(source.activeVariantId, 120, { singleLine: true });
+  const activeVariantId = variants.some((variant) => variant.id === requestedActiveId)
+    ? requestedActiveId
     : variants[0]?.id || "";
   const activeVariant = variants.find((variant) => variant.id === activeVariantId) || variants[0];
 
   return {
-    id: item.id || createId(),
-    question: String(item.question || ""),
+    id: normalizeStoredText(source.id, 120, { singleLine: true }) || createId(),
+    question: normalizeStoredText(source.question, 2_000),
     answer: activeVariant?.answer || "",
     variants,
     activeVariantId
@@ -3823,18 +5304,23 @@ function normalizeEsItem(item = {}) {
 }
 
 function normalizeEsVariants(variants, legacyAnswer = "") {
-  const normalized = Array.isArray(variants)
-    ? variants
+  const candidates = Array.isArray(variants)
+    ? variants.slice(0, 20)
+        .filter(isPlainRecord)
         .map((variant) => ({
-          id: variant.id || createId(),
-          label: String(variant.label || ""),
-          answer: String(variant.answer || "")
+          id: normalizeStoredText(variant.id, 120, { singleLine: true }) || createId(),
+          label: normalizeStoredText(variant.label, 200, { singleLine: true }),
+          answer: normalizeStoredText(variant.answer, 200_000)
         }))
-        .filter((variant) => variant.label.trim() || variant.answer.trim())
     : [];
+  const normalized = candidates.filter((variant) => variant.label.trim() || variant.answer.trim());
 
   if (normalized.length > 0) return normalized;
-  return [createEsVariant("", legacyAnswer || "")];
+  const safeLegacyAnswer = normalizeStoredText(legacyAnswer, 200_000);
+  if (candidates.length > 0) {
+    return [{ ...candidates[0], label: "", answer: safeLegacyAnswer }];
+  }
+  return [createEsVariant("", safeLegacyAnswer)];
 }
 
 function getActiveEsVariant(item) {
@@ -3861,28 +5347,36 @@ function esVariantTitle(variant) {
   return characters > 0 ? `${characters}字` : "未入力";
 }
 
-function normalizeTemplate(template) {
+function normalizeTemplate(template = {}) {
+  const source = isPlainRecord(template) ? template : {};
+  const now = new Date().toISOString();
+  const createdAt = normalizeStoredTimestamp(source.createdAt, now);
   return {
-    id: template.id || createId(),
-    kind: template.kind || "ガクチカ",
-    title: template.title || "",
-    body: template.body || "",
-    createdAt: template.createdAt || new Date().toISOString(),
-    updatedAt: template.updatedAt || template.createdAt || new Date().toISOString(),
-    sortOrder: Number.isFinite(Number(template.sortOrder)) ? Number(template.sortOrder) : Number.NaN
+    id: normalizeStoredText(source.id, 120, { singleLine: true }) || createId(),
+    kind: normalizeStoredText(source.kind, 120, { singleLine: true }) || "ガクチカ",
+    title: normalizeStoredText(source.title, 500, { singleLine: true }),
+    body: normalizeStoredText(source.body, 200_000),
+    createdAt,
+    updatedAt: normalizeStoredTimestamp(source.updatedAt, createdAt),
+    sortOrder: typeof source.sortOrder === "number" && Number.isFinite(source.sortOrder) ? source.sortOrder : Number.NaN
   };
 }
 
-function toDbTemplate(template) {
-  return {
-    id: template.id,
+function toDbTemplate(template, options = {}) {
+  const values = normalizeTemplate(template);
+  const payload = {
+    id: values.id,
     user_id: state.session.user.id,
-    kind: template.kind,
-    title: template.title,
-    body: template.body,
-    created_at: template.createdAt || new Date().toISOString(),
-    updated_at: template.updatedAt || new Date().toISOString()
+    kind: values.kind,
+    title: values.title,
+    body: values.body,
+    created_at: values.createdAt || new Date().toISOString(),
+    updated_at: values.updatedAt || new Date().toISOString()
   };
+  if (options.includeSortOrder && Number.isFinite(values.sortOrder)) {
+    payload.sort_order = values.sortOrder;
+  }
+  return payload;
 }
 
 function fromDbTemplate(row) {
@@ -4222,6 +5716,10 @@ function closeCelebration() {
   els.mascot.classList.remove("is-celebrating");
   window.clearTimeout(mascotState.celebrationTimer);
   setMascotImage("normal");
+  if (state.aiReturnAfterCelebration && state.aiCards.length) {
+    state.aiReturnAfterCelebration = false;
+    openAiImportDialog({ focusResults: true });
+  }
 }
 
 function createConfetti(mood = "normal") {
@@ -4727,83 +6225,38 @@ function useNextLogoSource(image) {
 }
 
 function companyLogoSources(entry) {
-  const sources = [];
-  const manualLogo = normalizeExternalUrl(entry.logoUrl);
-  const officialUrl = parseExternalUrl(entry.officialUrl);
-  const mypageUrl = parseExternalUrl(entry.mypageUrl);
-
-  if (manualLogo) sources.push(manualLogo);
-  if (officialUrl) {
-    addDomainLogoSources(sources, officialUrl.hostname);
-  }
-
-  if (mypageUrl) {
-    recruitingLogoDomains(mypageUrl.hostname).forEach((domain) => addDomainLogoSources(sources, domain));
-  }
-
-  if (officialUrl) {
-    addOriginIconSources(sources, officialUrl.origin);
-  }
-
-  if (mypageUrl) {
-    addDomainLogoSources(sources, mypageUrl.hostname);
-    addOriginIconSources(sources, mypageUrl.origin);
-  }
-
-  return Array.from(new Set(sources));
-}
-
-function addDomainLogoSources(sources, hostname) {
-  const domain = normalizeHostname(hostname);
-  if (!domain) return;
-
-  sources.push(`https://logo.clearbit.com/${domain}`);
-  sources.push(`https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=128`);
-}
-
-function addOriginIconSources(sources, origin) {
-  if (!origin) return;
-  sources.push(`${origin}/apple-touch-icon.png`);
-  sources.push(`${origin}/favicon.svg`);
-  sources.push(`${origin}/favicon.ico`);
-}
-
-function recruitingLogoDomains(hostname) {
-  const domain = normalizeHostname(hostname);
-  if (!domain) return [];
-
-  if (domain.endsWith(".snar.jp")) {
-    const slug = domain.split(".")[0];
-    if (!slug || slug === "www") return [];
-    return [`${slug}.com`, `${slug}.co.jp`, `${slug}.jp`];
-  }
-
-  return [];
+  if (state.mode === "local") return [];
+  const manualLogo = normalizeExternalImageUrl(entry.logoUrl);
+  return manualLogo ? [manualLogo] : [];
 }
 
 function normalizeExternalUrl(value) {
-  const rawValue = String(value || "").trim();
+  const rawValue = typeof value === "string" ? value.trim() : "";
   if (!rawValue) return "";
 
   try {
     const url = new URL(rawValue);
-    if (!["http:", "https:"].includes(url.protocol)) return "";
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) return "";
     return url.href;
   } catch {
     return "";
   }
 }
 
-function parseExternalUrl(value) {
+function normalizeExternalImageUrl(value) {
   const normalized = normalizeExternalUrl(value);
-  return normalized ? new URL(normalized) : null;
+  if (!normalized) return "";
+  const url = new URL(normalized);
+  if (url.protocol !== "https:" || url.search || url.hash || !isPublicWebHostname(url.hostname)) return "";
+  return url.href;
 }
 
-function normalizeHostname(hostname) {
-  return String(hostname || "")
-    .trim()
-    .toLowerCase()
-    .replace(/^www\./, "");
+function isPublicWebHostname(hostname) {
+  const domain = String(hostname || "").trim().toLowerCase().replace(/\.$/u, "");
+  if (!domain || domain.includes(":") || !domain.includes(".")) return false;
+  if (/^(?:\d{1,3}\.){3}\d{1,3}$/u.test(domain)) return false;
+  if (/(?:^|\.)(?:localhost|local|internal|home|lan|test|invalid)$/u.test(domain)) return false;
+  return /^[a-z0-9.-]+$/u.test(domain) && !domain.includes("..") && !domain.startsWith(".");
 }
 
 function companyIconText(companyName) {
@@ -4859,7 +6312,7 @@ function statusLabelParts(status) {
     "インターン参加決定": ["インターン", "参加決定"],
     "ES提出済み": ["ES", "提出済み"]
   };
-  return partsByStatus[status] || [status];
+  return Object.hasOwn(partsByStatus, status) ? partsByStatus[status] : [String(status || "")];
 }
 
 function esPreviewBlock(entry) {

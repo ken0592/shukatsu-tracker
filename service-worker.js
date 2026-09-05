@@ -1,10 +1,11 @@
-const cacheName = "shukatsu-tracker-v41";
+const cacheName = "shukatsu-tracker-v45";
 const assets = [
   "./",
   "./index.html",
   "./styles.css",
   "./quotes.js",
   "./ai.js",
+  "./csv-import.js",
   "./AI_SETUP.md",
   "./app.js",
   "./manifest.json",
@@ -34,13 +35,16 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== cacheName).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(keys.filter((key) => key.startsWith("shukatsu-tracker-") && key !== cacheName).map((key) => caches.delete(key))))
       .then(() => self.clients.claim())
   );
 });
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+  const url = new URL(event.request.url);
+  // APIの接続状態や認証情報をオフライン用キャッシュに残さない。
+  if (url.origin !== self.location.origin || /^\/api(?:\/|$)/u.test(url.pathname) || event.request.headers.has("Authorization")) return;
 
   if (event.request.mode === "navigate") {
     event.respondWith(fetch(event.request).catch(() => caches.match("./index.html")));
@@ -50,9 +54,9 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        if (event.request.url.startsWith(self.location.origin)) {
+        if (response.ok && !/no-store|private/iu.test(response.headers.get("Cache-Control") || "")) {
           const copy = response.clone();
-          caches.open(cacheName).then((cache) => cache.put(event.request, copy));
+          event.waitUntil(caches.open(cacheName).then((cache) => cache.put(event.request, copy)).catch(() => {}));
         }
         return response;
       })

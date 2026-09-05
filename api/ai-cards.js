@@ -47,38 +47,50 @@ module.exports = async function handler(request, response) {
   const payload = readPayload(request.body);
   if (!payload) return response.status(400).json({ error: "JSON形式の送信内容を確認してください。" });
   const task = payload.task || (typeof payload.memo === "string" ? "cards" : "");
-  if (!new Set(["cards", "faq"]).has(task)) {
+  if (!new Set(["cards", "faq", "es-review"]).has(task)) {
     return response.status(400).json({ error: "AIの処理種類を確認してください。" });
   }
 
-  const inputName = task === "faq" ? "question" : "memo";
-  const maxLength = task === "faq" ? ai.maxFaqChars : ai.maxMemoChars;
-  const input = typeof payload[inputName] === "string" ? payload[inputName].trim() : "";
-  if (!input) {
-    return response.status(400).json({ error: task === "faq" ? "FAQへの質問を入力してください。" : "整理するメモを入力してください。" });
-  }
-  let normalizedInput;
-  try {
-    normalizedInput = ai.normalizeMemoText(input);
-  } catch (error) {
-    return response.status(400).json({ error: String(error?.message || "テキスト形式を確認してください。") });
-  }
-  if (ai.countCharacters(normalizedInput) > maxLength) {
-    const label = task === "faq" ? "質問" : "メモ";
-    return response.status(413).json({ error: `${label}は${maxLength.toLocaleString("ja-JP")}文字以内にしてください。途中で切らず、内容を分けてお試しください。` });
-  }
+  let protectedInput;
+  let esReviewInput;
+  if (task === "es-review") {
+    try {
+      const prepared = ai.prepareEsReview(payload);
+      esReviewInput = prepared.value;
+      protectedInput = { total: prepared.total };
+    } catch (error) {
+      return response.status(400).json({ error: String(error?.message || "質問と回答を確認してください。") });
+    }
+  } else {
+    const inputName = task === "faq" ? "question" : "memo";
+    const maxLength = task === "faq" ? ai.maxFaqChars : ai.maxMemoChars;
+    const input = typeof payload[inputName] === "string" ? payload[inputName].trim() : "";
+    if (!input) {
+      return response.status(400).json({ error: task === "faq" ? "FAQへの質問を入力してください。" : "整理するメモを入力してください。" });
+    }
+    let normalizedInput;
+    try {
+      normalizedInput = ai.normalizeMemoText(input);
+    } catch (error) {
+      return response.status(400).json({ error: String(error?.message || "テキスト形式を確認してください。") });
+    }
+    if (ai.countCharacters(normalizedInput) > maxLength) {
+      const label = task === "faq" ? "質問" : "メモ";
+      return response.status(413).json({ error: `${label}は${maxLength.toLocaleString("ja-JP")}文字以内にしてください。途中で切らず、内容を分けてお試しください。` });
+    }
 
-  // ブラウザ側の処理を信用せず、サーバーでも必ず同じ伏せ字処理を行う。
-  const protectedInput = ai.redactSensitiveMemo(normalizedInput, maxLength);
-  if (!protectedInput.text.trim()) {
-    return response.status(400).json({ error: "個人情報を隠すと、AIが回答できる文章が残りませんでした。" });
-  }
-  if (task === "cards") {
-    const candidateCount = ai.countMemoCardCandidates(protectedInput.text);
-    if (candidateCount > ai.maxCards) {
-      return response.status(422).json({
-        error: `AIに送る会社・選考候補が${candidateCount}件あります。一度に整理できるのは${ai.maxCards}件までのため、内容を分けてお試しください。`
-      });
+    // ブラウザ側の処理を信用せず、サーバーでも必ず同じ伏せ字処理を行う。
+    protectedInput = ai.redactSensitiveMemo(normalizedInput, maxLength);
+    if (!protectedInput.text.trim()) {
+      return response.status(400).json({ error: "個人情報を隠すと、AIが回答できる文章が残りませんでした。" });
+    }
+    if (task === "cards") {
+      const candidateCount = ai.countMemoCardCandidates(protectedInput.text);
+      if (candidateCount > ai.maxCards) {
+        return response.status(422).json({
+          error: `AIに送る会社・選考候補が${candidateCount}件あります。一度に整理できるのは${ai.maxCards}件までのため、内容を分けてお試しください。`
+        });
+      }
     }
   }
 
@@ -91,9 +103,9 @@ module.exports = async function handler(request, response) {
     return response.status(429).json({ error: "本日の無料利用回数に達しました。明日もう一度お試しください。" });
   }
 
-  const providerRequest = task === "faq"
-    ? ai.buildFaqRequest(protectedInput.text)
-    : ai.buildRequest(protectedInput.text);
+  const providerRequest = task === "es-review"
+    ? ai.buildEsReviewRequest(esReviewInput)
+    : task === "faq" ? ai.buildFaqRequest(protectedInput.text) : ai.buildRequest(protectedInput.text);
   const providerResponse = await runCloudflareAi(providerRequest);
   if (!providerResponse.ok) {
     const providerFailure = await safeJson(providerResponse);
@@ -111,6 +123,11 @@ module.exports = async function handler(request, response) {
   }
 
   const providerPayload = await safeJson(providerResponse);
+  if (task === "es-review") {
+    const review = ai.parseProviderEsReview(providerPayload);
+    if (!review) return response.status(422).json({ error: "添削結果を作れませんでした。質問と回答を確認してお試しください。" });
+    return response.status(200).json({ review, remainingToday: quota.remaining, serverRedactions: protectedInput.total });
+  }
   if (task === "faq") {
     const answer = ai.parseProviderFaq(providerPayload);
     if (!answer) return response.status(422).json({ error: "AI FAQの回答を作れませんでした。質問を言い換えてお試しください。" });

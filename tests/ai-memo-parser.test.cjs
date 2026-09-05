@@ -356,6 +356,60 @@ function testAuthorizationTokensAreAlwaysRedacted() {
   assert.equal(protectedMemo.counts["認証トークン"], 4);
 }
 
+function testLabeledIdsAreExtractedLocallyAfterCompanyBoundaries() {
+  const source = [
+    "マイページID：PREAMBLE-ID",
+    "会社名：A株式会社",
+    "マイページID：A-ID-123",
+    "ES設問：IDについて説明してください",
+    "## B株式会社（インターン）",
+    "- ログインID = Ｂ－９９"
+  ].join("\n");
+  const result = ai.extractLocalCredentialRecords(ai.deriveMemoBlocks(source));
+  assert.deepEqual(result.records, [
+    { companyName: "A株式会社", trackType: "", mypageId: "A-ID-123" },
+    { companyName: "B株式会社", trackType: "インターン", mypageId: "Ｂ－９９" }
+  ]);
+  assert.equal(result.unresolvedCount, 1);
+  assert.equal(result.detectedCount, 3);
+  assert.doesNotMatch(JSON.stringify(result.records), /PREAMBLE-ID/u);
+}
+
+function testNotionStyleTsvIdsAreExtractedWithoutAi() {
+  const source = [
+    "企業名\tマイページ ID\t選考区分\tメモ",
+    "A社\tNOTION-ID-1\t本選考\t確認",
+    "B社\tNOTION-ID-2\tインターン\t確認"
+  ].join("\n");
+  const result = ai.extractLocalCredentialRecords(ai.deriveMemoBlocks(source));
+  assert.deepEqual(result.records, [
+    { companyName: "A社", trackType: "本選考", mypageId: "NOTION-ID-1" },
+    { companyName: "B社", trackType: "インターン", mypageId: "NOTION-ID-2" }
+  ]);
+  assert.equal(result.unresolvedCount, 0);
+
+  const markdown = ai.extractLocalCredentialRecords(ai.deriveMemoBlocks([
+    "# NRI",
+    "マイページID：NOTION-MD-ID",
+    "締切：2026-08-01"
+  ].join("\n")));
+  assert.deepEqual(markdown.records, [
+    { companyName: "NRI", trackType: "", mypageId: "NOTION-MD-ID" }
+  ]);
+}
+
+function testUnlabeledCodesAndIdProseAreNeverExtracted() {
+  const source = [
+    "会社名：安全株式会社",
+    "ABC-UNLABELED-999",
+    "IDについて説明する",
+    "パスワード：NOT-AN-ID"
+  ].join("\n");
+  const result = ai.extractLocalCredentialRecords(ai.deriveMemoBlocks(source));
+  assert.deepEqual(result.records, []);
+  assert.equal(result.detectedCount, 0);
+}
+
 const tests = [
   ["UTF-8 and UTF-8 BOM", testUtf8WithAndWithoutBom],
   ["Shift_JIS", testShiftJis],
@@ -373,7 +427,10 @@ const tests = [
   ["JSON memo boundary safety", testBuildRequestKeepsClosingMemoTextInsideJson],
   ["card merge identity", testCardMergeTrackSeparationAndSimilarNames],
   ["code-like company and labeled IDs", testCodeLikeCompanyNameSurvivesWhileLabeledIdsAreRedacted],
-  ["authorization token redaction", testAuthorizationTokensAreAlwaysRedacted]
+  ["authorization token redaction", testAuthorizationTokensAreAlwaysRedacted],
+  ["local labeled ID extraction", testLabeledIdsAreExtractedLocallyAfterCompanyBoundaries],
+  ["Notion-style TSV ID extraction", testNotionStyleTsvIdsAreExtractedWithoutAi],
+  ["unlabeled ID refusal", testUnlabeledCodesAndIdProseAreNeverExtracted]
 ];
 
 for (const [name, run] of tests) {

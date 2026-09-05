@@ -1375,6 +1375,7 @@ button:disabled {
 .ai-import-dialog {
   width: min(860px, calc(100% - 24px));
   max-height: calc(100vh - 24px);
+  max-height: calc(100dvh - 24px);
   border: 0;
   border-radius: 8px;
   padding: 0;
@@ -1824,6 +1825,7 @@ button:disabled {
 
 .ai-import-form {
   max-height: calc(100vh - 24px);
+  max-height: calc(100dvh - 24px);
   overflow: auto;
 }
 
@@ -1984,6 +1986,29 @@ button:disabled {
   line-height: 1.55;
 }
 
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+.ai-import-notice {
+  padding: 11px 12px;
+  border: 1px solid #b7dfcf;
+  border-radius: 8px;
+  background: #f0fbf6;
+  color: #17644f;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.55;
+}
+
 .ai-result-list {
   display: grid;
   gap: 10px;
@@ -2034,6 +2059,52 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+.ai-result-card-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ai-result-card-title > strong {
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
+.ai-import-plan-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #e9f2ff;
+  color: var(--blue-dark);
+  font-size: 10px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.ai-import-plan-badge.existing {
+  background: #e7f8ef;
+  color: #17644f;
+}
+
+.ai-import-plan-badge.unchanged {
+  background: #eef1f5;
+  color: var(--muted);
+}
+
+.ai-import-plan-badge.conflict {
+  background: #fff4d6;
+  color: #9a5b00;
+}
+
+.ai-import-plan-badge.trashed,
+.ai-import-plan-badge.ambiguous {
+  background: #fff0ee;
+  color: #a82318;
+}
+
 .ai-result-card-main p {
   margin: 0;
   color: #344054;
@@ -2045,6 +2116,63 @@ button:disabled {
 
 .ai-result-card-main p.ai-empty-note {
   color: var(--muted);
+}
+
+.ai-result-card-main p.ai-import-diff {
+  color: #17644f;
+  font-weight: 800;
+}
+
+.ai-result-card-main p.ai-import-conflict {
+  color: #9a5b00;
+  font-weight: 800;
+}
+
+.ai-import-conflict-list,
+.entry-import-conflict {
+  border: 1px solid rgba(245, 158, 11, 0.42);
+  border-radius: 8px;
+  background: #fffbeb;
+  color: #92400e;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ai-import-conflict-list ul,
+.entry-import-conflict ul {
+  margin: 6px 0 0;
+  padding-left: 20px;
+}
+
+.ai-import-conflict-list li,
+.entry-import-conflict li {
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+
+.entry-import-conflict li {
+  display: grid;
+  gap: 7px;
+}
+
+.import-conflict-use-button {
+  justify-self: start;
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.ai-result-unchanged,
+.ai-result-conflict,
+.ai-result-trashed,
+.ai-result-ambiguous {
+  background: #fafbfc;
+}
+
+.ai-result-card > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
 }
 
 .ai-es-preview {
@@ -2963,3 +3091,35 @@ textarea {
     animation: none !important;
   }
 }
+.es-review-dialog {
+  width: min(680px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  box-sizing: border-box;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid #dde3ee;
+  border-radius: 20px;
+  padding: clamp(16px, 4vw, 28px);
+  color: #1d2939;
+  background: #fff;
+}
+
+.es-review-dialog::backdrop { background: rgb(16 24 40 / 45%); }
+.es-review-section { padding-top: 12px; margin-top: 18px; border-top: 1px solid #e7ebf3; }
+.es-review-section h3, .es-review-section h4 { margin: 12px 0 8px; }
+.es-review-section p, .es-review-section li { line-height: 1.7; overflow-wrap: anywhere; }
+.es-review-section ul { padding-left: 1.4em; }
+.es-review-note { color: var(--muted); font-size: 0.82rem; }
+.es-review-preview {
+  max-height: 260px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  line-height: 1.8;
+  padding: 16px;
+  background: #f5f7fc;
+  border-radius: 12px;
+}
+.es-review-dialog button { max-width: 100%; }
+.char-count.es-over-limit { color: #b42318; font-weight: 700; }

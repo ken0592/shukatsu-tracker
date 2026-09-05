@@ -49,6 +49,28 @@ create index if not exists entries_user_id_sort_order_idx
 create index if not exists entries_user_id_deleted_at_idx
   on public.entries (user_id, deleted_at);
 
+-- 同じ利用者・企業名・選考区分の同時登録もDB側で止めます。
+-- 既存カードに重複がある場合は削除せず、整理後の再実行まで一意制約だけを保留します。
+do $$
+begin
+  if exists (
+    select 1
+    from public.entries
+    group by
+      user_id,
+      lower(regexp_replace(normalize(company_name, NFKC), '[[:space:]　]+', '', 'g')),
+      track_type
+    having count(*) > 1
+  ) then
+    raise warning 'entries に同じ企業・選考区分の重複があるため、一意インデックス作成を保留しました。重複整理後にSQLを再実行してください。';
+  else
+    execute 'drop index if exists public.entries_user_company_track_unique_idx';
+    execute 'create unique index entries_user_company_track_unique_idx '
+      || 'on public.entries (user_id, lower(regexp_replace(normalize(company_name, NFKC), ''[[:space:]　]+'', '''', ''g'')), track_type)';
+  end if;
+end;
+$$;
+
 alter table public.entries enable row level security;
 
 drop policy if exists "Users can read own entries" on public.entries;
