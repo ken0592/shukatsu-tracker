@@ -80,6 +80,99 @@
     return site ? ["favicon.ico", "favicon.svg", "apple-touch-icon.png"].map((file) => site + file) : [];
   }
 
+  async function lookupCandidates(entry, signal) {
+    const name = entry.companyName.trim();
+    const official = publicSite(entry.officialUrl);
+    if (official) return { candidates: [{ id: "official", name, website: official, source: official, description: "登録した公式サイト" }], automaticId: "official" };
+    const response = await fetch("/api/company-icons", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, hint: domainHint(entry.mypageUrl), tenant: recruitingTenant(entry.mypageUrl) }), signal });
+    if (!response.ok) {
+      const error = new Error(response.status === 429 ? "検索が混み合っています。少し待って再度お試しください。" : "今は検索できません。公式サイトURLを入れるか、あとで再度お試しください。");
+      error.stopBatch = response.status === 429;
+      throw error;
+    }
+    return response.json();
+  }
+
+  function probeIcon(url, signal) {
+    return new Promise((resolve) => {
+      if (signal.aborted) return resolve("");
+      const img = new Image();
+      const finish = (value) => {
+        clearTimeout(timer); signal.removeEventListener("abort", abort);
+        img.onload = img.onerror = null; img.removeAttribute("src"); resolve(value);
+      };
+      const abort = () => finish("");
+      const timer = setTimeout(abort, 5000);
+      signal.addEventListener("abort", abort, { once: true });
+      img.referrerPolicy = "no-referrer";
+      img.onload = () => finish(img.naturalWidth ? url : "");
+      img.onerror = abort;
+      img.src = url;
+    });
+  }
+
+  async function findAutomaticIcon(entry, { signal }) {
+    if (companyKey(entry.companyName).length < 2 || Array.from(entry.companyName).length > 120) return "";
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) abort();
+    const timer = setTimeout(abort, 30000);
+    try {
+      const result = await lookupCandidates(entry, controller.signal);
+      const candidate = result.candidates?.find((item) => item.id === result.automaticId);
+      for (const url of iconSources(candidate?.website)) {
+        controller.signal.throwIfAborted();
+        if (await probeIcon(url, controller.signal)) return url;
+      }
+      controller.signal.throwIfAborted();
+      return "";
+    } finally {
+      clearTimeout(timer); signal.removeEventListener("abort", abort);
+    }
+  }
+
+  function needsIcon(entry) { return Boolean(entry && !entry.deletedAt && !String(entry.logoUrl || "").trim()); }
+  function iconSearchKey(entry) { return JSON.stringify([entry.companyName, entry.officialUrl || "", entry.mypageUrl || ""]); }
+
+  async function fillMissingIcons({ entries, getEntry, save, signal, onProgress = () => {}, findIcon = findAutomaticIcon }) {
+    const targets = entries.filter(needsIcon).map((entry) => ({ id: entry.id, key: iconSearchKey(entry) }));
+    const progress = { total: targets.length, completed: 0, saved: 0, missing: 0, skipped: 0, failed: 0, currentName: "", stopped: false, reason: "" };
+    const cache = new Map();
+    for (const target of targets) {
+      if (signal.aborted) break;
+      const entry = getEntry(target.id);
+      progress.currentName = entry?.companyName || "";
+      onProgress({ ...progress });
+      try {
+        if (!needsIcon(entry) || iconSearchKey(entry) !== target.key) { progress.skipped++; continue; }
+        let url = cache.get(target.key);
+        if (url === undefined) {
+          url = await findIcon(entry, { signal });
+          if (signal.aborted) break;
+          cache.set(target.key, url);
+        }
+        const latest = getEntry(target.id);
+        if (!needsIcon(latest) || iconSearchKey(latest) !== target.key) { progress.skipped++; continue; }
+        if (!url) progress.missing++;
+        else if (await save(latest, url) === "saved") progress.saved++;
+        else progress.skipped++;
+      } catch (error) {
+        if (signal.aborted) break;
+        progress.failed++;
+        if (error.stopBatch) { progress.stopped = true; progress.reason = error.message; break; }
+      } finally {
+        if (!signal.aborted) progress.completed++;
+        onProgress({ ...progress });
+      }
+    }
+    progress.stopped ||= signal.aborted;
+    progress.currentName = "";
+    onProgress({ ...progress });
+    return progress;
+  }
+
   function createPicker({ form, panel, button }) {
     const nameInput = form.elements.companyName;
     const mypageInput = form.elements.mypageUrl;
@@ -121,14 +214,7 @@
         const key = JSON.stringify([name, hint, official, tenant]);
         let result = cache.get(key);
         if (!result) {
-          if (official) {
-            result = { candidates: [{ id: "official", name, website: official, source: official, description: "登録した公式サイト" }], automaticId: "official" };
-          } else {
-            const response = await fetch("/api/company-icons", { method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ name, hint, tenant }), signal: controller.signal });
-            if (!response.ok) throw new Error(response.status === 429 ? "検索が混み合っています。少し待って再度お試しください。" : "今は検索できません。公式サイトURLを入れるか、あとで再度お試しください。");
-            result = await response.json();
-          }
+          result = await lookupCandidates({ companyName: name, officialUrl: officialInput.value, mypageUrl: mypageInput.value }, controller.signal);
           if (!current()) return;
           if (cache.size >= 30) cache.delete(cache.keys().next().value);
           cache.set(key, result);
@@ -185,6 +271,6 @@
     return { reset, schedule };
   }
 
-  global.SHUKATSU_ICONS = { companyKey, publicSite, domainHint, recruitingTenant, matchesDomain, makeCandidates, iconSources, createPicker };
+  global.SHUKATSU_ICONS = { companyKey, publicSite, domainHint, recruitingTenant, matchesDomain, makeCandidates, iconSources, createPicker, needsIcon, findAutomaticIcon, fillMissingIcons };
   if (typeof module !== "undefined" && module.exports) module.exports = global.SHUKATSU_ICONS;
 })(typeof window !== "undefined" ? window : globalThis);

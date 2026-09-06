@@ -93,6 +93,7 @@ const supabaseClient = hasCloudConfig
 
 const state = {
   entries: [],
+  bulkIcons: null,
   templates: [],
   filter: "all",
   searchQuery: "",
@@ -235,6 +236,10 @@ const els = {
   activeCount: document.querySelector("#activeCount"),
   trashCount: document.querySelector("#trashCount"),
   emptyTrashButton: document.querySelector("#emptyTrashButton"),
+  bulkIconControls: document.querySelector("#bulkIconControls"),
+  bulkIconButton: document.querySelector("#bulkIconButton"),
+  cancelBulkIconButton: document.querySelector("#cancelBulkIconButton"),
+  bulkIconStatus: document.querySelector("#bulkIconStatus"),
   todayActionTitle: document.querySelector("#todayActionTitle"),
   todayActionCount: document.querySelector("#todayActionCount"),
   todayActionList: document.querySelector("#todayActionList"),
@@ -340,6 +345,11 @@ bindEvents();
 init();
 
 function bindEvents() {
+  els.bulkIconButton.addEventListener("click", handleBulkIcons);
+  els.cancelBulkIconButton.addEventListener("click", () => {
+    state.bulkIcons?.controller.abort();
+    renderBulkIcons();
+  });
   state.iconPicker = window.SHUKATSU_ICONS?.createPicker({
     form: els.entryForm,
     panel: document.querySelector("#companyIconCandidates"),
@@ -733,6 +743,8 @@ async function init() {
 }
 
 function clearUserScopedUiState(options = {}) {
+  state.bulkIcons?.controller.abort();
+  state.bulkIcons = null;
   state.userScopeVersion += 1;
   state.entries = [];
   state.templates = [];
@@ -4547,7 +4559,73 @@ function renderEventList() {
     .join("");
 }
 
+function renderBulkIcons() {
+  const job = state.bulkIcons;
+  const count = state.entries.filter(window.SHUKATSU_ICONS.needsIcon).length;
+  const running = Boolean(job?.running);
+  els.bulkIconControls.hidden = (!count && !job) || (state.mode === "cloud" && !state.session);
+  els.bulkIconButton.disabled = running || !count || state.loading;
+  els.bulkIconButton.textContent = running ? "アイコンを一括設定中…" : `未設定アイコンを一括設定（${count}件）`;
+  els.cancelBulkIconButton.hidden = !running;
+  els.cancelBulkIconButton.disabled = Boolean(job?.controller.signal.aborted);
+  els.cancelBulkIconButton.textContent = job?.controller.signal.aborted ? "停止中…" : "途中で止める";
+  const p = job?.progress;
+  els.bulkIconStatus.textContent = p
+    ? `${running ? `${p.completed} / ${p.total}件${p.currentName ? `・${p.currentName}を確認中` : ""}` : p.stopped ? "停止しました" : "一括設定が完了しました"}。設定 ${p.saved}件・候補なし／要確認 ${p.missing}件・変更済み ${p.skipped}件・失敗 ${p.failed}件。${p.reason || (!running && p.missing ? "見つからない企業は、企業の編集で公式サイトURLを追加できます。" : "")}`
+    : "結果済みを含む全企業が対象です。見つかった分から自動保存します。";
+}
+
+async function saveBulkIcon(entry, url, scope) {
+  if (!isCurrentUserScope(scope) || !window.SHUKATSU_ICONS.needsIcon(entry)
+    || state.entries.find((item) => item.id === entry.id) !== entry) return "skipped";
+  let saved;
+  if (state.mode === "cloud") {
+    if (!state.session || !entry.updatedAt) return "skipped";
+    const { data, error } = await supabaseClient.from("entries")
+      .update({ logo_url: url }).eq("id", entry.id).eq("user_id", scope.userId)
+      .eq("updated_at", entry.updatedAt).select("*");
+    if (!isCurrentUserScope(scope)) return "skipped";
+    if (error) throw Object.assign(new Error("保存できなかったため停止しました。接続を確認して再度お試しください。"), { stopBatch: true });
+    if (data?.length !== 1) return "skipped";
+    saved = fromDbEntry(data[0]);
+  } else {
+    saved = { ...entry, logoUrl: url, updatedAt: new Date().toISOString() };
+    const next = state.entries.map((item) => item === entry ? saved : item);
+    if (!saveLocalEntries(next)) throw Object.assign(new Error("端末に保存できなかったため停止しました。"), { stopBatch: true });
+  }
+  // A newer local edit must not be replaced by a response already in flight.
+  state.entries = state.entries.map((item) => item === entry ? saved : item);
+  renderCompanyList();
+  return "saved";
+}
+
+async function handleBulkIcons() {
+  if (state.bulkIcons?.running || state.loading || (state.mode === "cloud" && !state.session)) return;
+  const scope = captureUserScope();
+  const job = { controller: new AbortController(), running: true, progress: null };
+  state.bulkIcons = job;
+  renderBulkIcons();
+  try {
+    await window.SHUKATSU_ICONS.fillMissingIcons({
+      entries: state.entries, signal: job.controller.signal,
+      getEntry: (id) => isCurrentUserScope(scope) ? state.entries.find((item) => item.id === id) : null,
+      save: (entry, url) => saveBulkIcon(entry, url, scope),
+      onProgress: (progress) => {
+        if (state.bulkIcons !== job || !isCurrentUserScope(scope)) return;
+        job.progress = progress;
+        renderBulkIcons();
+      }
+    });
+  } catch (error) {
+    if (isCurrentUserScope(scope)) showToast("一括設定を停止しました。保存済みのアイコンは残っています。");
+  } finally {
+    job.running = false;
+    if (state.bulkIcons === job && isCurrentUserScope(scope)) renderBulkIcons();
+  }
+}
+
 function renderCompanyList() {
+  renderBulkIcons();
   const isTrashView = state.filter === trashFilterValue;
   const trashEntries = trashedEntries();
   const isCompact = !isTrashView && state.companyViewMode === "compact";
