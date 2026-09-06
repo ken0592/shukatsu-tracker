@@ -3123,3 +3123,12 @@ textarea {
 }
 .es-review-dialog button { max-width: 100%; }
 .char-count.es-over-limit { color: #b42318; font-weight: 700; }
+.company-icon-picker { margin: -4px 0 16px; }
+.company-icon-picker > .field-hint { margin: 8px 0; }
+#companyIconCandidates { color: var(--muted); font-size: 0.82rem; line-height: 1.6; overflow-wrap: anywhere; }
+.company-icon-candidate { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 8px 0; padding: 10px; border: 1px solid var(--line); border-radius: 8px; }
+.company-icon-candidate[data-selected="true"] { border-color: var(--blue); background: #f0f5ff; }
+.company-icon-candidate img { flex: 0 0 32px; object-fit: contain; background: #fff; border-radius: 6px; }
+.company-icon-candidate > div { flex: 1 1 140px; min-width: 0; }
+.company-icon-candidate strong, .company-icon-candidate span { display: block; }
+.company-icon-candidate strong { color: var(--text); }

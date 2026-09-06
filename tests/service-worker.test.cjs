@@ -14,7 +14,7 @@ function harness(response = new Response("ok")) {
     self: { location: { origin: "https://app.test" }, addEventListener(name, callback) { listeners[name] = callback; }, clients: { claim: async () => {} } },
     fetch: async () => response,
     caches: {
-      keys: async () => ["shukatsu-tracker-v1", "shukatsu-tracker-v45", "another-app-v1"],
+      keys: async () => ["shukatsu-tracker-v1", source.match(/const cacheName = "([^"]+)"/)[1], "another-app-v1"],
       delete: async (name) => deletes.push(name),
       open: async () => ({ put: async (request) => writes.push(request.url) })
     }

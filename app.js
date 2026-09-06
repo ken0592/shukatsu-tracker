@@ -340,6 +340,11 @@ bindEvents();
 init();
 
 function bindEvents() {
+  state.iconPicker = window.SHUKATSU_ICONS?.createPicker({
+    form: els.entryForm,
+    panel: document.querySelector("#companyIconCandidates"),
+    button: document.querySelector("#findCompanyIconButton")
+  });
   els.openAiImportButton.addEventListener("click", openAiImportDialog);
   els.closeAiImportButton.addEventListener("click", () => closeAiImportDialog(false));
   els.clearAiImportButton.addEventListener("click", clearAiImportData);
@@ -4887,6 +4892,7 @@ function openEntryDialog(entry = null, options = {}) {
 }
 
 function fillEntryForm(entry) {
+  state.iconPicker?.reset();
   const values = normalizeEntry(entry || {});
   setFormValue("companyName", entry ? values.companyName : "");
   setFormValue("industry", entry ? values.industry : "");
@@ -4903,6 +4909,7 @@ function fillEntryForm(entry) {
   setFormValue("esContent", entry ? entryEsText(values) : "");
   setFormValue("interviewNotes", entry ? values.interviewNotes : "");
   setFormValue("memo", entry ? values.memo : "");
+  state.iconPicker?.schedule();
 }
 
 function setFormValue(name, value) {
@@ -4911,6 +4918,7 @@ function setFormValue(name, value) {
 }
 
 function resetEntryForm() {
+  state.iconPicker?.reset();
   state.editingId = null;
   state.editingBaseEntry = null;
   state.entryDraft = null;
@@ -6225,7 +6233,6 @@ function useNextLogoSource(image) {
 }
 
 function companyLogoSources(entry) {
-  if (state.mode === "local") return [];
   const manualLogo = normalizeExternalImageUrl(entry.logoUrl);
   return manualLogo ? [manualLogo] : [];
 }

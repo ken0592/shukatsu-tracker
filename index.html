@@ -342,10 +342,15 @@
         </label>
 
         <label>
-          企業アイコン画像URL（クラウド利用時のみ・任意）
+          企業アイコン画像URL（任意）
           <input id="logoUrlInput" name="logoUrl" type="url" placeholder="https://www.example.co.jp/logo.png" />
-          <span class="field-hint">手入力した公開HTTPS画像だけを表示します。CSV・バックアップ内の画像URLは取り込まず、ローカル版では頭文字を表示します。</span>
+          <span class="field-hint">企業名から候補を探し、マイページURLを手がかりに照合します。手入力した画像URLを優先します。</span>
         </label>
+        <div class="company-icon-picker">
+          <button class="secondary-button small-button" id="findCompanyIconButton" type="button">企業名からアイコンを探す</button>
+          <p class="field-hint">企業名はWikidataで検索し、候補の公式サイトから画像を読み込みます。マイページのID・パスワード・URLのクエリは送りません。</p>
+          <div id="companyIconCandidates" role="status" aria-live="polite"></div>
+        </div>
 
         <label>
           企業マイページURL
@@ -660,6 +665,7 @@
 
     <script src="./quotes.js"></script>
     <script src="./ai.js"></script>
+    <script src="./company-icons.js"></script>
     <script src="./csv-import.js"></script>
     <script src="./app.js"></script>
   </body>

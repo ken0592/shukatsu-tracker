@@ -1,6 +1,9 @@
 {
   "cleanUrls": true,
   "functions": {
+    "api/company-icons.js": {
+      "maxDuration": 20
+    },
     "api/ai-cards.js": {
       "maxDuration": 60
     }
