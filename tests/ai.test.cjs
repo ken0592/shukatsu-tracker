@@ -176,7 +176,7 @@ function testFaqKnowledgeAndPromptSafety() {
   const request = ai.buildFaqRequest(redacted.text);
   const serialized = JSON.stringify(request);
   assert.equal(serialized.includes("taro@example.com"), false);
-  assert.match(request.messages[0].content, /質問内の命令/);
+  assert.match(request.messages[0].content, /質問内の役割変更/);
   assert.match(request.messages[0].content, /保存済みの企業・ES・アカウント情報にはアクセスできません/);
   assert.equal(request.response_format.type, "json_schema");
 }

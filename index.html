@@ -298,7 +298,7 @@
           <span class="ai-connection-status connected" id="aiConnectionStatus" role="status">オンライン</span>
         </div>
 
-        <p class="ai-setup-note">CSVだけならAI利用回数を消費しません。TXTを一緒に整理するときだけ、AI FAQと合わせて1人1日30回の上限に数えます。</p>
+        <p class="ai-setup-note">CSVだけならAI利用回数を消費しません。TXTを一緒に整理するときだけ、AI相談・ES添削と合わせて1人1日30回の上限に数えます。</p>
 
         <div class="ai-error" id="aiImportError" role="alert" hidden></div>
         <p class="visually-hidden" id="aiResultStatus" role="status" aria-live="polite"></p>
@@ -603,18 +603,19 @@
     <section class="mascot-help-panel" id="mascotHelpPanel" hidden role="dialog" aria-labelledby="mascotHelpTitle">
       <div class="mascot-help-heading">
         <div>
-          <p class="eyebrow">FAQ</p>
-          <h2 id="mascotHelpTitle">使い方FAQ</h2>
+          <p class="eyebrow">AI CHAT</p>
+          <h2 id="mascotHelpTitle">AIに相談</h2>
         </div>
+        <button class="secondary-button small-button" id="clearMascotChatButton" type="button">会話をリセット</button>
         <button class="icon-button" id="closeMascotHelpButton" type="button" aria-label="閉じる">×</button>
       </div>
       <div class="help-chat-log" id="mascotHelpLog" aria-live="polite">
-        <p class="help-message assistant">使い方を自由な言葉で聞いてください。基本FAQにない質問は、ログイン中ならAIがこのアプリの案内だけを回答します。</p>
+        <p class="help-message assistant">使い方や就活の悩みを聞かせてね。AIが一緒に考えるよ。続けて質問もできるよ。</p>
       </div>
-      <p class="help-chat-note" id="mascotHelpNote">AIには保存済みデータを渡しません。個人情報・ID・パスワードは入力しないでください。AI回答はメモ整理と共通で1日30回までです。</p>
+      <p class="help-chat-note" id="mascotHelpNote">ログインして利用できます。質問と直近2往復をAIへ送り、保存済みデータは参照しません。個人情報は入力しないでください。メモ整理・ES添削と共通で1日30回までです。</p>
       <form class="help-chat-form" id="mascotHelpForm">
-        <input id="mascotHelpInput" autocomplete="off" aria-label="使い方FAQへの質問" aria-describedby="mascotHelpNote" placeholder="例: ESの文字数はどこで見る？" />
-        <button class="primary-button" id="mascotHelpSubmitButton" type="submit">聞く</button>
+        <input id="mascotHelpInput" autocomplete="off" aria-label="AIへの相談" aria-describedby="mascotHelpNote" placeholder="例: 面接が不安。何から準備する？" />
+        <button class="primary-button" id="mascotHelpSubmitButton" type="submit">送信</button>
       </form>
     </section>
 
@@ -635,7 +636,7 @@
         <pre class="es-review-preview" id="esReviewPreview"></pre>
         <p id="esReviewStatus" role="status" aria-live="polite"></p>
         <button class="primary-button" id="generateEsReviewButton" type="button">この内容でAI添削する（1回）</button>
-        <p class="es-review-note">メモ整理・FAQと共通で1日30回まで。AIが事実や字数を間違えることもあるため、取り込む前に確認してください。</p>
+        <p class="es-review-note">メモ整理・AI相談と共通で1日30回まで。AIが事実や字数を間違えることもあるため、取り込む前に確認してください。</p>
       </section>
       <section class="es-review-section" id="esReviewResult" hidden>
         <h3>添削結果</h3>
@@ -650,7 +651,7 @@
     </dialog>
 
     <div class="toast" id="toast" role="status" hidden></div>
-    <button class="mascot" id="mascot" type="button" aria-label="使い方FAQを開く" aria-controls="mascotHelpPanel" aria-expanded="false">
+    <button class="mascot" id="mascot" type="button" aria-label="AIに相談する" aria-controls="mascotHelpPanel" aria-expanded="false">
       <span class="mascot-fallback" aria-hidden="true">祝</span>
       <img src="./assets/mascot-summer-smile.png" alt="" />
       <span class="mascot-bubble" id="mascotBubble">今日もいける！</span>

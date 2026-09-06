@@ -144,6 +144,7 @@ const state = {
   aiGenerateRequestId: 0,
   aiReturnAfterCelebration: false,
   faqPending: false,
+  faqHistory: [],
   faqRequestId: 0,
   calendarYear: initialCalendarDate.getFullYear(),
   calendarMonth: initialCalendarDate.getMonth()
@@ -275,6 +276,7 @@ const els = {
   mascotHelpForm: document.querySelector("#mascotHelpForm"),
   mascotHelpInput: document.querySelector("#mascotHelpInput"),
   mascotHelpSubmitButton: document.querySelector("#mascotHelpSubmitButton"),
+  clearMascotChatButton: document.querySelector("#clearMascotChatButton"),
   mascotHelpLog: document.querySelector("#mascotHelpLog"),
   toast: document.querySelector("#toast")
 };
@@ -424,6 +426,10 @@ function bindEvents() {
   });
   els.closeMascotHelpButton.addEventListener("click", closeMascotHelp);
   els.mascotHelpForm.addEventListener("submit", handleMascotHelpSubmit);
+  els.clearMascotChatButton.addEventListener("click", () => {
+    resetMascotChat();
+    els.mascotHelpInput.focus();
+  });
   els.mascotHelpInput.addEventListener("input", () => els.mascotHelpInput.setCustomValidity(""));
   els.closeCelebrationButton.addEventListener("click", closeCelebration);
   els.celebrationOverlay.addEventListener("click", (event) => {
@@ -787,17 +793,22 @@ function isCurrentUserScope(scope) {
 }
 
 function clearFaqUserScopedUiState() {
+  resetMascotChat();
+  els.mascotHelpPanel.hidden = true;
+  els.mascot.setAttribute("aria-expanded", "false");
+}
+
+function resetMascotChat() {
   state.faqRequestId += 1;
+  state.faqHistory = [];
   setFaqPending(false);
   els.mascotHelpInput.value = "";
   els.mascotHelpInput.setCustomValidity("");
   els.mascotHelpLog.textContent = "";
   appendHelpMessage(
-    "使い方を自由な言葉で聞いてください。基本FAQにない質問は、ログイン中ならAIがこのアプリの案内だけを回答します。",
+    "使い方や就活の悩みを聞かせてね。AIが一緒に考えるよ。続けて質問もできるよ。",
     "assistant"
   );
-  els.mascotHelpPanel.hidden = true;
-  els.mascot.setAttribute("aria-expanded", "false");
 }
 
 async function handleSignIn() {
@@ -5858,9 +5869,6 @@ function openMascotHelp() {
 }
 
 function closeMascotHelp() {
-  state.faqRequestId += 1;
-  setFaqPending(false);
-  els.mascotHelpLog.querySelectorAll(".help-message.pending").forEach((message) => message.remove());
   els.mascotHelpPanel.hidden = true;
   els.mascot.setAttribute("aria-expanded", "false");
   els.mascot.focus({ preventScroll: true });
@@ -5882,52 +5890,50 @@ async function handleMascotHelpSubmit(event) {
 
   appendHelpMessage(question, "user");
   els.mascotHelpInput.value = "";
-  const localAnswer = getMascotHelpAnswer(question);
-  if (localAnswer) {
-    appendHelpMessage(localAnswer, "assistant");
-    els.mascotHelpLog.scrollTop = els.mascotHelpLog.scrollHeight;
-    els.mascotHelpInput.focus();
-    return;
-  }
-
   if (state.mode === "local") {
-    appendHelpMessage(`${getMascotHelpFallback()} この端末版ではAI FAQを利用できません。`, "assistant");
+    appendHelpMessage("AIに相談するには、公開版を開いてログインしてください。", "assistant error");
+    els.mascotHelpInput.value = question;
     els.mascotHelpLog.scrollTop = els.mascotHelpLog.scrollHeight;
     els.mascotHelpInput.focus();
     return;
   }
 
   if (!state.session?.access_token) {
-    appendHelpMessage(`${getMascotHelpFallback()} AIで詳しく聞くにはログインしてください。`, "assistant");
+    appendHelpMessage("AIに相談するにはログインしてください。", "assistant error");
+    els.mascotHelpInput.value = question;
     els.mascotHelpLog.scrollTop = els.mascotHelpLog.scrollHeight;
     els.mascotHelpInput.focus();
     return;
   }
 
   if (!localAi?.askFaq) {
-    appendHelpMessage(`${getMascotHelpFallback()} 現在AI FAQを利用できません。画面を再読み込みしてお試しください。`, "assistant");
+    appendHelpMessage("現在AIを利用できません。画面を再読み込みしてお試しください。", "assistant error");
+    els.mascotHelpInput.value = question;
     els.mascotHelpLog.scrollTop = els.mascotHelpLog.scrollHeight;
     els.mascotHelpInput.focus();
     return;
   }
 
   const requestId = ++state.faqRequestId;
-  const pendingMessage = appendHelpMessage("AIがこのアプリの使い方を確認中…", "assistant pending");
+  const pendingMessage = appendHelpMessage("AIが考えています…", "assistant pending");
   setFaqPending(true);
   els.mascotHelpLog.scrollTop = els.mascotHelpLog.scrollHeight;
 
   try {
     const normalized = localAi.normalizeMemoText(question);
     const protectedQuestion = localAi.redactSensitiveMemo(normalized, localAi.maxFaqChars);
-    if (!protectedQuestion.text.trim()) throw new Error("個人情報を除くと質問が残りませんでした。使い方だけを書いてください。");
-    const result = await localAi.askFaq(protectedQuestion.text, { accessToken: state.session.access_token });
+    if (!protectedQuestion.text.trim()) throw new Error("個人情報を除くと質問が残りませんでした。相談したい内容を書いてください。");
+    const result = await localAi.askFaq(protectedQuestion.text, { accessToken: state.session.access_token, history: state.faqHistory });
     if (requestId !== state.faqRequestId) return;
+    state.faqHistory = localAi.sanitizeChatHistory([...state.faqHistory,
+      { role: "user", content: protectedQuestion.text }, { role: "assistant", content: result.answer }]);
     const remaining = Number.isFinite(result.remainingToday) ? `（本日のAI残り${result.remainingToday}回）` : "";
     pendingMessage.textContent = `${result.answer}${remaining}`;
     pendingMessage.classList.remove("pending");
   } catch (error) {
     if (requestId !== state.faqRequestId) return;
-    pendingMessage.textContent = `${getMascotHelpFallback()} AI FAQ: ${error.message}`;
+    pendingMessage.textContent = `AIの回答を受け取れませんでした。${error.message}`;
+    els.mascotHelpInput.value = question;
     pendingMessage.classList.remove("pending");
     pendingMessage.classList.add("error");
   } finally {
@@ -5954,16 +5960,9 @@ function setFaqPending(pending) {
   state.faqPending = pending;
   els.mascotHelpInput.disabled = pending;
   els.mascotHelpSubmitButton.disabled = pending;
-  els.mascotHelpSubmitButton.textContent = pending ? "確認中…" : "聞く";
+  els.clearMascotChatButton.disabled = pending;
+  els.mascotHelpSubmitButton.textContent = pending ? "考え中…" : "送信";
   els.mascotHelpForm.setAttribute("aria-busy", String(pending));
-}
-
-function getMascotHelpAnswer(question) {
-  return localAi?.findLocalFaqAnswer?.(question) || "";
-}
-
-function getMascotHelpFallback() {
-  return "このFAQでは詳しい答えを確認できませんでした。「＋追加」で企業を登録し、カードの「詳細」からESや面接メモを編集できます。";
 }
 
 function getTodayActions(limit = 5) {

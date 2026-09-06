@@ -66,7 +66,7 @@ module.exports = async function handler(request, response) {
     const maxLength = task === "faq" ? ai.maxFaqChars : ai.maxMemoChars;
     const input = typeof payload[inputName] === "string" ? payload[inputName].trim() : "";
     if (!input) {
-      return response.status(400).json({ error: task === "faq" ? "FAQへの質問を入力してください。" : "整理するメモを入力してください。" });
+      return response.status(400).json({ error: task === "faq" ? "AIへの質問を入力してください。" : "整理するメモを入力してください。" });
     }
     let normalizedInput;
     try {
@@ -105,7 +105,7 @@ module.exports = async function handler(request, response) {
 
   const providerRequest = task === "es-review"
     ? ai.buildEsReviewRequest(esReviewInput)
-    : task === "faq" ? ai.buildFaqRequest(protectedInput.text) : ai.buildRequest(protectedInput.text);
+    : task === "faq" ? ai.buildFaqRequest(protectedInput.text, payload.history) : ai.buildRequest(protectedInput.text);
   const providerResponse = await runCloudflareAi(providerRequest);
   if (!providerResponse.ok) {
     const providerFailure = await safeJson(providerResponse);
@@ -130,7 +130,7 @@ module.exports = async function handler(request, response) {
   }
   if (task === "faq") {
     const answer = ai.parseProviderFaq(providerPayload);
-    if (!answer) return response.status(422).json({ error: "AI FAQの回答を作れませんでした。質問を言い換えてお試しください。" });
+    if (!answer) return response.status(422).json({ error: "AIの回答を作れませんでした。質問を言い換えてお試しください。" });
     return response.status(200).json({
       answer,
       remainingToday: quota.remaining,
