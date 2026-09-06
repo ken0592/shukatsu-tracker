@@ -133,9 +133,11 @@
               <div class="list-toolbar">
                 <div class="filter-row track-filter-row" role="group" aria-label="選考タイプ">
                   <button class="filter-button track-filter-button active" data-filter="all" type="button"><span>すべて</span><strong data-filter-count="all">0</strong></button>
-                  <button class="filter-button track-filter-button" data-filter="インターン" type="button"><span>インターン</span><strong data-filter-count="インターン">0</strong></button>
-                  <button class="filter-button track-filter-button" data-filter="早期選考" type="button"><span>早期</span><strong data-filter-count="早期選考">0</strong></button>
+                  <button class="filter-button track-filter-button" data-filter="夏インターン" type="button"><span>夏インターン</span><strong data-filter-count="夏インターン">0</strong></button>
+                  <button class="filter-button track-filter-button" data-filter="冬インターン" type="button"><span>冬インターン</span><strong data-filter-count="冬インターン">0</strong></button>
+                  <button class="filter-button track-filter-button" data-filter="早期選考" type="button"><span>早期選考</span><strong data-filter-count="早期選考">0</strong></button>
                   <button class="filter-button track-filter-button" data-filter="本選考" type="button"><span>本選考</span><strong data-filter-count="本選考">0</strong></button>
+                  <button class="filter-button track-filter-button" data-filter="インターン" type="button"><span>未分類インターン</span><strong data-filter-count="インターン">0</strong></button>
                   <button class="filter-button track-filter-button trash-filter-button" data-filter="trash" type="button"><span>ゴミ箱</span><strong data-filter-count="trash">0</strong></button>
                 </div>
                 <div class="filter-row status-filter-row" role="group" aria-label="選考状態">
@@ -151,7 +153,8 @@
               </div>
             </div>
             <div class="track-guide" aria-label="選考タイプの使い分け">
-              <span><strong>インターン</strong>参加前の応募・選考</span>
+              <span><strong>夏・冬インターン</strong>同じ企業でも別カードで管理</span>
+              <span><strong>未分類インターン</strong>「編集」の「種類」から夏・冬に変更</span>
               <span><strong>早期選考</strong>インターン後などの早い本選考</span>
               <span><strong>本選考</strong>内定に向けた通常選考</span>
             </div>
@@ -379,14 +382,16 @@
           <label>
             種類
             <select id="trackTypeInput" name="trackType">
-              <option value="インターン">インターン（参加前の応募・選考）</option>
+              <option value="インターン">未分類インターン（その他・時期未設定）</option>
+              <option value="夏インターン">夏インターン</option>
+              <option value="冬インターン">冬インターン</option>
               <option value="早期選考">早期選考（早い本選考）</option>
               <option value="本選考">本選考（内定までの選考）</option>
               <option value="説明会">説明会</option>
               <option value="面談">面談</option>
               <option value="OB/OG訪問">OB/OG訪問</option>
             </select>
-            <span class="field-hint" id="trackTypeHint">インターン参加前の応募・ES・面接をまとめます。</span>
+            <span class="field-hint" id="trackTypeHint">時期が決まっていれば夏・冬インターンを選べます。</span>
           </label>
 
           <label>

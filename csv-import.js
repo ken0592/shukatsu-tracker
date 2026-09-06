@@ -14,7 +14,7 @@
     maxColumns: 200,
     maxFieldChars: 100_000
   });
-  const trackTypes = ["インターン", "早期選考", "本選考", "説明会", "面談", "OB/OG訪問"];
+  const trackTypes = ["インターン", "夏インターン", "冬インターン", "早期選考", "本選考", "説明会", "面談", "OB/OG訪問"];
   const statuses = [
     "気になる", "応募予定", "応募済み", "ES提出済み", "Webテスト", "一次面接", "二次面接", "最終面接",
     "結果待ち", "選考通過", "インターン選考通過", "インターン参加決定", "内定", "落選", "辞退", "参加済み"
@@ -678,6 +678,8 @@
     if (trackTypes.includes(text)) return text;
     if (/ob\s*\/\s*og/iu.test(text)) return "OB/OG訪問";
     if (/早期/u.test(text)) return "早期選考";
+    if (/(?:夏(?:季)?|サマー|summer)\s*(?:の)?\s*(?:インターン|intern)/iu.test(text)) return "夏インターン";
+    if (/(?:冬(?:季)?|ウィンター|winter)\s*(?:の)?\s*(?:インターン|intern)/iu.test(text)) return "冬インターン";
     if (/インターン|intern/iu.test(text)) return "インターン";
     if (/説明会|セミナー/u.test(text)) return "説明会";
     if (/面談/u.test(text)) return "面談";

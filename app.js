@@ -25,7 +25,9 @@ const sampleCompanyNames = ["株式会社サンプル商事", "ミライテッ�
 const initialCalendarDate = new Date();
 const commonIndustries = ["IT・通信", "メーカー", "商社", "金融", "コンサル", "広告・メディア", "人材", "不動産・建設", "インフラ", "小売・サービス","製薬"];
 const trackTypeHints = {
-  インターン: "インターン参加前の応募・ES・面接をまとめます。参加が決まったらステータスを「インターン参加決定」にします。",
+  インターン: "時期が未設定、または夏・冬以外のインターンです。夏・冬が決まっていれば種類を変更できます。",
+  夏インターン: "夏インターンの応募・ES・面接をまとめます。同じ企業の冬インターンは別カードで登録できます。",
+  冬インターン: "冬インターンの応募・ES・面接をまとめます。夏インターンの記録と分けて管理できます。",
   早期選考: "インターン後など、通常より早く進む本選考です。迷ったら本選考寄りとして扱えば大丈夫です。",
   本選考: "内定に向けた通常選考です。ES締切、Webテスト、面接予定を中心に追います。",
   説明会: "説明会や企業理解イベントを置いておく枠です。応募するならあとで本選考に変えられます。",
@@ -34,6 +36,8 @@ const trackTypeHints = {
 };
 const trackTypeClassNames = {
   インターン: "intern",
+  夏インターン: "intern",
+  冬インターン: "intern",
   早期選考: "early",
   本選考: "main",
   説明会: "event",
@@ -1269,8 +1273,8 @@ function extractAiBlockCompany(block) {
 function stripAiTrackSuffix(value) {
   return String(value || "")
     .trim()
-    .replace(/\s*[（(【\[]\s*(?:インターン|早期選考|本選考|説明会|面談|OB\s*\/\s*OG訪問)\s*[）)】\]]\s*$/iu, "")
-    .replace(/\s*[-‐–—|｜/：:]\s*(?:インターン|早期選考|本選考|説明会|面談|OB\s*\/\s*OG訪問)\s*$/iu, "")
+    .replace(/\s*[（(【\[]\s*(?:(?:夏(?:季)?|冬(?:季)?|サマー|ウィンター)?\s*インターン|早期選考|本選考|説明会|面談|OB\s*\/\s*OG訪問)\s*[）)】\]]\s*$/iu, "")
+    .replace(/\s*[-‐–—|｜/：:]\s*(?:(?:夏(?:季)?|冬(?:季)?|サマー|ウィンター)?\s*インターン|早期選考|本選考|説明会|面談|OB\s*\/\s*OG訪問)\s*$/iu, "")
     .trim();
 }
 
@@ -1282,6 +1286,8 @@ function detectAiBlockTrack(value) {
   const text = String(value || "").normalize("NFKC");
   if (/OB\s*\/\s*OG訪問/iu.test(text)) return "OB/OG訪問";
   if (/早期選考/u.test(text)) return "早期選考";
+  if (/(?:夏(?:季)?|サマー|summer)\s*(?:の)?\s*(?:インターン|intern)/iu.test(text)) return "夏インターン";
+  if (/(?:冬(?:季)?|ウィンター|winter)\s*(?:の)?\s*(?:インターン|intern)/iu.test(text)) return "冬インターン";
   if (/インターン/u.test(text)) return "インターン";
   if (/説明会/u.test(text)) return "説明会";
   if (/面談/u.test(text)) return "面談";
@@ -2470,7 +2476,7 @@ function detailInfoLink(label, url, text) {
 }
 
 function renderDetailHandoff(entry) {
-  const nextTracks = entry.trackType === "インターン"
+  const nextTracks = ["インターン", "夏インターン", "冬インターン"].includes(entry.trackType)
     ? ["早期選考", "本選考"]
     : entry.trackType === "早期選考"
       ? ["本選考"]
@@ -2484,7 +2490,7 @@ function renderDetailHandoff(entry) {
     return;
   }
 
-  els.detailHandoffMessage.textContent = entry.trackType === "インターン"
+  els.detailHandoffMessage.textContent = ["インターン", "夏インターン", "冬インターン"].includes(entry.trackType)
     ? "インターンの記録を残したまま、早期選考または本選考を別枠で追加できます。"
     : `${entry.trackType}の記録を残したまま、本選考を別枠で追加できます。`;
 
@@ -4715,7 +4721,7 @@ function renderCompanyList() {
           <article class="company-compact-card" data-company-card data-company-id="${escapeAttribute(entry.id)}" title="${escapeAttribute(companyCardTitle(entry))}">
             <button class="company-compact-main" data-detail-id="${escapeAttribute(entry.id)}" type="button">
               ${companyIconMarkup(entry)}
-              <span>${escapeHtml(entry.companyName)}</span>
+              <span class="company-compact-copy"><span>${escapeHtml(entry.companyName)}</span>${trackTag(entry.trackType)}</span>
             </button>
           </article>
         `;
@@ -5763,7 +5769,7 @@ function getEntryCelebration(entry, existingEntry) {
     };
   }
 
-  if (entry.trackType === "インターン") {
+  if (["インターン", "夏インターン", "冬インターン"].includes(entry.trackType)) {
     return {
       title: ["インターン", "選考通過！"],
       message: `${entry.companyName}のインターン選考通過、おめでとう。次もこの勢いでいこう。`,
@@ -6367,7 +6373,7 @@ function companyColor(companyName) {
 function trackTag(trackType) {
   const label = trackType || "本選考";
   const className = trackTypeClassNames[label] || "event";
-  return `<span class="track-badge ${className}">${escapeHtml(label)}</span>`;
+  return `<span class="track-badge ${className}">${escapeHtml(label === "インターン" ? "未分類インターン" : label)}</span>`;
 }
 
 function statusTag(status) {

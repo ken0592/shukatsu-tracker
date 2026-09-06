@@ -2088,6 +2088,9 @@ button:disabled {
   white-space: nowrap;
 }
 
+.company-compact-copy { display: grid; min-width: 0; gap: 3px; }
+.company-compact-copy > .track-badge { justify-self: start; max-width: 100%; padding: 2px 5px; font-size: 10px; }
+
 .ai-import-plan-badge.existing {
   background: #e7f8ef;
   color: #17644f;

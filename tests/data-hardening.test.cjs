@@ -31,6 +31,8 @@ const context = vm.createContext({
   finishedStatuses: ["内定", "落選"],
   trackTypeHints: {
     インターン: "",
+    夏インターン: "",
+    冬インターン: "",
     早期選考: "",
     本選考: "",
     説明会: "",
@@ -200,4 +202,15 @@ test("cloud backup payloads include saved ordering only when requested", () => {
   assert.equal(helpers.toDbTemplate(template, { includeSortOrder: true }).sort_order, 3);
 });
 
-console.log("6 data hardening tests passed");
+test("seasonal tracks survive storage and cloud payload normalization", () => {
+  for (const trackType of ["夏インターン", "冬インターン", "インターン", "早期選考", "本選考"]) {
+    const original = { id: "season", companyName: "A社", trackType, memo: "残すメモ", esItems: [{ question: "設問", answer: "回答" }] };
+    const saved = helpers.normalizeEntry(JSON.parse(JSON.stringify(helpers.normalizeEntry(original))));
+    assert.equal(saved.trackType, trackType);
+    assert.equal(helpers.toDbEntry(saved).track_type, trackType);
+    assert.equal(saved.memo, "残すメモ");
+    assert.equal(saved.esItems[0].variants[0].answer, "回答");
+  }
+});
+
+console.log("7 data hardening tests passed");
