@@ -17,10 +17,12 @@ const companyNameCollator = new Intl.Collator("ja", {
   sensitivity: "base",
   numeric: true
 });
-const activeStatuses = ["気になる", "応募予定", "応募済み", "ES提出済み", "Webテスト", "一次面接", "二次面接", "最終面接", "結果待ち", "選考通過", "インターン選考通過", "インターン参加決定"];
-const finishedStatuses = ["内定", "落選", "辞退", "参加済み"];
-const celebrationStatuses = ["内定", "選考通過", "インターン選考通過", "インターン参加決定"];
-const rejectionStatuses = ["落選"];
+const simpleStatuses = ["気になる", "応募済み", "選考中", "採用", "不採用"];
+// Accept older records and backups without rewriting their original status.
+const activeStatuses = ["気になる", "応募予定", "応募済み", "ES提出済み", "Webテスト", "一次面接", "二次面接", "最終面接", "結果待ち", "選考通過", "インターン選考通過", "インターン参加決定", "選考中"];
+const finishedStatuses = ["内定", "落選", "辞退", "参加済み", "採用", "不採用"];
+const celebrationStatuses = ["内定", "選考通過", "インターン選考通過", "インターン参加決定", "採用"];
+const rejectionStatuses = ["落選", "不採用"];
 const sampleCompanyNames = ["株式会社サンプル商事", "ミライテック株式会社", "東都キャリア株式会社"];
 const initialCalendarDate = new Date();
 const commonIndustries = ["IT・通信", "メーカー", "商社", "金融", "コンサル", "広告・メディア", "人材", "不動産・建設", "インフラ", "小売・サービス","製薬"];
@@ -1882,7 +1884,7 @@ function aiCardMarkup(card, index, plan = buildAiImportPlan(card)) {
   const meta = [
     card.industry,
     card.trackType,
-    card.status,
+    simpleStatus(card.status),
     card.deadline ? `締切 ${formatDate(card.deadline)}` : "",
     card.eventDate ? `予定 ${formatDate(card.eventDate)}` : "",
     card.priority && card.priority !== "未定" ? `志望度 ${card.priority}` : ""
@@ -2396,7 +2398,7 @@ function openCompanyDetail(id) {
   els.detailCompanyMeta.textContent = [
     values.industry,
     values.trackType,
-    values.status,
+    simpleStatus(values.status),
     values.priority ? `志望度 ${values.priority}` : ""
   ].filter(Boolean).join(" ・ ");
   els.detailInterviewNotesInput.value = values.interviewNotes;
@@ -2466,7 +2468,7 @@ function renderDetailInfoSummary(entry) {
   const officialUrl = normalizeExternalUrl(entry.officialUrl);
   const mypageUrl = normalizeExternalUrl(entry.mypageUrl);
   const items = [
-    ["ステータス", entry.status],
+    ["ステータス", simpleStatus(entry.status)],
     ["種類", entry.trackType],
     ["志望度", entry.priority],
     ["締切", entry.deadline ? formatDate(entry.deadline) : "未設定"],
@@ -4594,7 +4596,7 @@ function renderEventList() {
           <div class="meta-row">
             <span>${formatDate(entry.eventDate)}</span>
             ${trackTag(entry.trackType)}
-            <span>${escapeHtml(entry.status)}</span>
+            <span>${escapeHtml(simpleStatus(entry.status))}</span>
           </div>
         </article>
       `;
@@ -4697,7 +4699,7 @@ function renderCompanyList() {
     els.companyList.innerHTML = emptyState(
       isTrashView
         ? "ゴミ箱は空です。ここに移動した企業は、必要になったら復元できます。"
-        : "条件に合う企業がありません。内定・落選の企業も「全部」または「結果済み」に残ります。"
+        : "条件に合う企業がありません。採用・不採用の企業も「すべて」または「結果済み」に残ります。"
     );
     return;
   }
@@ -4775,7 +4777,7 @@ function companyStatusPicker(entry) {
   return `<label class="company-status-control" aria-busy="${pending}">
     <span aria-hidden="true">${statusTag(entry.status)}</span>
     <select data-company-status="${escapeAttribute(entry.id)}" aria-label="${escapeAttribute(entry.companyName)}・${escapeAttribute(entry.trackType)}の進捗" title="進捗を変更" ${pending ? "disabled" : ""}>
-      ${[...activeStatuses, ...finishedStatuses].map((status) => `<option value="${escapeAttribute(status)}" ${status === entry.status ? "selected" : ""}>${escapeHtml(status)}</option>`).join("")}
+      ${simpleStatuses.map((status) => `<option value="${escapeAttribute(status)}" ${status === simpleStatus(entry.status) ? "selected" : ""}>${escapeHtml(status)}</option>`).join("")}
     </select>
   </label>`;
 }
@@ -4785,8 +4787,8 @@ async function handleCompanyStatusChange(control) {
   const status = control.value;
   const entry = state.entries.find((item) => item.id === id && !isTrashed(item));
   if (!entry || state.pendingStatusChanges.has(id)) return;
-  if (![...activeStatuses, ...finishedStatuses].includes(status) || status === entry.status) {
-    control.value = entry.status;
+  if (!simpleStatuses.includes(status) || status === simpleStatus(entry.status)) {
+    control.value = simpleStatus(entry.status);
     return;
   }
 
@@ -5119,7 +5121,7 @@ function fillEntryForm(entry) {
   setFormValue("logoUrl", entry ? values.logoUrl : "");
   setFormValue("mypageUrl", entry ? values.mypageUrl : "");
   setFormValue("trackType", values.trackType);
-  setFormValue("status", values.status);
+  setFormValue("status", simpleStatus(values.status));
   setFormValue("deadline", entry ? values.deadline : "");
   setFormValue("eventDate", entry ? values.eventDate : "");
   setFormValue("eventType", values.eventType);
@@ -5853,9 +5855,9 @@ function saveMascotPosition() {
 
 function getEntryCelebration(entry, existingEntry) {
   if (!celebrationStatuses.includes(entry.status) && !rejectionStatuses.includes(entry.status)) return null;
-  if (existingEntry && existingEntry.status === entry.status) return null;
+  if (existingEntry && simpleStatus(existingEntry.status) === simpleStatus(entry.status)) return null;
 
-  if (entry.status === "落選") {
+  if (["落選", "不採用"].includes(entry.status)) {
     return {
       eyebrow: "Not the End",
       title: "なんて見る目のない企業なの！！",
@@ -5866,11 +5868,11 @@ function getEntryCelebration(entry, existingEntry) {
     };
   }
 
-  if (entry.status === "内定") {
+  if (["内定", "採用"].includes(entry.status)) {
     return {
-      title: "内定おめでとう！！！",
+      title: "採用おめでとう！",
       message: `${entry.companyName}、本当におめでとう。ここまで積み上げた準備と粘り、ちゃんと届いた。`,
-      bubble: "内定だー！",
+      bubble: "採用だー！",
       mood: "normal"
     };
   }
@@ -6234,6 +6236,7 @@ function matchesSearchQuery(entry) {
     entry.industry,
     entry.trackType,
     entry.status,
+    simpleStatus(entry.status),
     entry.priority,
     entry.mypageId,
     entry.officialUrl,
@@ -6300,12 +6303,12 @@ function calendarItemsFor(dateKey) {
 
 function isActive(entry) {
   if (isTrashed(entry)) return false;
-  return activeStatuses.includes(entry.status) || !finishedStatuses.includes(entry.status);
+  return !["採用", "不採用"].includes(simpleStatus(entry.status));
 }
 
 function isFinished(entry) {
   if (isTrashed(entry)) return false;
-  return finishedStatuses.includes(entry.status);
+  return ["採用", "不採用"].includes(simpleStatus(entry.status));
 }
 
 function activeEntries() {
@@ -6500,12 +6503,22 @@ function trackTag(trackType) {
   return `<span class="track-badge ${className}">${escapeHtml(label === "インターン" ? "未分類インターン" : label)}</span>`;
 }
 
+function simpleStatus(status) {
+  if (simpleStatuses.includes(status)) return status;
+  if (["内定", "インターン選考通過", "インターン参加決定", "参加済み"].includes(status)) return "採用";
+  if (["落選", "辞退"].includes(status)) return "不採用";
+  if (status === "ES提出済み") return "応募済み";
+  if (["Webテスト", "一次面接", "二次面接", "最終面接", "結果待ち", "選考通過"].includes(status)) return "選考中";
+  return "気になる";
+}
+
 function statusTag(status) {
-  const className = ["落選", "辞退"].includes(status)
+  status = simpleStatus(status);
+  const className = status === "不採用"
     ? "red"
-    : ["内定", "参加済み", "選考通過", "インターン選考通過", "インターン参加決定"].includes(status)
+    : status === "採用"
       ? "green"
-      : ["結果待ち", "Webテスト"].includes(status)
+      : status === "選考中"
         ? "yellow"
         : "";
 
