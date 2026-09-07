@@ -153,8 +153,8 @@
               </div>
             </div>
             <div class="track-guide" aria-label="選考タイプの使い分け">
-              <span><strong>夏・冬インターン</strong>同じ企業でも別カードで管理</span>
-              <span><strong>未分類インターン</strong>「編集」の「種類」から夏・冬に変更</span>
+              <span><strong>企業ごとに1枚</strong>中に夏・冬インターンや各選考を追加</span>
+              <span><strong>選考ごとの記録</strong>ES・メモ・進捗を切り替えて管理</span>
               <span><strong>早期選考</strong>インターン後などの早い本選考</span>
               <span><strong>本選考</strong>内定に向けた通常選考</span>
             </div>
@@ -162,6 +162,10 @@
               <button class="secondary-button small-button" id="bulkIconButton" type="button" aria-describedby="bulkIconStatus">未設定アイコンを一括設定</button>
               <button class="secondary-button small-button" id="cancelBulkIconButton" type="button" hidden>途中で止める</button>
               <p id="bulkIconStatus" role="status" aria-live="polite"></p>
+            </div>
+            <div class="bulk-icon-controls" id="legacySummerControls" hidden>
+              <button class="secondary-button small-button" id="moveLegacySummerButton" type="button">未分類を夏インターンへまとめる</button>
+              <p id="legacySummerStatus" role="status"></p>
             </div>
             <div class="search-controls" aria-label="検索条件">
               <label>
@@ -486,6 +490,13 @@
       </form>
     </dialog>
 
+    <dialog class="entry-dialog" id="addBranchDialog" aria-labelledby="addBranchTitle">
+      <div class="form-heading"><h2 id="addBranchTitle">企業内に選考を追加</h2><button class="icon-button" id="closeAddBranchButton" type="button" aria-label="閉じる">×</button></div>
+      <p>企業情報を引き継ぎ、ES・メモ・進捗はこの選考用に作ります。</p>
+      <div class="branch-choices" id="addBranchChoices"></div>
+      <p class="field-hint">登録済みの種類は追加できません。ゴミ箱にある選考は復元して使えます。</p>
+    </dialog>
+
     <dialog class="detail-dialog" id="companyDetailDialog">
       <form class="detail-form" id="companyDetailForm" method="dialog">
         <div class="form-heading detail-heading">
@@ -497,6 +508,10 @@
           <button class="icon-button" id="closeDetailButton" type="button" aria-label="閉じる">×</button>
         </div>
 
+        <section class="company-branch-navigation" aria-label="この企業の選考">
+          <div id="detailBranchNavigation" class="branch-choices"></div>
+          <p class="field-hint">選考を切り替えると、編集中のES・メモを自動保存します。</p>
+        </section>
         <div class="detail-tabs" role="tablist" aria-label="企業詳細の表示切り替え">
           <button class="detail-tab active" id="detailBasicTab" data-detail-tab="basic" type="button" role="tab" aria-selected="true" aria-controls="detailBasicPanel">基本情報</button>
           <button class="detail-tab" id="detailEsTab" data-detail-tab="es" type="button" role="tab" aria-selected="false" aria-controls="detailEsPanel">具体的なES</button>
@@ -579,7 +594,7 @@
         </div>
 
         <div class="form-actions">
-          <button class="secondary-button" id="openBasicEditButton" type="button">基本情報を編集</button>
+          <button class="secondary-button" id="openBasicEditButton" type="button">この選考の情報を編集</button>
           <button class="primary-button" id="saveDetailButton" type="submit">詳細を保存</button>
         </div>
       </form>
@@ -677,6 +692,7 @@
     <script src="./quotes.js"></script>
     <script src="./ai.js"></script>
     <script src="./company-icons.js"></script>
+    <script src="./company-groups.js"></script>
     <script src="./csv-import.js"></script>
     <script src="./app.js"></script>
   </body>

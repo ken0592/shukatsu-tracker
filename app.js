@@ -26,7 +26,7 @@ const initialCalendarDate = new Date();
 const commonIndustries = ["IT・通信", "メーカー", "商社", "金融", "コンサル", "広告・メディア", "人材", "不動産・建設", "インフラ", "小売・サービス","製薬"];
 const trackTypeHints = {
   インターン: "時期が未設定、または夏・冬以外のインターンです。夏・冬が決まっていれば種類を変更できます。",
-  夏インターン: "夏インターンの応募・ES・面接をまとめます。同じ企業の冬インターンは別カードで登録できます。",
+  夏インターン: "この企業の夏インターンの応募・ES・面接をまとめます。冬インターンは企業内に別の選考として追加できます。",
   冬インターン: "冬インターンの応募・ES・面接をまとめます。夏インターンの記録と分けて管理できます。",
   早期選考: "インターン後など、通常より早く進む本選考です。迷ったら本選考寄りとして扱えば大丈夫です。",
   本選考: "内定に向けた通常選考です。ES締切、Webテスト、面接予定を中心に追います。",
@@ -98,6 +98,7 @@ const supabaseClient = hasCloudConfig
 const state = {
   entries: [],
   bulkIcons: null,
+  summerMigration: null,
   templates: [],
   filter: "all",
   searchQuery: "",
@@ -282,6 +283,13 @@ const els = {
   mascotHelpSubmitButton: document.querySelector("#mascotHelpSubmitButton"),
   clearMascotChatButton: document.querySelector("#clearMascotChatButton"),
   mascotHelpLog: document.querySelector("#mascotHelpLog"),
+  addBranchDialog: document.querySelector("#addBranchDialog"),
+  addBranchTitle: document.querySelector("#addBranchTitle"),
+  addBranchChoices: document.querySelector("#addBranchChoices"),
+  detailBranchNavigation: document.querySelector("#detailBranchNavigation"),
+  legacySummerControls: document.querySelector("#legacySummerControls"),
+  moveLegacySummerButton: document.querySelector("#moveLegacySummerButton"),
+  legacySummerStatus: document.querySelector("#legacySummerStatus"),
   toast: document.querySelector("#toast")
 };
 
@@ -351,6 +359,8 @@ bindEvents();
 init();
 
 function bindEvents() {
+  document.querySelector("#closeAddBranchButton").addEventListener("click", () => els.addBranchDialog.close());
+  els.moveLegacySummerButton.addEventListener("click", handleSummerMigration);
   els.bulkIconButton.addEventListener("click", handleBulkIcons);
   els.cancelBulkIconButton.addEventListener("click", () => {
     state.bulkIcons?.controller.abort();
@@ -609,6 +619,12 @@ function bindEvents() {
       return;
     }
 
+    const switchBranch = event.target.closest("[data-switch-branch]");
+    if (switchBranch) { void switchCompanyBranch(switchBranch.dataset.switchBranch); return; }
+    const addBranch = event.target.closest("[data-add-company-track]");
+    if (addBranch) { void openBranchChooser(addBranch.dataset.addCompanyTrack); return; }
+    const newBranch = event.target.closest("[data-new-company-track]");
+    if (newBranch) { createCompanyBranch(newBranch.dataset.sourceId, newBranch.dataset.newCompanyTrack); return; }
     const detailButton = event.target.closest("[data-detail-id]");
     if (detailButton) {
       openCompanyDetail(detailButton.dataset.detailId);
@@ -755,6 +771,8 @@ async function init() {
 function clearUserScopedUiState(options = {}) {
   state.bulkIcons?.controller.abort();
   state.bulkIcons = null;
+  state.summerMigration = null;
+  if (els.addBranchDialog.open) els.addBranchDialog.close();
   state.userScopeVersion += 1;
   state.entries = [];
   state.templates = [];
@@ -2125,6 +2143,7 @@ async function handleEntrySubmit(event) {
     } else if (returnToImport) {
       openAiImportDialog({ focusResults: true });
     }
+    if (draftKind === "branch") openCompanyDetail(savedEntry.id);
     if (celebration) {
       showCelebration(savedEntry, celebration);
     } else if (handoffTrack) {
@@ -2381,6 +2400,7 @@ function openCompanyDetail(id) {
   state.detailEsMode = values.esItems.length > 0 ? "read" : "edit";
   renderDetailInfoSummary(values);
   renderDetailHandoff(values);
+  renderDetailBranches(values);
   renderDetailEsItems(values.esItems.length > 0 ? values.esItems : [createEsItem()]);
   renderTemplateOptions();
   setDetailTab(state.detailTab);
@@ -3340,6 +3360,7 @@ async function handleDetailSubmit(event) {
     closeCompanyDetail();
     render();
     showToast("詳細を保存しました。");
+    return true;
   } finally {
     if (!saveScope || isCurrentUserScope(saveScope)) {
       state.detailSavePending = false;
@@ -3353,11 +3374,11 @@ function updateDetailSaveButton() {
   els.saveDetailButton.textContent = state.detailSavePending ? "安全に保存中..." : "詳細を保存";
 }
 
-function handleOpenBasicEditFromDetail() {
-  const entry = state.entries.find((item) => item.id === state.detailEditingId);
-  if (!entry) return;
-  closeCompanyDetail();
-  openEntryDialog(entry);
+async function handleOpenBasicEditFromDetail() {
+  const id = state.detailEditingId;
+  if (!await prepareBranchNavigation()) return;
+  const entry = state.entries.find((item) => item.id === id);
+  if (entry) openEntryDialog(entry);
 }
 
 function esDraftCountText(question, variant) {
@@ -4506,13 +4527,13 @@ function updateCompanyFilterButtons() {
 }
 
 function countEntriesForListFilter(filter) {
-  return state.entries
+  const entries = state.entries
     .filter((entry) => matchesStandaloneListFilter(entry, filter))
     .filter(matchesSearchQuery)
     .filter(matchesIndustryFilter)
     .filter(matchesDeadlineFilter)
-    .filter(matchesPriorityFilter)
-    .length;
+    .filter(matchesPriorityFilter);
+  return filter === trashFilterValue ? entries.length : window.SHUKATSU_GROUPS.group(entries).length;
 }
 
 function matchesStandaloneListFilter(entry, filter) {
@@ -4643,6 +4664,7 @@ async function handleBulkIcons() {
 
 function renderCompanyList() {
   renderBulkIcons();
+  renderSummerMigration();
   const isTrashView = state.filter === trashFilterValue;
   const trashEntries = trashedEntries();
   const isCompact = !isTrashView && state.companyViewMode === "compact";
@@ -4714,105 +4736,130 @@ function renderCompanyList() {
     return;
   }
 
-  if (isCompact) {
-    els.companyList.innerHTML = entries
-      .map((entry) => {
-        return `
-          <article class="company-compact-card" data-company-card data-company-id="${escapeAttribute(entry.id)}" title="${escapeAttribute(companyCardTitle(entry))}">
-            <button class="company-compact-main" data-detail-id="${escapeAttribute(entry.id)}" type="button">
-              ${companyIconMarkup(entry)}
-              <span class="company-compact-copy"><span>${escapeHtml(entry.companyName)}</span>${trackTag(entry.trackType)}</span>
-            </button>
-          </article>
-        `;
-      })
-      .join("");
-    return;
+  renderCompanyGroups(entries);
+}
+
+function renderCompanyGroups(visibleEntries) {
+  const model = window.SHUKATSU_GROUPS;
+  const groups = model.group(visibleEntries);
+  const visibleIds = new Set(visibleEntries.map((entry) => entry.id));
+  els.companyList.innerHTML = groups.map((group) => {
+    const source = group.entries[0];
+    const branches = model.branches(state.entries, source);
+    const icon = branches.find((entry) => entry.logoUrl) || source;
+    const available = model.availableTracks(state.entries, source);
+    return `<article class="company-card company-group-card" data-company-card data-company-id="${escapeAttribute(source.id)}">
+      <div class="company-group-heading">
+        <button class="company-group-open" data-detail-id="${escapeAttribute(source.id)}" type="button">
+          ${companyIconMarkup(icon)}<span><strong>${escapeHtml(source.companyName)}</strong><small>${branches.length}選考${source.industry ? ` ・ ${escapeHtml(source.industry)}` : ""}</small></span>
+        </button>
+        <button class="secondary-button small-button" data-add-company-track="${escapeAttribute(source.id)}" type="button" ${available.length ? "" : "disabled"}>＋選考</button>
+      </div>
+      <div class="company-branches" role="group" aria-label="${escapeAttribute(source.companyName)}の選考">
+        ${branches.map((entry) => `<button class="company-branch ${state.filter !== "all" && visibleIds.has(entry.id) ? "is-filter-match" : ""}" data-detail-id="${escapeAttribute(entry.id)}" type="button">
+          ${trackTag(entry.trackType)}${statusTag(entry.status)}
+          ${entry.deadline ? `<small>${formatDate(entry.deadline)} 締切</small>` : ""}
+          ${entry.eventDate ? `<small>${formatDate(entry.eventDate)} ${escapeHtml(entry.eventType || "予定")}</small>` : ""}
+        </button>`).join("")}
+      </div>
+    </article>`;
+  }).join("");
+}
+
+function renderDetailBranches(entry) {
+  const model = window.SHUKATSU_GROUPS;
+  els.detailBranchNavigation.innerHTML = model.branches(state.entries, entry).map((branch) =>
+    `<button class="secondary-button small-button" data-switch-branch="${escapeAttribute(branch.id)}" aria-pressed="${branch.id === entry.id}" type="button">${escapeHtml(branch.trackType === "インターン" ? "未分類インターン" : branch.trackType)}</button>`
+  ).join("") + `<button class="secondary-button small-button" data-add-company-track="${escapeAttribute(entry.id)}" type="button" ${model.availableTracks(state.entries, entry).length ? "" : "disabled"}>＋選考を追加</button>`;
+}
+
+async function prepareBranchNavigation() {
+  if (state.detailSavePending) return false;
+  if (!els.companyDetailDialog.open) return true;
+  const scope = captureUserScope();
+  const base = state.detailBaseEntry;
+  const esItems = collectDetailEsItems();
+  const changed = base && (JSON.stringify(esItems) !== JSON.stringify(base.esItems)
+    || els.detailMemoInput.value.trim() !== base.memo
+    || els.detailInterviewNotesInput.value.trim() !== base.interviewNotes);
+  if (changed) return Boolean(await handleDetailSubmit({ preventDefault() {} })) && isCurrentUserScope(scope);
+  closeCompanyDetail();
+  return isCurrentUserScope(scope);
+}
+
+async function switchCompanyBranch(id) {
+  if (id === state.detailEditingId) return;
+  if (!await prepareBranchNavigation()) return;
+  if (state.entries.some((entry) => entry.id === id && !isTrashed(entry))) openCompanyDetail(id);
+}
+
+async function openBranchChooser(id) {
+  if (!await prepareBranchNavigation()) return;
+  const entry = state.entries.find((item) => item.id === id && !isTrashed(item));
+  if (!entry) return;
+  const available = window.SHUKATSU_GROUPS.availableTracks(state.entries, entry);
+  els.addBranchTitle.textContent = `${entry.companyName}に選考を追加`;
+  els.addBranchChoices.innerHTML = window.SHUKATSU_GROUPS.tracks.map((track) =>
+    `<button class="secondary-button" data-new-company-track="${escapeAttribute(track)}" data-source-id="${escapeAttribute(id)}" type="button" ${available.includes(track) ? "" : "disabled"}>${escapeHtml(track)}${available.includes(track) ? "" : "（登録済み）"}</button>`
+  ).join("");
+  els.addBranchDialog.showModal();
+}
+
+function createCompanyBranch(id, track) {
+  const source = state.entries.find((entry) => entry.id === id && !isTrashed(entry));
+  if (!source || !window.SHUKATSU_GROUPS.availableTracks(state.entries, source).includes(track)) return;
+  const draft = window.SHUKATSU_GROUPS.branchDraft(source, track, createId(), new Date().toISOString());
+  els.addBranchDialog.close();
+  openEntryDialog(null, { draft, isBranch: true });
+}
+
+function renderSummerMigration() {
+  const count = activeEntries().filter((entry) => entry.trackType === "インターン").length;
+  const job = state.summerMigration;
+  els.legacySummerControls.hidden = (!count && !job) || (state.mode === "cloud" && !state.session);
+  els.moveLegacySummerButton.hidden = !count && !job?.running;
+  els.moveLegacySummerButton.disabled = Boolean(job?.running || state.loading || !count);
+  els.moveLegacySummerButton.textContent = job?.running ? "夏インターンへ移動中…" : `未分類${count}件を夏インターンへまとめる`;
+  els.legacySummerStatus.textContent = job
+    ? `${job.running ? "移動中" : "移動結果"}：${job.saved}件を夏インターンに変更。${job.skipped}件は変更済み・重複のためスキップ。${job.error || ""}`
+    : "ES・メモ・進捗をそのまま残し、企業内の夏インターンへ一括で移します。";
+}
+
+async function handleSummerMigration() {
+  if (state.summerMigration?.running || state.loading || (state.mode === "cloud" && !state.session)) return;
+  const scope = captureUserScope();
+  const job = { running: true, saved: 0, skipped: 0, error: "" };
+  state.summerMigration = job;
+  const ids = activeEntries().filter((entry) => entry.trackType === "インターン").map((entry) => entry.id);
+  renderSummerMigration();
+  try {
+    for (const id of ids) {
+      if (!isCurrentUserScope(scope)) return;
+      const entry = state.entries.find((item) => item.id === id);
+      if (!window.SHUKATSU_GROUPS.canMoveToSummer(state.entries, entry)) { job.skipped++; continue; }
+      let saved = { ...entry, trackType: "夏インターン", updatedAt: new Date().toISOString() };
+      if (state.mode === "cloud") {
+        if (!entry.updatedAt) { job.skipped++; continue; }
+        const { data, error } = await supabaseClient.from("entries").update({ track_type: "夏インターン" })
+          .eq("id", id).eq("user_id", scope.userId).eq("track_type", "インターン").eq("updated_at", entry.updatedAt).select("*");
+        if (!isCurrentUserScope(scope)) return;
+        if (error?.code === "23505") { job.skipped++; continue; }
+        if (error) throw new Error("保存できなかったため停止しました。同期更新して再実行できます。");
+        if (data?.length !== 1) { job.skipped++; continue; }
+        saved = fromDbEntry(data[0]);
+      }
+      const next = state.entries.map((item) => item === entry ? saved : item);
+      if (state.mode === "local" && !saveLocalEntries(next)) throw new Error("端末に保存できなかったため停止しました。");
+      state.entries = next;
+      job.saved++;
+      renderCompanyList();
+    }
+  } catch (error) {
+    job.error = error.message;
+  } finally {
+    job.running = false;
+    if (state.summerMigration === job && isCurrentUserScope(scope)) render();
   }
-
-  if (isMedium) {
-    els.companyList.innerHTML = entries
-      .map((entry) => {
-        const officialUrl = normalizeExternalUrl(entry.officialUrl);
-        const mypageUrl = normalizeExternalUrl(entry.mypageUrl);
-        const mediumLinks = [
-          officialUrl ? `<a class="mypage-link medium-link" href="${escapeAttribute(officialUrl)}" target="_blank" rel="noopener noreferrer">公式</a>` : "",
-          mypageUrl ? `<a class="mypage-link medium-link" href="${escapeAttribute(mypageUrl)}" target="_blank" rel="noopener noreferrer">マイページ</a>` : ""
-        ].filter(Boolean).join("");
-
-        return `
-          <article class="company-medium-card" data-company-card data-company-id="${escapeAttribute(entry.id)}">
-            <div class="company-medium-main">
-              ${companyIconMarkup(entry)}
-              <div>
-                <strong>${escapeHtml(entry.companyName)}</strong>
-                <div class="meta-row">
-                  ${trackTag(entry.trackType)}
-                  ${statusTag(entry.status)}
-                  ${entry.industry ? `<span>${escapeHtml(entry.industry)}</span>` : ""}
-                </div>
-              </div>
-            </div>
-            <div class="company-medium-details">
-              <span>予定の内容 ${escapeHtml(entry.eventType || "未設定")}</span>
-              ${entry.deadline ? `<span>${formatDate(entry.deadline)} 締切</span>` : ""}
-              ${entry.eventDate ? `<span>${formatDate(entry.eventDate)} 予定</span>` : ""}
-              <span>志望度 ${escapeHtml(entry.priority)}</span>
-            </div>
-            ${mediumLinks ? `<div class="company-medium-links">${mediumLinks}</div>` : ""}
-            ${nextActionMarkup(entry, "compact")}
-            <div class="company-medium-actions">
-              <button class="detail-button" data-detail-id="${escapeAttribute(entry.id)}" type="button">詳細</button>
-              <button class="edit-button" data-edit-id="${escapeAttribute(entry.id)}" type="button">編集</button>
-            </div>
-          </article>
-        `;
-      })
-      .join("");
-    return;
-  }
-
-  els.companyList.innerHTML = entries
-    .map((entry) => {
-      const officialUrl = normalizeExternalUrl(entry.officialUrl);
-      const mypageUrl = normalizeExternalUrl(entry.mypageUrl);
-      return `
-        <article class="company-card" data-company-card data-company-id="${escapeAttribute(entry.id)}">
-          <div class="company-title-row">
-            <div class="company-identity">
-              ${companyIconMarkup(entry)}
-              <div>
-                <strong>${escapeHtml(entry.companyName)}</strong>
-                <div class="meta-row">
-                  ${entry.industry ? `<span>${escapeHtml(entry.industry)}</span>` : ""}
-                  ${trackTag(entry.trackType)}
-                  <span>予定 ${escapeHtml(entry.eventType || "未設定")}</span>
-                  <span>志望度 ${escapeHtml(entry.priority)}</span>
-                </div>
-              </div>
-            </div>
-            <div class="card-actions">
-              <button class="detail-button" data-detail-id="${escapeAttribute(entry.id)}" type="button">詳細</button>
-              <button class="edit-button" data-edit-id="${escapeAttribute(entry.id)}" type="button">編集</button>
-              <button class="delete-button" data-delete-id="${escapeAttribute(entry.id)}" type="button">削除</button>
-            </div>
-          </div>
-          <div class="meta-row">
-            ${statusTag(entry.status)}
-            ${entry.deadline ? `<span>${formatDate(entry.deadline)} 締切</span>` : ""}
-            ${entry.eventDate ? `<span>${formatDate(entry.eventDate)} 予定</span>` : ""}
-          </div>
-          ${nextActionMarkup(entry)}
-          ${entry.mypageId ? `<div class="credential-line"><strong>マイページID</strong><span>${escapeHtml(entry.mypageId)}</span></div>` : ""}
-          ${officialUrl ? `<a class="mypage-link" href="${escapeAttribute(officialUrl)}" target="_blank" rel="noopener noreferrer">企業公式サイトを開く</a>` : ""}
-          ${mypageUrl ? `<a class="mypage-link" href="${escapeAttribute(mypageUrl)}" target="_blank" rel="noopener noreferrer">企業マイページを開く</a>` : ""}
-          ${esPreviewBlock(entry)}
-          ${entry.interviewNotes ? noteBlock("面接対策", entry.interviewNotes) : ""}
-          ${entry.memo ? `<p class="memo">${escapeHtml(entry.memo)}</p>` : ""}
-        </article>
-      `;
-    })
-    .join("");
 }
 
 function setCompanyViewMode(viewMode) {
@@ -4973,6 +5020,11 @@ function openEntryDialog(entry = null, options = {}) {
       : "企業・選考を追加";
   els.deleteEntryButton.hidden = !entry || options.isAiMerge || options.isAiConflict;
   fillEntryForm(options.isAiMerge ? draft : entry || draft);
+  els.entryForm.elements.companyName.readOnly = Boolean(options.isBranch);
+  if (options.isBranch) {
+    state.entryDraftKind = "branch";
+    els.entryFormTitle.textContent = `${draft.companyName} / ${draft.trackType}を追加`;
+  }
   const conflictMarkup = importConflictDetailsMarkup(conflictDetails, { embedded: true });
   els.entryImportConflictNotice.innerHTML = conflictMarkup;
   els.entryImportConflictNotice.hidden = !conflictMarkup;
@@ -5024,6 +5076,7 @@ function resetEntryForm() {
   els.entryImportConflictNotice.textContent = "";
   els.entryImportConflictNotice.hidden = true;
   els.entryForm.reset();
+  els.entryForm.elements.companyName.readOnly = false;
   els.entryFormTitle.textContent = "企業・選考を追加";
   els.deleteEntryButton.hidden = true;
   updateEntrySaveButton();

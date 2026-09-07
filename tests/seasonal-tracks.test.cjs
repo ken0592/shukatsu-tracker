@@ -7,7 +7,7 @@ const csv = require("../csv-import.js");
 const app = fs.readFileSync(require.resolve("../app.js"), "utf8");
 const types = ["夏インターン", "冬インターン", "インターン", "早期選考", "本選考"];
 function appHelpers() {
-  const context = { state: { entries: types.map((trackType, id) => ({ id, companyName: "A社", trackType })), filter: "all" },
+  const context = { window: { SHUKATSU_GROUPS: require("../company-groups.js") }, state: { entries: types.map((trackType, id) => ({ id, companyName: "A社", trackType })), filter: "all" },
     trashFilterValue: "trash", isTrashed: (e) => Boolean(e.deletedAt), isActive: () => true, isFinished: () => false,
     matchesSearchQuery: () => true, matchesIndustryFilter: () => true, matchesDeadlineFilter: () => true, matchesPriorityFilter: () => true,
     escapeHtml: (s) => s, escapeAttribute: (s) => s, normalizeCompanyName: (s) => s,
@@ -32,7 +32,7 @@ test("種類ごとの表示と件数が一致し、ゴミ箱のカードが混�
     assert.equal(h.countEntriesForListFilter(type), 1);
     assert.match(h.trackTag(type), new RegExp(type === "インターン" ? "未分類インターン" : type));
   }
-  assert.equal(h.countEntriesForListFilter("all"), 5);
+  assert.equal(h.countEntriesForListFilter("all"), 1);
   assert.equal(h.countEntriesForListFilter("trash"), 1);
   h.matchesSearchQuery = () => false;
   assert.equal(h.countEntriesForListFilter("夏インターン"), 0);

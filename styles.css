@@ -2091,6 +2091,26 @@ button:disabled {
 .company-compact-copy { display: grid; min-width: 0; gap: 3px; }
 .company-compact-copy > .track-badge { justify-self: start; max-width: 100%; padding: 2px 5px; font-size: 10px; }
 
+.company-group-card { min-width: 0; padding: 14px; align-content: start; align-self: start; }
+.company-group-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.company-group-open { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0; border: 0; background: none; text-align: left; color: inherit; cursor: pointer; }
+.company-group-open > span { min-width: 0; overflow-wrap: anywhere; }
+.company-group-open strong, .company-group-open small { display: block; }
+.company-group-open small { color: var(--muted); font-size: 11px; }
+.company-branches { display: grid; gap: 6px; margin: 10px 0 0 16px; padding-left: 12px; border-left: 2px solid var(--line); }
+.company-branch { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; padding: 8px; border: 1px solid var(--line); border-radius: 7px; background: #fff; text-align: left; cursor: pointer; }
+.company-branch::before { content: ""; position: absolute; left: -14px; width: 12px; border-top: 2px solid var(--line); }
+.company-branch small { font-size: 11px; color: var(--muted); }
+.company-branch.is-filter-match, .branch-choices button[aria-pressed="true"] { border-color: var(--blue); background: #eef5ff; }
+.company-list.compact-view .company-group-card { padding: 8px; }
+.company-list.compact-view .company-branches { margin-left: 4px; padding-left: 8px; }
+.company-list.compact-view .company-branch { padding: 5px; gap: 4px; }
+.company-list.compact-view .company-branch::before { left: -10px; width: 8px; }
+.company-list.compact-view .company-branch .track-badge { font-size: 10px; }
+.company-list.compact-view .company-group-open { font-size: 12px; }
+.branch-choices { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.company-branch-navigation { padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+
 .ai-import-plan-badge.existing {
   background: #e7f8ef;
   color: #17644f;
@@ -3139,3 +3159,6 @@ textarea {
 .company-icon-candidate > div { flex: 1 1 140px; min-width: 0; }
 .company-icon-candidate strong, .company-icon-candidate span { display: block; }
 .company-icon-candidate strong { color: var(--text); }
+
+.wide-panel > .panel-heading { flex-wrap: wrap; }
+.wide-panel > .panel-heading > h2 { flex-shrink: 0; white-space: nowrap; }
