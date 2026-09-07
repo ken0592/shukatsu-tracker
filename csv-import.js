@@ -20,7 +20,7 @@
     "結果待ち", "選考通過", "インターン選考通過", "インターン参加決定", "内定", "落選", "辞退", "参加済み", "選考中", "採用", "不採用"
   ];
   const eventTypes = ["", "ES締切", "Webテスト", "面接", "説明会", "面談", "インターン", "その他"];
-  const priorities = ["高", "中", "低", "未定"];
+  const priorities = ["最優先", "高", "中", "低", "未定"];
   const cardFields = [
     "companyName", "industry", "mypageId", "officialUrl", "logoUrl", "trackType", "status", "deadline",
     "eventDate", "eventType", "priority", "mypageUrl", "esContent", "interviewNotes", "memo"
@@ -729,7 +729,8 @@
   function normalizePriority(value) {
     const text = cleanSingleLine(value, 120).normalize("NFKC");
     if (priorities.includes(text)) return text;
-    if (/^(?:高い?|第一志望|1|a)$/iu.test(text)) return "高";
+    if (/^(?:第一志望|第1志望|最重要|s)$/iu.test(text)) return "最優先";
+    if (/^(?:高い?|1|a)$/iu.test(text)) return "高";
     if (/^(?:中|普通|2|b)$/iu.test(text)) return "中";
     if (/^(?:低い?|3|c)$/iu.test(text)) return "低";
     return "未定";

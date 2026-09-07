@@ -11,11 +11,11 @@ function appHelpers() {
     trashFilterValue: "trash", isTrashed: (e) => Boolean(e.deletedAt), isActive: () => true, isFinished: () => false,
     matchesSearchQuery: () => true, matchesIndustryFilter: () => true, matchesDeadlineFilter: () => true, matchesPriorityFilter: () => true,
     escapeHtml: (s) => s, escapeAttribute: (s) => s, normalizeCompanyName: (s) => s,
-    els: { detailHandoffSection: {}, detailHandoffMessage: {}, detailHandoffActions: {} } };
+    els: {} };
   context.activeEntries = () => context.state.entries.filter((e) => !e.deletedAt);
   vm.createContext(context);
   vm.runInContext(app.slice(app.indexOf("const trackTypeHints ="), app.indexOf("const entryMergeFields =")), context);
-  for (const name of ["matchesListFilter", "matchesStandaloneListFilter", "countEntriesForListFilter", "renderDetailHandoff", "trackTag", "detectAiBlockTrack", "stripAiTrackSuffix"]) {
+  for (const name of ["matchesListFilter", "matchesStandaloneListFilter", "countEntriesForListFilter", "trackTag", "detectAiBlockTrack", "stripAiTrackSuffix"]) {
     const tail = app.slice(app.indexOf(`function ${name}(`));
     const end = tail.slice(1).search(/\n(?:async )?function /);
     vm.runInContext(tail.slice(0, end + 1), context);
@@ -36,17 +36,6 @@ test("種類ごとの表示と件数が一致し、ゴミ箱のカードが混�
   assert.equal(h.countEntriesForListFilter("trash"), 1);
   h.matchesSearchQuery = () => false;
   assert.equal(h.countEntriesForListFilter("夏インターン"), 0);
-});
-
-test("夏・冬からも記録を残して早期選考・本選考へ引き継げる", () => {
-  const h = appHelpers();
-  h.state.entries = [];
-  for (const type of ["夏インターン", "冬インターン"]) {
-    h.renderDetailHandoff({ id: "source", companyName: "A社", trackType: type });
-    assert.equal(h.els.detailHandoffSection.hidden, false);
-    assert.match(h.els.detailHandoffActions.innerHTML, /早期選考へ引き継ぐ/);
-    assert.match(h.els.detailHandoffActions.innerHTML, /本選考へ引き継ぐ/);
-  }
 });
 
 test("CSVの夏冬を別カードとして保持し、予定の種類はインターンのまま", () => {

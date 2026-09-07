@@ -170,13 +170,7 @@
             <div class="search-controls" aria-label="検索条件">
               <label>
                 キーワード
-                <input id="companySearchInput" type="search" placeholder="企業名、業種、メモで検索" />
-              </label>
-              <label>
-                業種
-                <select id="industryFilterInput">
-                  <option value="all">すべて</option>
-                </select>
+                <input id="companySearchInput" type="search" placeholder="企業名、メモで検索" />
               </label>
               <label>
                 締切
@@ -193,10 +187,11 @@
                 志望度
                 <select id="priorityFilterInput">
                   <option value="all">すべて</option>
+                  <option>最優先</option>
                   <option>高</option>
                   <option>中</option>
                   <option>低</option>
-                  <option>未定</option>
+                  <option value="未定">未設定</option>
                 </select>
               </label>
               <button class="secondary-button" id="clearFiltersButton" type="button">条件クリア</button>
@@ -336,17 +331,10 @@
           <input id="companyNameInput" name="companyName" required placeholder="例: 株式会社サンプル" />
         </label>
 
-        <div class="field-grid">
-          <label>
-            業種（自由入力）
-            <input id="industryInput" name="industry" list="industryOptions" placeholder="例: ゲーム、SaaS、食品メーカー" />
-          </label>
-
-          <label>
-            マイページID
-            <input id="mypageIdInput" name="mypageId" autocomplete="off" placeholder="例: candidate12345" />
-          </label>
-        </div>
+        <label>
+          マイページID
+          <input id="mypageIdInput" name="mypageId" autocomplete="off" placeholder="例: candidate12345" />
+        </label>
 
         <label>
           企業公式サイトURL
@@ -369,18 +357,6 @@
           <input id="mypageUrlInput" name="mypageUrl" type="url" placeholder="https://example.com/mypage" />
         </label>
 
-        <datalist id="industryOptions">
-          <option value="IT・通信"></option>
-          <option value="メーカー"></option>
-          <option value="商社"></option>
-          <option value="金融"></option>
-          <option value="コンサル"></option>
-          <option value="広告・メディア"></option>
-          <option value="人材"></option>
-          <option value="不動産・建設"></option>
-          <option value="インフラ"></option>
-          <option value="小売・サービス"></option>
-        </datalist>
 
         <div class="field-grid">
           <label>
@@ -417,47 +393,22 @@
           </label>
 
           <label>
-            次の予定日
-            <input id="eventDateInput" name="eventDate" type="date" />
-          </label>
-        </div>
-
-        <div class="field-grid">
-          <label>
-            予定の内容
-            <select id="eventTypeInput" name="eventType">
-              <option value="">予定なし</option>
-              <option>ES締切</option>
-              <option>Webテスト</option>
-              <option>面接</option>
-              <option>説明会</option>
-              <option>面談</option>
-              <option>インターン</option>
-              <option>その他</option>
-            </select>
-          </label>
-
-          <label>
             志望度
             <select id="priorityInput" name="priority">
+              <option value="" hidden>未設定</option>
+              <option>最優先</option>
               <option>高</option>
               <option>中</option>
               <option>低</option>
-              <option>未定</option>
             </select>
           </label>
         </div>
-        <button class="secondary-button clear-next-event-button" id="clearNextEventButton" type="button">次の予定を消す</button>
 
         <label>
           ES簡易メモ（質問ごとの編集は詳細から）
           <textarea id="esContentInput" name="esContent" rows="5" placeholder="提出したES、志望動機、ガクチカ、自己PRなど"></textarea>
         </label>
 
-        <label>
-          面接対策メモ
-          <textarea id="interviewNotesInput" name="interviewNotes" rows="5" placeholder="想定質問、逆質問、面接で話すこと、振り返りなど"></textarea>
-        </label>
 
         <label>
           その他メモ
@@ -508,25 +459,6 @@
                 </div>
               </div>
               <div class="detail-info-grid" id="detailInfoSummary"></div>
-            </section>
-
-            <section class="detail-section handoff-section" id="detailHandoffSection" hidden>
-              <div class="detail-section-heading">
-                <div>
-                  <p class="eyebrow">Next Track</p>
-                  <h3>次の選考へ引き継ぐ</h3>
-                  <p id="detailHandoffMessage">インターンの記録を残したまま、次の選考を追加できます。</p>
-                </div>
-                <div class="handoff-actions" id="detailHandoffActions"></div>
-              </div>
-              <p class="handoff-note">企業情報・マイページ・ES・メモをコピーし、締切と次の予定だけ空にして追加します。</p>
-            </section>
-
-            <section class="detail-section">
-              <label>
-                面接対策メモ
-                <textarea id="detailInterviewNotesInput" name="detailInterviewNotes" rows="7" placeholder="想定質問、逆質問、面接で話すこと、振り返りなど"></textarea>
-              </label>
             </section>
 
             <section class="detail-section">

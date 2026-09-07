@@ -92,7 +92,7 @@ test("Japanese header aliases create current-model card candidates", () => {
     deadline: "2026-08-03",
     eventDate: "2026-08-10",
     eventType: "面接",
-    priority: "高",
+    priority: "最優先",
     mypageUrl: "",
     esContent: "",
     esItems: [],

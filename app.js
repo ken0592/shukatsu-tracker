@@ -25,7 +25,6 @@ const celebrationStatuses = ["内定", "選考通過", "インターン選考通
 const rejectionStatuses = ["落選", "不採用"];
 const sampleCompanyNames = ["株式会社サンプル商事", "ミライテック株式会社", "東都キャリア株式会社"];
 const initialCalendarDate = new Date();
-const commonIndustries = ["IT・通信", "メーカー", "商社", "金融", "コンサル", "広告・メディア", "人材", "不動産・建設", "インフラ", "小売・サービス","製薬"];
 const trackTypeHints = {
   インターン: "時期が未設定、または夏・冬以外のインターンです。夏・冬が決まっていれば種類を変更できます。",
   夏インターン: "この企業の夏インターンの応募・ES・面接をまとめます。冬インターンは企業内に別の選考として追加できます。",
@@ -213,16 +212,12 @@ const els = {
   detailPanels: document.querySelectorAll("[data-detail-panel]"),
   detailTabPanels: document.querySelector("#detailTabPanels"),
   detailInfoSummary: document.querySelector("#detailInfoSummary"),
-  detailHandoffSection: document.querySelector("#detailHandoffSection"),
-  detailHandoffMessage: document.querySelector("#detailHandoffMessage"),
-  detailHandoffActions: document.querySelector("#detailHandoffActions"),
   detailEsList: document.querySelector("#detailEsList"),
   addEsItemButton: document.querySelector("#addEsItemButton"),
   detailTemplateSelect: document.querySelector("#detailTemplateSelect"),
   insertTemplateButton: document.querySelector("#insertTemplateButton"),
   copyTemplateButton: document.querySelector("#copyTemplateButton"),
   detailEsSearchInput: document.querySelector("#detailEsSearchInput"),
-  detailInterviewNotesInput: document.querySelector("#detailInterviewNotesInput"),
   detailMemoInput: document.querySelector("#detailMemoInput"),
   openBasicEditButton: document.querySelector("#openBasicEditButton"),
   saveDetailButton: document.querySelector("#saveDetailButton"),
@@ -261,11 +256,9 @@ const els = {
   nextCalendarButton: document.querySelector("#nextCalendarButton"),
   todayCalendarButton: document.querySelector("#todayCalendarButton"),
   companySearchInput: document.querySelector("#companySearchInput"),
-  industryFilterInput: document.querySelector("#industryFilterInput"),
   deadlineFilterInput: document.querySelector("#deadlineFilterInput"),
   priorityFilterInput: document.querySelector("#priorityFilterInput"),
   trackTypeInput: document.querySelector("#trackTypeInput"),
-  clearNextEventButton: document.querySelector("#clearNextEventButton"),
   trackTypeHint: document.querySelector("#trackTypeHint"),
   clearFiltersButton: document.querySelector("#clearFiltersButton"),
   filterButtons: document.querySelectorAll(".filter-button"),
@@ -474,10 +467,6 @@ function bindEvents() {
   els.insertTemplateButton.addEventListener("click", insertSelectedTemplateIntoDetail);
   els.copyTemplateButton.addEventListener("click", copySelectedTemplate);
   els.openBasicEditButton.addEventListener("click", handleOpenBasicEditFromDetail);
-  els.detailHandoffActions.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-handoff-track]");
-    if (button) handleTrackHandoff(button.dataset.handoffTrack);
-  });
   els.saveConflictForm.addEventListener("submit", handleConflictSubmit);
   els.closeConflictButton.addEventListener("click", cancelEntryConflict);
   els.cancelConflictButton.addEventListener("click", cancelEntryConflict);
@@ -577,10 +566,6 @@ function bindEvents() {
     state.searchQuery = els.companySearchInput.value.trim();
     renderCompanyList();
   });
-  els.industryFilterInput.addEventListener("change", () => {
-    state.industryFilter = els.industryFilterInput.value;
-    renderCompanyList();
-  });
   els.deadlineFilterInput.addEventListener("change", () => {
     state.deadlineFilter = els.deadlineFilterInput.value;
     renderCompanyList();
@@ -590,11 +575,6 @@ function bindEvents() {
     renderCompanyList();
   });
   els.trackTypeInput.addEventListener("change", updateTrackTypeHint);
-  els.clearNextEventButton.addEventListener("click", () => {
-    setFormValue("eventDate", "");
-    setFormValue("eventType", "");
-    showToast("次の予定を空にしました。更新すると保存されます。");
-  });
   els.clearFiltersButton.addEventListener("click", clearCompanyFilters);
   els.emptyTrashButton.addEventListener("click", handleEmptyTrash);
 
@@ -794,7 +774,6 @@ function clearUserScopedUiState(options = {}) {
   state.priorityFilter = "all";
   els.authForm.reset();
   els.companySearchInput.value = "";
-  els.industryFilterInput.value = "all";
   els.deadlineFilterInput.value = "all";
   els.priorityFilterInput.value = "all";
   clearAiImportData();
@@ -1882,11 +1861,9 @@ function renderAiCards() {
 
 function aiCardMarkup(card, index, plan = buildAiImportPlan(card)) {
   const meta = [
-    card.industry,
     card.trackType,
     simpleStatus(card.status),
     card.deadline ? `締切 ${formatDate(card.deadline)}` : "",
-    card.eventDate ? `予定 ${formatDate(card.eventDate)}` : "",
     card.priority && card.priority !== "未定" ? `志望度 ${card.priority}` : ""
   ].filter(Boolean);
   const esItems = Array.isArray(card.esItems) ? card.esItems : [];
@@ -1941,8 +1918,8 @@ function importConflictDetailsMarkup(details, options = {}) {
   if (!Array.isArray(details) || !details.length) return "";
   const sensitiveFields = new Set(["mypageId", "officialUrl", "logoUrl", "mypageUrl"]);
   const editableFields = new Set([
-    "industry", "mypageId", "officialUrl", "logoUrl", "status", "deadline",
-    "eventDate", "eventType", "priority", "mypageUrl", "interviewNotes", "memo"
+    "mypageId", "officialUrl", "logoUrl", "status", "deadline",
+    "priority", "mypageUrl", "memo"
   ]);
   const items = details.map((detail, index) => {
     const label = importFieldLabels[detail.field] || detail.field;
@@ -2059,12 +2036,12 @@ async function handleEntrySubmit(event) {
   const entry = normalizeEntry({
     id: baseEntry?.id || draftEntry?.id || createId(),
     companyName: String(formData.get("companyName")).trim(),
-    industry: String(formData.get("industry")).trim(),
+    industry: sourceEntry?.industry || "",
     trackType: String(formData.get("trackType")),
     status: String(formData.get("status")),
     deadline: String(formData.get("deadline")),
-    eventDate: String(formData.get("eventDate")),
-    eventType: String(formData.get("eventType")),
+    eventDate: sourceEntry?.eventDate || "",
+    eventType: sourceEntry?.eventType || "",
     priority: String(formData.get("priority")),
     mypageId: String(formData.get("mypageId")).trim(),
     officialUrl: String(formData.get("officialUrl")).trim(),
@@ -2074,7 +2051,7 @@ async function handleEntrySubmit(event) {
     esItems: sourceEntry?.esItems?.length && esContent === sourceEsText
       ? sourceEntry.esItems
       : normalizeEsItems([], esContent),
-    interviewNotes: String(formData.get("interviewNotes")).trim(),
+    interviewNotes: sourceEntry?.interviewNotes || "",
     memo: String(formData.get("memo")).trim(),
     createdAt: sourceEntry?.createdAt || new Date().toISOString(),
     updatedAt: baseEntry?.updatedAt || new Date().toISOString(),
@@ -2396,17 +2373,14 @@ function openCompanyDetail(id) {
   state.detailBaseEntry = values;
   els.detailCompanyTitle.textContent = values.companyName || "企業詳細";
   els.detailCompanyMeta.textContent = [
-    values.industry,
     values.trackType,
     simpleStatus(values.status),
-    values.priority ? `志望度 ${values.priority}` : ""
+    values.priority && values.priority !== "未定" ? `志望度 ${values.priority}` : ""
   ].filter(Boolean).join(" ・ ");
-  els.detailInterviewNotesInput.value = values.interviewNotes;
   els.detailMemoInput.value = values.memo;
   els.detailEsSearchInput.value = "";
   state.detailEsMode = values.esItems.length > 0 ? "read" : "edit";
   renderDetailInfoSummary(values);
-  renderDetailHandoff(values);
   renderDetailBranches(values);
   renderDetailEsItems(values.esItems.length > 0 ? values.esItems : [createEsItem()]);
   renderTemplateOptions();
@@ -2427,8 +2401,6 @@ function closeCompanyDetail() {
   els.detailEsSearchInput.value = "";
   els.detailEsList.textContent = "";
   els.detailInfoSummary.textContent = "";
-  els.detailHandoffSection.hidden = true;
-  els.detailHandoffActions.textContent = "";
   els.companyDetailDialog.close();
 }
 
@@ -2470,10 +2442,8 @@ function renderDetailInfoSummary(entry) {
   const items = [
     ["ステータス", simpleStatus(entry.status)],
     ["種類", entry.trackType],
-    ["志望度", entry.priority],
+    ["志望度", entry.priority === "未定" ? "未設定" : entry.priority],
     ["締切", entry.deadline ? formatDate(entry.deadline) : "未設定"],
-    ["次の予定", entry.eventDate ? `${formatDate(entry.eventDate)} / ${entry.eventType || "予定"}` : "未設定"],
-    ["業種", entry.industry || "未設定"],
     ["マイページID", entry.mypageId || "未登録"]
   ];
 
@@ -2500,69 +2470,6 @@ function detailInfoLink(label, url, text) {
       <a class="detail-info-link" href="${escapeAttribute(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(text)}</a>
     </div>
   `;
-}
-
-function renderDetailHandoff(entry) {
-  const nextTracks = ["インターン", "夏インターン", "冬インターン"].includes(entry.trackType)
-    ? ["早期選考", "本選考"]
-    : entry.trackType === "早期選考"
-      ? ["本選考"]
-      : ["説明会", "面談", "OB/OG訪問"].includes(entry.trackType)
-        ? ["本選考"]
-        : [];
-
-  els.detailHandoffSection.hidden = nextTracks.length === 0;
-  if (nextTracks.length === 0) {
-    els.detailHandoffActions.textContent = "";
-    return;
-  }
-
-  els.detailHandoffMessage.textContent = ["インターン", "夏インターン", "冬インターン"].includes(entry.trackType)
-    ? "インターンの記録を残したまま、早期選考または本選考を別枠で追加できます。"
-    : `${entry.trackType}の記録を残したまま、本選考を別枠で追加できます。`;
-
-  els.detailHandoffActions.innerHTML = nextTracks.map((trackType) => {
-    const alreadyExists = activeEntries().some((candidate) => (
-      candidate.id !== entry.id &&
-      normalizeCompanyName(candidate.companyName) === normalizeCompanyName(entry.companyName) &&
-      candidate.trackType === trackType
-    ));
-    const label = alreadyExists ? `${trackType}は登録済み` : `${trackType}へ引き継ぐ`;
-    return `<button class="handoff-button" data-handoff-track="${escapeAttribute(trackType)}" type="button" ${alreadyExists ? "disabled" : ""}>${escapeHtml(label)}</button>`;
-  }).join("");
-}
-
-function handleTrackHandoff(targetTrack) {
-  const source = state.entries.find((entry) => entry.id === state.detailEditingId) || state.detailBaseEntry;
-  if (!source || !["早期選考", "本選考"].includes(targetTrack)) return;
-
-  const duplicateExists = activeEntries().some((candidate) => (
-    candidate.id !== source.id &&
-    normalizeCompanyName(candidate.companyName) === normalizeCompanyName(source.companyName) &&
-    candidate.trackType === targetTrack
-  ));
-  if (duplicateExists) {
-    showToast(`${targetTrack}はすでに登録されています。`);
-    return;
-  }
-
-  const now = new Date().toISOString();
-  const draft = normalizeEntry({
-    ...source,
-    id: createId(),
-    trackType: targetTrack,
-    status: "応募予定",
-    deadline: "",
-    eventDate: "",
-    eventType: targetTrack === "本選考" ? "ES締切" : source.eventType,
-    createdAt: now,
-    updatedAt: now,
-    sortOrder: nextCompanySortOrder(),
-    deletedAt: ""
-  });
-
-  closeCompanyDetail();
-  openEntryDialog(null, { draft, isHandoff: true });
 }
 
 function normalizeCompanyName(value) {
@@ -3340,7 +3247,6 @@ async function handleDetailSubmit(event) {
     ...baseEntry,
     esItems,
     esContent: esItemsToLegacyText(esItems),
-    interviewNotes: els.detailInterviewNotesInput.value.trim(),
     memo: els.detailMemoInput.value.trim()
   });
 
@@ -4423,7 +4329,6 @@ function render() {
   renderTodayActions();
   renderDeadlineList();
   renderEventList();
-  renderFilterOptions();
   renderCompanyList();
   renderTemplateList();
   renderTemplateOptions();
@@ -4719,7 +4624,6 @@ function renderCompanyList() {
                   <div class="meta-row">
                     ${trackTag(entry.trackType)}
                     ${statusTag(entry.status)}
-                    ${entry.industry ? `<span>${escapeHtml(entry.industry)}</span>` : ""}
                   </div>
                 </div>
               </div>
@@ -4853,8 +4757,7 @@ async function prepareBranchNavigation() {
   const base = state.detailBaseEntry;
   const esItems = collectDetailEsItems();
   const changed = base && (JSON.stringify(esItems) !== JSON.stringify(base.esItems)
-    || els.detailMemoInput.value.trim() !== base.memo
-    || els.detailInterviewNotesInput.value.trim() !== base.interviewNotes);
+    || els.detailMemoInput.value.trim() !== base.memo);
   if (changed) return Boolean(await handleDetailSubmit({ preventDefault() {} })) && isCurrentUserScope(scope);
   closeCompanyDetail();
   return isCurrentUserScope(scope);
@@ -5115,7 +5018,6 @@ function fillEntryForm(entry) {
   state.iconPicker?.reset();
   const values = normalizeEntry(entry || {});
   setFormValue("companyName", entry ? values.companyName : "");
-  setFormValue("industry", entry ? values.industry : "");
   setFormValue("mypageId", entry ? values.mypageId : "");
   setFormValue("officialUrl", entry ? values.officialUrl : "");
   setFormValue("logoUrl", entry ? values.logoUrl : "");
@@ -5123,11 +5025,8 @@ function fillEntryForm(entry) {
   setFormValue("trackType", values.trackType);
   setFormValue("status", simpleStatus(values.status));
   setFormValue("deadline", entry ? values.deadline : "");
-  setFormValue("eventDate", entry ? values.eventDate : "");
-  setFormValue("eventType", values.eventType);
-  setFormValue("priority", values.priority);
+  setFormValue("priority", values.priority === "未定" ? "" : values.priority);
   setFormValue("esContent", entry ? entryEsText(values) : "");
-  setFormValue("interviewNotes", entry ? values.interviewNotes : "");
   setFormValue("memo", entry ? values.memo : "");
   state.iconPicker?.schedule();
 }
@@ -5189,32 +5088,12 @@ function updateTrackTypeHint() {
   els.trackTypeHint.textContent = trackTypeHints[trackType] || "予定や接点の種類に合わせて選びます。";
 }
 
-function renderFilterOptions() {
-  const selected = state.industryFilter;
-  const industries = Array.from(
-    new Set([...commonIndustries, ...activeEntries().map((entry) => entry.industry).filter(Boolean)])
-  ).sort((a, b) => a.localeCompare(b, "ja"));
-
-  els.industryFilterInput.innerHTML = [
-    '<option value="all">すべて</option>',
-    ...industries.map((industry) => `<option value="${escapeAttribute(industry)}">${escapeHtml(industry)}</option>`)
-  ].join("");
-
-  if (selected !== "all" && industries.includes(selected)) {
-    els.industryFilterInput.value = selected;
-  } else {
-    state.industryFilter = "all";
-    els.industryFilterInput.value = "all";
-  }
-}
-
 function clearCompanyFilters() {
   state.searchQuery = "";
   state.industryFilter = "all";
   state.deadlineFilter = "all";
   state.priorityFilter = "all";
   els.companySearchInput.value = "";
-  els.industryFilterInput.value = "all";
   els.deadlineFilterInput.value = "all";
   els.priorityFilterInput.value = "all";
   renderCompanyList();
@@ -5466,7 +5345,7 @@ function normalizeEntry(entry = {}) {
     deadline: normalizeStoredDate(source.deadline),
     eventDate: normalizeStoredDate(source.eventDate),
     eventType: allowedEventTypes.has(eventType) ? eventType : "",
-    priority: ["高", "中", "低", "未定"].includes(priority) ? priority : "未定",
+    priority: ["最優先", "高", "中", "低", "未定"].includes(priority) ? priority : "未定",
     mypageUrl: normalizeExternalUrl(source.mypageUrl),
     esContent: normalizeStoredText(source.esContent, 200_000),
     esItems: normalizeEsItems(source.esItems, source.esContent),
@@ -6212,7 +6091,7 @@ function entryHasEsContent(entry) {
 }
 
 function priorityScore(priority) {
-  const scores = { 高: 0, 中: 1, 未定: 2, 低: 3 };
+  const scores = { 最優先: 0, 高: 1, 中: 2, 低: 3, 未定: 4 };
   return scores[priority] ?? 4;
 }
 

@@ -214,3 +214,11 @@ test("seasonal tracks survive storage and cloud payload normalization", () => {
 });
 
 console.log("7 data hardening tests passed");
+
+test("four priority levels survive normalization and database serialization", () => {
+  for (const priority of ["最優先", "高", "中", "低"]) {
+    const entry = helpers.normalizeEntry({ id: "test-entry", companyName: "A社", priority });
+    assert.equal(entry.priority, priority);
+    assert.equal(helpers.toDbEntry(entry).priority, priority);
+  }
+});
