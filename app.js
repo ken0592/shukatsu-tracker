@@ -99,6 +99,7 @@ const state = {
   entries: [],
   bulkIcons: null,
   summerMigration: null,
+  pendingStatusChanges: new Set(),
   templates: [],
   filter: "all",
   searchQuery: "",
@@ -557,6 +558,9 @@ function bindEvents() {
   els.companyList.addEventListener("pointermove", handleCompanyReorderPointerMove);
   els.companyList.addEventListener("pointerup", finishCompanyReorder);
   els.companyList.addEventListener("pointercancel", cancelCompanyReorder);
+  els.companyList.addEventListener("change", (event) => {
+    if (event.target.matches("[data-company-status]")) void handleCompanyStatusChange(event.target);
+  });
   els.templateForm.addEventListener("submit", handleTemplateSubmit);
   els.templateBodyInput.addEventListener("input", updateTemplateBodyCount);
   els.resetTemplateButton.addEventListener("click", resetTemplateForm);
@@ -772,6 +776,7 @@ function clearUserScopedUiState(options = {}) {
   state.bulkIcons?.controller.abort();
   state.bulkIcons = null;
   state.summerMigration = null;
+  state.pendingStatusChanges = new Set();
   if (els.addBranchDialog.open) els.addBranchDialog.close();
   state.userScopeVersion += 1;
   state.entries = [];
@@ -4756,12 +4761,80 @@ function renderCompanyGroups(visibleEntries) {
         <button class="company-add-branch" data-add-company-track="${escapeAttribute(source.id)}" type="button" aria-label="${escapeAttribute(source.companyName)}に選考を追加" title="${available.length ? "選考を追加" : "すべての選考を追加済み"}" ${available.length ? "" : "disabled"}>＋</button>
       </div>
       <div class="company-branches" role="group" aria-label="${escapeAttribute(source.companyName)}の選考">
-        ${branches.map((entry) => `<button class="company-branch ${state.filter !== "all" && visibleIds.has(entry.id) ? "is-filter-match" : ""}" data-detail-id="${escapeAttribute(entry.id)}" type="button">
-          <span class="company-branch-summary">${trackTag(entry.trackType)}${statusTag(entry.status)}</span>
-        </button>`).join("")}
+        ${branches.map((entry) => `<div class="company-branch ${state.filter !== "all" && visibleIds.has(entry.id) ? "is-filter-match" : ""}">
+          <button class="company-branch-detail" data-detail-id="${escapeAttribute(entry.id)}" type="button" aria-label="${escapeAttribute(entry.companyName)}・${escapeAttribute(entry.trackType)}の詳細">${trackTag(entry.trackType)}</button>
+          ${companyStatusPicker(entry)}
+        </div>`).join("")}
       </div>
     </article>`;
   }).join("");
+}
+
+function companyStatusPicker(entry) {
+  const pending = state.pendingStatusChanges.has(entry.id);
+  return `<label class="company-status-control" aria-busy="${pending}">
+    <span aria-hidden="true">${statusTag(entry.status)}</span>
+    <select data-company-status="${escapeAttribute(entry.id)}" aria-label="${escapeAttribute(entry.companyName)}・${escapeAttribute(entry.trackType)}の進捗" title="進捗を変更" ${pending ? "disabled" : ""}>
+      ${[...activeStatuses, ...finishedStatuses].map((status) => `<option value="${escapeAttribute(status)}" ${status === entry.status ? "selected" : ""}>${escapeHtml(status)}</option>`).join("")}
+    </select>
+  </label>`;
+}
+
+async function handleCompanyStatusChange(control) {
+  const id = control.dataset.companyStatus;
+  const status = control.value;
+  const entry = state.entries.find((item) => item.id === id && !isTrashed(item));
+  if (!entry || state.pendingStatusChanges.has(id)) return;
+  if (![...activeStatuses, ...finishedStatuses].includes(status) || status === entry.status) {
+    control.value = entry.status;
+    return;
+  }
+
+  const scope = captureUserScope();
+  const pending = state.pendingStatusChanges;
+  const wasFocused = document.activeElement === control;
+  pending.add(id);
+  control.disabled = true;
+  control.closest(".company-status-control")?.setAttribute("aria-busy", "true");
+  try {
+    let saved;
+    if (state.mode === "cloud") {
+      if (!scope.userId || !entry.updatedAt) {
+        showToast("同期更新してから、もう一度変更してください。");
+        return;
+      }
+      const { data, error } = await supabaseClient.from("entries")
+        .update({ status }).eq("id", id).eq("user_id", scope.userId)
+        .eq("updated_at", entry.updatedAt).select("*");
+      if (!isCurrentUserScope(scope)) return;
+      if (error) throw error;
+      if (data?.length !== 1) {
+        const latest = await fetchCloudEntry(id, scope);
+        if (!isCurrentUserScope(scope)) return;
+        if (latest) state.entries = state.entries.map((item) => item === entry ? latest : item);
+        showToast("別の更新があったため保存していません。最新の進捗を確認して、もう一度選んでください。");
+        return;
+      }
+      saved = fromDbEntry(data[0]);
+    } else {
+      saved = { ...entry, status, updatedAt: new Date().toISOString() };
+      const next = state.entries.map((item) => item === entry ? saved : item);
+      if (!saveLocalEntries(next)) return;
+    }
+    // Do not replace an edit or refresh that completed while this request was in flight.
+    state.entries = state.entries.map((item) => item === entry ? saved : item);
+    showToast(`${entry.companyName}（${entry.trackType}）を「${status}」に変更しました。`);
+  } catch {
+    if (isCurrentUserScope(scope)) showToast("進捗を保存できませんでした。接続を確認して、もう一度お試しください。");
+  } finally {
+    pending.delete(id);
+    if (isCurrentUserScope(scope)) {
+      const restoreFocus = document.activeElement === control || (wasFocused && document.activeElement === document.body);
+      render();
+      if (restoreFocus) Array.from(els.companyList.querySelectorAll("[data-company-status]"))
+        .find((item) => item.dataset.companyStatus === id)?.focus({ preventScroll: true });
+    }
+  }
 }
 
 function renderDetailBranches(entry) {
