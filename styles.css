@@ -2096,7 +2096,6 @@ button:disabled {
 .company-group-open { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; padding: 0; border: 0; border-radius: 4px; background: none; text-align: left; color: inherit; cursor: pointer; }
 .company-group-open > span { min-width: 0; overflow-wrap: anywhere; }
 .company-group-open strong { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.4; }
-.company-group-open small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 10px; line-height: 1.4; }
 .company-group-card .company-icon { width: 36px; height: 36px; border-radius: 7px; font-size: 11px; }
 .company-group-card .company-icon img { inset: 3px; width: calc(100% - 6px); height: calc(100% - 6px); border-radius: 5px; }
 .company-add-branch { display: grid; place-items: center; flex: 0 0 28px; width: 28px; height: 28px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer; }
@@ -2108,8 +2107,6 @@ button:disabled {
 .company-branch-summary { display: flex; align-items: center; justify-content: space-between; gap: 4px; min-width: 0; }
 .company-branch .track-badge { flex-shrink: 0; min-height: 0; padding: 0; border-radius: 0; background: transparent; font-size: 11px; }
 .company-branch .tag { min-height: 20px; padding: 2px 4px; font-size: 11px; }
-.company-branch-dates { display: flex; flex-wrap: wrap; gap: 2px 8px; min-width: 0; }
-.company-branch small { font-size: 10px; color: var(--muted); overflow-wrap: anywhere; }
 .company-branch.is-filter-match { background: #eef5ff; box-shadow: inset 2px 0 var(--blue); }
 .branch-choices button[aria-pressed="true"] { border-color: var(--blue); background: #eef5ff; }
 .company-list.compact-view .company-group-card { padding: 8px; gap: 6px; }
