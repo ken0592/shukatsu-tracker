@@ -4750,16 +4750,18 @@ function renderCompanyGroups(visibleEntries) {
     const available = model.availableTracks(state.entries, source);
     return `<article class="company-card company-group-card" data-company-card data-company-id="${escapeAttribute(source.id)}">
       <div class="company-group-heading">
-        <button class="company-group-open" data-detail-id="${escapeAttribute(source.id)}" type="button">
-          ${companyIconMarkup(icon)}<span><strong>${escapeHtml(source.companyName)}</strong><small>${branches.length}選考${source.industry ? ` ・ ${escapeHtml(source.industry)}` : ""}</small></span>
+        <button class="company-group-open" data-detail-id="${escapeAttribute(source.id)}" type="button" title="${escapeAttribute(source.companyName)}の詳細">
+          ${companyIconMarkup(icon)}<span><strong>${escapeHtml(source.companyName)}</strong>${source.industry ? `<small>${escapeHtml(source.industry)}</small>` : ""}</span>
         </button>
-        <button class="secondary-button small-button" data-add-company-track="${escapeAttribute(source.id)}" type="button" ${available.length ? "" : "disabled"}>＋選考</button>
+        <button class="company-add-branch" data-add-company-track="${escapeAttribute(source.id)}" type="button" aria-label="${escapeAttribute(source.companyName)}に選考を追加" title="${available.length ? "選考を追加" : "すべての選考を追加済み"}" ${available.length ? "" : "disabled"}>＋</button>
       </div>
       <div class="company-branches" role="group" aria-label="${escapeAttribute(source.companyName)}の選考">
         ${branches.map((entry) => `<button class="company-branch ${state.filter !== "all" && visibleIds.has(entry.id) ? "is-filter-match" : ""}" data-detail-id="${escapeAttribute(entry.id)}" type="button">
-          ${trackTag(entry.trackType)}${statusTag(entry.status)}
-          ${entry.deadline ? `<small>${formatDate(entry.deadline)} 締切</small>` : ""}
-          ${entry.eventDate ? `<small>${formatDate(entry.eventDate)} ${escapeHtml(entry.eventType || "予定")}</small>` : ""}
+          <span class="company-branch-summary">${trackTag(entry.trackType)}${statusTag(entry.status)}</span>
+          ${entry.deadline || entry.eventDate ? `<span class="company-branch-dates">
+            ${entry.deadline ? `<small>${formatDate(entry.deadline)} 締切</small>` : ""}
+            ${entry.eventDate ? `<small>${formatDate(entry.eventDate)} ${escapeHtml(entry.eventType || "予定")}</small>` : ""}
+          </span>` : ""}
         </button>`).join("")}
       </div>
     </article>`;
