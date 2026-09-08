@@ -28,6 +28,7 @@
         <button class="secondary-button" id="importBackupButton" type="button">復元</button>
         <input id="importBackupInput" type="file" accept="application/json,.json" hidden />
         <button class="secondary-button" id="signOutButton" type="button" hidden>ログアウト</button>
+        <button class="secondary-button" id="openScratchpadButton" type="button" aria-controls="scratchpadPanel" aria-expanded="false" disabled>✎ メモ</button>
         <button class="ai-button" id="openAiImportButton" type="button"><span aria-hidden="true">✦</span> AIでメモ整理</button>
         <button class="primary-button" id="openFormButton" type="button">＋ 追加</button>
       </div>
@@ -538,6 +539,24 @@
       </section>
     </dialog>
 
+    <section class="scratchpad-panel" id="scratchpadPanel" role="dialog" aria-labelledby="scratchpadTitle" hidden>
+      <div class="scratchpad-heading">
+        <h2 id="scratchpadTitle">メモ</h2>
+        <button class="icon-button" id="closeScratchpadButton" type="button" aria-label="メモを閉じる">×</button>
+      </div>
+      <textarea id="scratchpadInput" aria-label="自由メモ" placeholder="思いついたことを、そのまま。" spellcheck="false"></textarea>
+      <div class="scratchpad-footer">
+        <span id="scratchpadStatus">この端末に自動保存</span>
+        <div>
+          <button class="secondary-button" id="copyScratchpadButton" type="button">コピー</button>
+          <button class="secondary-button" id="downloadScratchpadButton" type="button">TXT保存</button>
+        </div>
+      </div>
+      <p class="scratchpad-error" id="scratchpadError" role="alert" hidden></p>
+      <button class="secondary-button" id="retryScratchpadButton" type="button" hidden>再試行</button>
+      <button class="secondary-button" id="mergeScratchpadButton" type="button" hidden>両方を残す</button>
+    </section>
+
     <div class="toast" id="toast" role="status" hidden></div>
     <button class="mascot" id="mascot" type="button" aria-label="AIに相談する" aria-controls="mascotHelpPanel" aria-expanded="false">
       <span class="mascot-fallback" aria-hidden="true">祝</span>
@@ -562,6 +581,7 @@
     <script src="./company-icons.js"></script>
     <script src="./company-groups.js"></script>
     <script src="./csv-import.js"></script>
+    <script src="./scratchpad.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>

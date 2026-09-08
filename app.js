@@ -350,6 +350,8 @@ const detailSwipeState = {
   startY: 0
 };
 
+const scratchpad = window.SHUKATSU_SCRATCHPAD?.mount();
+
 bindEvents();
 init();
 
@@ -757,6 +759,7 @@ async function init() {
 }
 
 function clearUserScopedUiState(options = {}) {
+  scratchpad?.setScope(null);
   state.bulkIcons?.controller.abort();
   state.bulkIcons = null;
   state.summerMigration = null;
@@ -4407,6 +4410,7 @@ function renderDailyQuote() {
 }
 
 function renderMode() {
+  scratchpad?.setScope(state.mode === "local" ? "local" : state.session?.user?.id ? `user:${state.session.user.id}` : null);
   const waitingForLogin = state.mode === "cloud" && !state.session;
   els.authPanel.hidden = !waitingForLogin;
   els.accountPanel.hidden = state.mode !== "cloud" || !state.session;
