@@ -6,9 +6,7 @@ const templateStorageBackupKey = `${templateStorageKey}-last-good`;
 const templateStoragePendingKey = `${templateStorageKey}-pending`;
 const mascotPositionKey = "shukatsu-tracker-mascot-position";
 const companyViewModeStorageKey = "shukatsu-tracker-company-view-mode";
-const actionScopeStorageKey = "shukatsu-tracker-action-scope";
 const companyViewModes = ["normal", "medium", "compact"];
-const actionScopes = ["today", "week"];
 const detailTabs = ["basic", "es"];
 const detailEsModes = ["read", "edit"];
 const trashFilterValue = "trash";
@@ -102,6 +100,10 @@ const state = {
   summerMigration: null,
   pendingStatusChanges: new Set(),
   templates: [],
+  companyPage: 0,
+  templatePage: 0,
+  companyPagingKey: "",
+  workspaceView: "companies",
   filter: "all",
   searchQuery: "",
   industryFilter: "all",
@@ -109,10 +111,7 @@ const state = {
   priorityFilter: "all",
   companyViewMode: companyViewModes.includes(localStorage.getItem(companyViewModeStorageKey))
     ? localStorage.getItem(companyViewModeStorageKey)
-    : "normal",
-  actionScope: actionScopes.includes(localStorage.getItem(actionScopeStorageKey))
-    ? localStorage.getItem(actionScopeStorageKey)
-    : "today",
+    : "compact",
   mode: hasCloudConfig ? "cloud" : "local",
   session: null,
   userScopeVersion: 0,
@@ -227,6 +226,16 @@ const els = {
   closeConflictButton: document.querySelector("#closeConflictButton"),
   cancelConflictButton: document.querySelector("#cancelConflictButton"),
   resolveConflictButton: document.querySelector("#resolveConflictButton"),
+  companyPagination: document.querySelector("#companyPagination"),
+  templatePagination: document.querySelector("#templatePagination"),
+  templateCount: document.querySelector("#templateCount"),
+  templateDialog: document.querySelector("#templateDialog"),
+  templatePreviewDialog: document.querySelector("#templatePreviewDialog"),
+  templatePreviewTitle: document.querySelector("#templatePreviewTitle"),
+  templatePreviewContent: document.querySelector("#templatePreviewContent"),
+  calendarDayDialog: document.querySelector("#calendarDayDialog"),
+  calendarDayTitle: document.querySelector("#calendarDayTitle"),
+  calendarDayList: document.querySelector("#calendarDayList"),
   templateForm: document.querySelector("#templateForm"),
   templateKindInput: document.querySelector("#templateKindInput"),
   templateTitleInput: document.querySelector("#templateTitleInput"),
@@ -235,20 +244,11 @@ const els = {
   resetTemplateButton: document.querySelector("#resetTemplateButton"),
   saveTemplateButton: document.querySelector("#saveTemplateButton"),
   templateList: document.querySelector("#templateList"),
-  deadlineCount: document.querySelector("#deadlineCount"),
-  eventCount: document.querySelector("#eventCount"),
-  activeCount: document.querySelector("#activeCount"),
-  trashCount: document.querySelector("#trashCount"),
   emptyTrashButton: document.querySelector("#emptyTrashButton"),
   bulkIconControls: document.querySelector("#bulkIconControls"),
   bulkIconButton: document.querySelector("#bulkIconButton"),
   cancelBulkIconButton: document.querySelector("#cancelBulkIconButton"),
   bulkIconStatus: document.querySelector("#bulkIconStatus"),
-  todayActionTitle: document.querySelector("#todayActionTitle"),
-  todayActionCount: document.querySelector("#todayActionCount"),
-  todayActionList: document.querySelector("#todayActionList"),
-  deadlineList: document.querySelector("#deadlineList"),
-  eventList: document.querySelector("#eventList"),
   companyList: document.querySelector("#companyList"),
   calendarGrid: document.querySelector("#calendarGrid"),
   calendarMonthLabel: document.querySelector("#calendarMonthLabel"),
@@ -263,7 +263,6 @@ const els = {
   clearFiltersButton: document.querySelector("#clearFiltersButton"),
   filterButtons: document.querySelectorAll(".filter-button"),
   viewModeButtons: document.querySelectorAll(".view-button"),
-  actionScopeButtons: document.querySelectorAll(".today-scope-button"),
   mascot: document.querySelector("#mascot"),
   mascotBubble: document.querySelector("#mascotBubble"),
   celebrationOverlay: document.querySelector("#celebrationOverlay"),
@@ -552,6 +551,11 @@ function bindEvents() {
   els.companyList.addEventListener("change", (event) => {
     if (event.target.matches("[data-company-status]")) void handleCompanyStatusChange(event.target);
   });
+  document.querySelector('#openTemplateButton').addEventListener('click', openTemplateEditor);
+  document.querySelector('#closeTemplateButton').addEventListener('click', () => els.templateDialog.close());
+  document.querySelector('#closeTemplatePreviewButton').addEventListener('click', () => els.templatePreviewDialog.close());
+  document.querySelector('#closeCalendarDayButton').addEventListener('click', () => els.calendarDayDialog.close());
+  window.matchMedia('(max-width: 760px)').addEventListener('change', () => renderCompanyList());
   els.templateForm.addEventListener("submit", handleTemplateSubmit);
   els.templateBodyInput.addEventListener("input", updateTemplateBodyCount);
   els.resetTemplateButton.addEventListener("click", resetTemplateForm);
@@ -591,12 +595,6 @@ function bindEvents() {
     });
   });
 
-  els.actionScopeButtons.forEach((button) => {
-    button.addEventListener("click", () => {
-      setActionScope(button.dataset.actionScope);
-    });
-  });
-
   document.addEventListener("click", (event) => {
     if (companyDragState.suppressClick) {
       companyDragState.suppressClick = false;
@@ -605,6 +603,17 @@ function bindEvents() {
       return;
     }
 
+    const pageButton = event.target.closest('[data-page-target]');
+    if (pageButton) {
+      const page = Number(pageButton.dataset.page);
+      if (pageButton.dataset.pageTarget === 'company') { state.companyPage = page; renderCompanyList(); }
+      else { state.templatePage = page; renderTemplateList(); }
+      return;
+    }
+    const workspaceButton = event.target.closest('[data-workspace-view]');
+    if (workspaceButton) { setWorkspaceView(workspaceButton.dataset.workspaceView); return; }
+    const calendarDay = event.target.closest('[data-calendar-date]');
+    if (calendarDay) { openCalendarDay(calendarDay.dataset.calendarDate); return; }
     const switchBranch = event.target.closest("[data-switch-branch]");
     if (switchBranch) { void switchCompanyBranch(switchBranch.dataset.switchBranch); return; }
     const addBranch = event.target.closest("[data-add-company-track]");
@@ -613,6 +622,7 @@ function bindEvents() {
     if (newBranch) { createCompanyBranch(newBranch.dataset.sourceId, newBranch.dataset.newCompanyTrack); return; }
     const detailButton = event.target.closest("[data-detail-id]");
     if (detailButton) {
+      if (els.calendarDayDialog.open) els.calendarDayDialog.close();
       openCompanyDetail(detailButton.dataset.detailId);
       return;
     }
@@ -763,6 +773,12 @@ function clearUserScopedUiState(options = {}) {
   state.userScopeVersion += 1;
   state.entries = [];
   state.templates = [];
+  state.companyPage = 0;
+  state.templatePage = 0;
+  state.companyPagingKey = '';
+  for (const dialog of [els.templateDialog, els.templatePreviewDialog, els.calendarDayDialog]) if (dialog.open) dialog.close();
+  els.templatePreviewContent.textContent = '';
+  els.calendarDayList.textContent = '';
   state.loading = Boolean(options.loading);
   state.entrySavePending = false;
   state.detailSavePending = false;
@@ -3200,7 +3216,11 @@ async function persistTemplateOrderFromDom() {
   const visibleIds = Array.from(els.templateList.querySelectorAll("[data-template-card]")).map((card) => card.dataset.templateId);
   if (visibleIds.length === 0) return;
 
-  const rank = new Map(visibleIds.map((id, index) => [id, index]));
+  const visibleSet = new Set(visibleIds);
+  const currentOrder = [...state.templates].sort(sortTemplates).map(template => template.id);
+  let visibleIndex = 0;
+  const nextOrder = currentOrder.map(id => visibleSet.has(id) ? visibleIds[visibleIndex++] : id);
+  const rank = new Map(nextOrder.map((id, index) => [id, index]));
   const nextTemplates = state.templates.map((template) => ({
     ...template,
     sortOrder: rank.has(template.id) ? rank.get(template.id) : template.sortOrder
@@ -3560,6 +3580,8 @@ async function handleTemplateSubmit(event) {
   }
 
   resetTemplateForm();
+  els.templateDialog.close();
+  state.templatePage = 0;
   renderTemplateList();
   renderTemplateOptions();
   showToast(existingTemplate ? "型を更新しました。" : "型を保存しました。");
@@ -3575,6 +3597,7 @@ function handleEditTemplate(id) {
   els.templateBodyInput.value = template.body;
   els.saveTemplateButton.textContent = "型を更新";
   updateTemplateBodyCount();
+  openTemplateEditor();
   els.templateTitleInput.focus();
 }
 
@@ -3596,6 +3619,7 @@ async function handleDeleteTemplate(id) {
   if (state.mode === "local" && !saveLocalTemplates(nextTemplates)) return;
   state.templates = nextTemplates;
   if (state.editingTemplateId === id) resetTemplateForm();
+  if (els.templatePreviewDialog.open) els.templatePreviewDialog.close();
   renderTemplateList();
   renderTemplateOptions();
   showToast("型を削除しました。");
@@ -4325,10 +4349,6 @@ async function updateCloudTemplate(template, scope = captureUserScope()) {
 function render() {
   renderMode();
   renderDailyQuote();
-  renderSummary();
-  renderTodayActions();
-  renderDeadlineList();
-  renderEventList();
   renderCompanyList();
   renderTemplateList();
   renderTemplateOptions();
@@ -4340,10 +4360,6 @@ function renderDailyQuote() {
   const quote = getQuoteForDate(today);
   const noteMarkup = quote.note ? `<span class="quote-note">（${escapeHtml(quote.note)}）</span>` : "";
   els.dailyQuote.innerHTML = `
-    <div>
-      <p class="eyebrow">Today's Quote</p>
-      <h2>今日の偉人の格言</h2>
-    </div>
     <figure>
       <blockquote>「${escapeHtml(quote.message)}」</blockquote>
       <figcaption><span>${formatQuoteDate(today)}</span> ・ <cite>${escapeHtml(quote.author)}</cite>${noteMarkup}</figcaption>
@@ -4374,54 +4390,6 @@ function renderMode() {
     els.syncStatus.textContent = "ログイン待ち";
     els.syncStatus.className = "sync-pill";
   }
-}
-
-function renderSummary() {
-  els.deadlineCount.textContent = getUpcomingDeadlines().length;
-  els.eventCount.textContent = getUpcomingEvents().length;
-  els.activeCount.textContent = activeEntries().filter(isActive).length;
-  els.trashCount.textContent = trashedEntries().length;
-}
-
-function renderTodayActions() {
-  const isWeek = state.actionScope === "week";
-  const actions = getTodayActions(isWeek ? 8 : 5);
-  els.todayActionTitle.textContent = isWeek ? "1週間以内にやること" : "今日やること";
-  els.todayActionCount.textContent = `${actions.length}件`;
-  updateActionScopeButtons();
-
-  if (actions.length === 0) {
-    els.todayActionList.innerHTML = emptyState(
-      isWeek
-        ? "1週間以内の急ぎタスクはありません。余裕があるうちに気になる企業を整理しておくと強いです。"
-        : "今日は急ぎのタスクはありません。気になる企業を1社だけ確認できたら十分です。"
-    );
-    return;
-  }
-
-  els.todayActionList.innerHTML = actions
-    .map(({ entry, action }) => {
-      return `
-        <button class="today-action-item ${action.tone}" data-detail-id="${escapeAttribute(entry.id)}" type="button">
-          <span class="today-action-company">${escapeHtml(entry.companyName)}</span>
-          <strong>${escapeHtml(action.label)}</strong>
-          <span>${escapeHtml(action.meta)}</span>
-        </button>
-      `;
-    })
-    .join("");
-}
-
-function setActionScope(scope) {
-  state.actionScope = actionScopes.includes(scope) ? scope : "today";
-  localStorage.setItem(actionScopeStorageKey, state.actionScope);
-  renderTodayActions();
-}
-
-function updateActionScopeButtons() {
-  els.actionScopeButtons.forEach((button) => {
-    button.classList.toggle("active", button.dataset.actionScope === state.actionScope);
-  });
 }
 
 function setCompanyFilter(filter) {
@@ -4455,58 +4423,6 @@ function matchesStandaloneListFilter(entry, filter) {
   if (filter === "active") return isActive(entry);
   if (filter === "finished") return isFinished(entry);
   return entry.trackType === filter;
-}
-
-function renderDeadlineList() {
-  const deadlines = getUpcomingDeadlines();
-  if (deadlines.length === 0) {
-    els.deadlineList.innerHTML = emptyState("近い締切はありません");
-    return;
-  }
-
-  els.deadlineList.innerHTML = deadlines
-    .map((entry) => {
-      return `
-        <article class="list-item">
-          <div class="list-title-row">
-            <strong>${escapeHtml(entry.companyName)}</strong>
-            ${statusTag(entry.status)}
-          </div>
-          <div class="meta-row">
-            ${trackTag(entry.trackType)}
-            <span>${formatDate(entry.deadline)} 締切</span>
-            <span>志望度 ${escapeHtml(entry.priority)}</span>
-          </div>
-        </article>
-      `;
-    })
-    .join("");
-}
-
-function renderEventList() {
-  const events = getUpcomingEvents();
-  if (events.length === 0) {
-    els.eventList.innerHTML = emptyState("近い予定はありません");
-    return;
-  }
-
-  els.eventList.innerHTML = events
-    .map((entry) => {
-      return `
-        <article class="list-item">
-          <div class="list-title-row">
-            <strong>${escapeHtml(entry.companyName)}</strong>
-            <span class="tag green">${escapeHtml(entry.eventType || "予定")}</span>
-          </div>
-          <div class="meta-row">
-            <span>${formatDate(entry.eventDate)}</span>
-            ${trackTag(entry.trackType)}
-            <span>${escapeHtml(simpleStatus(entry.status))}</span>
-          </div>
-        </article>
-      `;
-    })
-    .join("");
 }
 
 function renderBulkIcons() {
@@ -4581,7 +4497,7 @@ function renderCompanyList() {
   const trashEntries = trashedEntries();
   const isCompact = !isTrashView && state.companyViewMode === "compact";
   const isMedium = !isTrashView && state.companyViewMode === "medium";
-  const entries = state.entries
+  let entries = state.entries
     .filter(matchesListFilter)
     .filter(matchesSearchQuery)
     .filter(matchesIndustryFilter)
@@ -4600,6 +4516,16 @@ function renderCompanyList() {
     ? "完全削除中..."
     : `ゴミ箱を空にする (${trashEntries.length})`;
 
+  const smallScreen = window.matchMedia('(max-width: 760px)').matches;
+  const pageSize = isCompact ? (smallScreen ? 6 : 12) : isMedium && !smallScreen ? 6 : 3;
+  const pagingKey = JSON.stringify([state.filter, state.searchQuery, state.deadlineFilter, state.priorityFilter, state.companyViewMode, pageSize]);
+  if (state.companyPagingKey !== pagingKey) { state.companyPage = 0; state.companyPagingKey = pagingKey; }
+  if (isTrashView || !entries.length) {
+    const page = paginateItems(entries, state.companyPage, pageSize);
+    state.companyPage = page.page;
+    renderPagination(els.companyPagination, page, 'company', isTrashView ? '件' : '社');
+    entries = page.items;
+  }
   if (entries.length === 0) {
     els.companyList.innerHTML = emptyState(
       isTrashView
@@ -4647,12 +4573,15 @@ function renderCompanyList() {
     return;
   }
 
-  renderCompanyGroups(entries);
+  renderCompanyGroups(entries, pageSize);
 }
 
-function renderCompanyGroups(visibleEntries) {
+function renderCompanyGroups(visibleEntries, pageSize = 12) {
   const model = window.SHUKATSU_GROUPS;
-  const groups = model.group(visibleEntries);
+  const page = paginateItems(model.group(visibleEntries), state.companyPage, pageSize);
+  state.companyPage = page.page;
+  renderPagination(els.companyPagination, page, 'company', '社');
+  const groups = page.items;
   const visibleIds = new Set(visibleEntries.map((entry) => entry.id));
   els.companyList.innerHTML = groups.map((group) => {
     const source = group.entries[0];
@@ -4851,52 +4780,56 @@ function updateCompanyViewButtons() {
   });
 }
 
-function renderTemplateList() {
-  if (state.templates.length === 0) {
-    els.templateList.innerHTML = emptyState("まだ型がありません。ガクチカ、自己PR、志望動機などを保存しておくと使い回せます。");
-    return;
-  }
+function paginateItems(items, requestedPage, size) {
+  const pageSize = Math.max(1, Math.trunc(Number(size)) || 1);
+  const pageCount = Math.max(1, Math.ceil(items.length / pageSize));
+  const page = Math.min(pageCount - 1, Math.max(0, Math.trunc(Number(requestedPage)) || 0));
+  const start = page * pageSize;
+  return { items: items.slice(start, start + pageSize), page, pageCount, total: items.length, start: items.length ? start + 1 : 0, end: Math.min(start + pageSize, items.length) };
+}
 
-  els.templateList.innerHTML = [...state.templates].sort(sortTemplates)
-    .map((template) => {
-      return `
-        <article class="template-card" data-template-card data-template-id="${escapeAttribute(template.id)}">
-          <div class="template-card-heading">
-            <button class="template-title-button" data-template-toggle type="button" aria-expanded="false">
-              <span class="tag">${escapeHtml(template.kind)}</span>
-              <strong>${escapeHtml(template.title)}</strong>
-              <span class="template-title-meta">${formatCharCount(template.body)}</span>
-            </button>
-            <div class="template-card-actions">
-              <button class="reorder-button" data-template-reorder-handle type="button">並べ替え</button>
-              <button class="detail-button" data-template-copy-id="${escapeAttribute(template.id)}" type="button">コピー</button>
-              <button class="edit-button" data-template-edit-id="${escapeAttribute(template.id)}" type="button">編集</button>
-              <button class="delete-button" data-template-delete-id="${escapeAttribute(template.id)}" type="button">削除</button>
-            </div>
-          </div>
-          <div class="template-card-body" data-template-body hidden>
-            <p>${escapeHtml(template.body)}</p>
-          </div>
-        </article>
-      `;
-    })
-    .join("");
+function renderPagination(element, page, target, unit) {
+  element.hidden = page.total === 0;
+  element.innerHTML = `<span aria-live="polite">${page.start}–${page.end} / ${page.total}${unit}</span>
+    ${page.pageCount > 1 ? `<button type="button" data-page-target="${target}" data-page="${page.page - 1}" aria-label="前のページ" ${page.page === 0 ? 'disabled' : ''}>‹</button><span>${page.page + 1} / ${page.pageCount}</span><button type="button" data-page-target="${target}" data-page="${page.page + 1}" aria-label="次のページ" ${page.page + 1 === page.pageCount ? 'disabled' : ''}>›</button>` : ''}`;
+}
+
+function setWorkspaceView(view) {
+  state.workspaceView = ['companies', 'templates', 'calendar'].includes(view) ? view : 'companies';
+  els.appContent.dataset.activeView = state.workspaceView;
+  document.querySelectorAll('[data-workspace-view]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.workspaceView === state.workspaceView)));
+}
+
+function openTemplateEditor() {
+  if (els.templatePreviewDialog.open) els.templatePreviewDialog.close();
+  if (!els.templateDialog.open) els.templateDialog.showModal();
+}
+
+function renderTemplateList() {
+  const page = paginateItems([...state.templates].sort(sortTemplates), state.templatePage, 3);
+  state.templatePage = page.page;
+  els.templateCount.textContent = state.templates.length ? `(${state.templates.length})` : '';
+  renderPagination(els.templatePagination, page, 'template', '件');
+  els.templateList.innerHTML = page.items.length ? page.items.map(template => `
+    <article class="template-card" data-template-card data-template-id="${escapeAttribute(template.id)}">
+      <button class="reorder-button" data-template-reorder-handle type="button" aria-label="型を長押しで並べ替え" title="長押しで並べ替え">⠿</button>
+      <button class="template-title-button" data-template-toggle type="button" aria-haspopup="dialog">
+        <strong>${escapeHtml(template.title)}</strong><small>${escapeHtml(template.kind)} · ${formatCharCount(template.body)}</small>
+      </button>
+      <button class="secondary-button small-button" data-template-copy-id="${escapeAttribute(template.id)}" type="button">コピー</button>
+    </article>`).join('') : emptyState('「＋ 型」から追加');
 }
 
 function toggleTemplateCard(card) {
-  if (!card) return;
-  const body = card.querySelector("[data-template-body]");
-  const toggle = card.querySelector("[data-template-toggle]");
-  if (!body || !toggle) return;
-  const expanded = body.hidden;
-  body.hidden = !expanded;
-  toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
-  card.classList.toggle("is-open", expanded);
+  const template = state.templates.find(item => item.id === card?.dataset.templateId);
+  if (!template) return;
+  els.templatePreviewTitle.textContent = template.title;
+  els.templatePreviewContent.innerHTML = `<p class="template-preview-meta">${escapeHtml(template.kind)} · ${formatCharCount(template.body)}</p><p class="template-preview-body">${escapeHtml(template.body)}</p><div class="form-actions"><button class="secondary-button" data-template-copy-id="${escapeAttribute(template.id)}" type="button">コピー</button><button class="primary-button" data-template-edit-id="${escapeAttribute(template.id)}" type="button">編集</button><button class="delete-button" data-template-delete-id="${escapeAttribute(template.id)}" type="button">削除</button></div>`;
+  els.templatePreviewDialog.showModal();
 }
-
 function templateOptionsMarkup() {
   const templates = [...state.templates].sort(sortTemplates);
-  if (templates.length === 0) return '<option value="">先に下の「ES・ガクチカの型」で保存</option>';
+  if (templates.length === 0) return '<option value="">先に「ESの型」で保存</option>';
   return [
     '<option value="">型を選択</option>',
     ...templates.map((template) =>
@@ -4914,41 +4847,31 @@ function renderTemplateOptions() {
 }
 
 function renderCalendar() {
-  const year = state.calendarYear;
-  const month = state.calendarMonth;
+  const year = state.calendarYear, month = state.calendarMonth;
   const todayKey = toDateInputValue(new Date());
-  const monthStart = new Date(year, month, 1);
-  const monthEnd = new Date(year, month + 1, 0);
-  const firstDay = monthStart.getDay();
-  const daysInMonth = monthEnd.getDate();
-  const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
-
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
   els.calendarMonthLabel.textContent = `${year}年${month + 1}月`;
-  const cells = weekdays.map((day) => `<div class="calendar-weekday">${day}</div>`);
-
-  for (let blank = 0; blank < firstDay; blank += 1) {
-    cells.push('<div class="calendar-cell"></div>');
-  }
-
-  for (let day = 1; day <= daysInMonth; day += 1) {
+  const cells = ['日','月','火','水','木','金','土'].map(day => `<div class="calendar-weekday">${day}</div>`);
+  for (let blank = 0; blank < firstDay; blank++) cells.push('<div class="calendar-cell calendar-empty" aria-hidden="true"></div>');
+  for (let day = 1; day <= daysInMonth; day++) {
     const dateKey = toDateInputValue(new Date(year, month, day));
-    const cellClass = dateKey === todayKey ? "calendar-cell today" : "calendar-cell";
-    const dots = calendarItemsFor(dateKey)
-      .slice(0, 3)
-      .map((item) => `<span class="calendar-dot ${item.kind}">${escapeHtml(item.label)}</span>`)
-      .join("");
-
-    cells.push(`
-      <div class="${cellClass}">
-        <span class="calendar-date">${day}</span>
-        ${dots}
-      </div>
-    `);
+    const items = calendarItemsFor(dateKey);
+    const kinds = [...new Set(items.map(item => item.kind))];
+    const label = `${year}年${month + 1}月${day}日、${items.length}件`;
+    cells.push(`<button type="button" class="calendar-cell ${dateKey === todayKey ? 'today' : ''}" data-calendar-date="${dateKey}" aria-label="${label}" ${dateKey === todayKey ? 'aria-current="date"' : ''} ${items.length ? '' : 'disabled'}><span class="calendar-date">${day}</span><span class="calendar-markers" aria-hidden="true">${kinds.map(kind => `<i class="calendar-marker ${kind}"></i>`).join('')}</span></button>`);
   }
-
-  els.calendarGrid.innerHTML = cells.join("");
+  while ((cells.length - 7) % 7) cells.push('<div class="calendar-cell calendar-empty" aria-hidden="true"></div>');
+  els.calendarGrid.innerHTML = cells.join('');
 }
 
+function openCalendarDay(dateKey) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return;
+  const items = calendarItemsFor(dateKey);
+  els.calendarDayTitle.textContent = `${formatDate(dateKey)}の予定（${items.length}件）`;
+  els.calendarDayList.innerHTML = items.length ? items.map(item => `<button class="calendar-day-item" type="button" data-detail-id="${escapeAttribute(item.id)}"><strong>${escapeHtml(item.label)}</strong><span>${escapeHtml(item.trackType)}</span></button>`).join('') : emptyState('予定はありません');
+  els.calendarDayDialog.showModal();
+}
 function moveCalendarMonth(delta) {
   const nextMonth = new Date(state.calendarYear, state.calendarMonth + delta, 1);
   state.calendarYear = nextMonth.getFullYear();
@@ -5638,7 +5561,7 @@ function wanderMascotNearHome() {
   const bounds = getMascotBounds();
   const previousX = mascotState.x;
   const xRange = Math.min(40, Math.max(0, bounds.maxX - bounds.minX));
-  const yRange = Math.min(28, Math.max(0, bounds.maxY - bounds.minY));
+  const yRange = Math.min(4, Math.max(0, bounds.maxY - bounds.minY));
 
   mascotState.x = bounds.maxX - Math.random() * xRange;
   mascotState.y = bounds.maxY - Math.random() * yRange;
@@ -5647,6 +5570,7 @@ function wanderMascotNearHome() {
 }
 
 function handleMascotResize() {
+  if (!mascotState.hasCustomPosition) placeMascotAtHome();
   clampMascotPosition();
   updateMascotWander();
 }
@@ -5673,7 +5597,7 @@ function setMascotVelocity() {
   const previousX = mascotState.x;
   const bounds = getMascotBounds();
   mascotState.x = bounds.maxX - Math.random() * Math.min(52, bounds.maxX - bounds.minX);
-  mascotState.y = bounds.maxY - Math.random() * Math.min(36, bounds.maxY - bounds.minY);
+  mascotState.y = bounds.maxY - Math.random() * Math.min(4, bounds.maxY - bounds.minY);
   mascotState.vx = mascotState.x < previousX ? -1 : 1;
   applyMascotPosition();
 }
@@ -5692,7 +5616,7 @@ function getMascotBounds() {
     minX: 10,
     minY: 74,
     maxX: Math.max(10, window.innerWidth - size.width - 18),
-    maxY: Math.max(74, window.innerHeight - size.height - 72)
+    maxY: Math.max(74, window.innerHeight - size.height - 4)
   };
 }
 
@@ -6171,10 +6095,10 @@ function calendarItemsFor(dateKey) {
   const items = [];
   activeEntries().forEach((entry) => {
     if (entry.deadline === dateKey) {
-      items.push({ kind: "deadline", label: `${entry.companyName} 締切` });
+      items.push({ id: entry.id, trackType: entry.trackType, kind: "deadline", label: `${entry.companyName} 締切` });
     }
     if (entry.eventDate === dateKey) {
-      items.push({ kind: "event", label: `${entry.companyName} ${entry.eventType || "予定"}` });
+      items.push({ id: entry.id, trackType: entry.trackType, kind: "event", label: `${entry.companyName} ${entry.eventType || "予定"}` });
     }
   });
   return items;
