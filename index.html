@@ -56,7 +56,9 @@
 
       <section class="account-panel" id="accountPanel" hidden>
         <div>
+          <p class="eyebrow">Signed In</p>
           <h2 id="userEmailLabel">ログイン中</h2>
+          <p>クラウド同期が有効です。別の端末でも同じアカウントでログインすると、このデータを見られます。</p>
         </div>
         <div class="account-actions">
           <button class="secondary-button" id="importLocalButton" type="button" hidden>端末データを移す</button>
@@ -72,13 +74,60 @@
       <div id="appContent">
         <section class="daily-quote" id="dailyQuote" aria-label="今日の偉人の格言"></section>
 
-        <nav class="workspace-tabs" aria-label="表示する内容">
-          <button type="button" data-workspace-view="companies" aria-pressed="true" aria-controls="companyPanel">企業</button>
-          <button type="button" data-workspace-view="templates" aria-pressed="false" aria-controls="templatesPanel">ESの型</button>
-          <button type="button" data-workspace-view="calendar" aria-pressed="false" aria-controls="calendarPanel">カレンダー</button>
-        </nav>
-        <section class="dashboard-grid workspace-layout">
-          <article class="panel company-panel" id="companyPanel">
+        <section class="summary-grid" aria-label="サマリー">
+          <article class="summary-item">
+            <span class="summary-label">近日の締切</span>
+            <strong id="deadlineCount">0</strong>
+          </article>
+          <article class="summary-item">
+            <span class="summary-label">面接・説明会</span>
+            <strong id="eventCount">0</strong>
+          </article>
+          <article class="summary-item">
+            <span class="summary-label">選考中</span>
+            <strong id="activeCount">0</strong>
+          </article>
+          <article class="summary-item">
+            <span class="summary-label">ゴミ箱</span>
+            <strong id="trashCount">0</strong>
+          </article>
+        </section>
+
+        <section class="today-panel" aria-label="今日やること">
+          <div class="today-panel-heading">
+            <div>
+              <p class="eyebrow">Focus</p>
+              <h2 id="todayActionTitle">今日やること</h2>
+            </div>
+            <div class="today-panel-tools">
+              <div class="today-scope-toggle" role="group" aria-label="やることの期間">
+                <button class="today-scope-button active" data-action-scope="today" type="button">今日</button>
+                <button class="today-scope-button" data-action-scope="week" type="button">1週間以内</button>
+              </div>
+              <span id="todayActionCount">0件</span>
+            </div>
+          </div>
+          <div class="today-action-list" id="todayActionList"></div>
+        </section>
+
+        <section class="dashboard-grid">
+          <article class="panel">
+            <div class="panel-heading">
+              <h2>近日の締切</h2>
+              <span>14日以内</span>
+            </div>
+            <div class="item-list" id="deadlineList"></div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading">
+              <h2>近日の面接・説明会</h2>
+              <span>予定日順</span>
+            </div>
+            <div class="item-list" id="eventList"></div>
+          </article>
+
+          <article class="panel wide-panel">
             <div class="panel-heading">
               <h2>企業一覧</h2>
               <div class="list-toolbar">
@@ -103,7 +152,12 @@
                 <button class="delete-button empty-trash-button" id="emptyTrashButton" type="button" hidden>ゴミ箱を空にする</button>
               </div>
             </div>
-            <details class="company-tools"><summary>その他の操作</summary>
+            <div class="track-guide" aria-label="選考タイプの使い分け">
+              <span><strong>企業ごとに1枚</strong>中に夏・冬インターンや各選考を追加</span>
+              <span><strong>選考ごとの記録</strong>ES・メモ・進捗を切り替えて管理</span>
+              <span><strong>早期選考</strong>インターン後などの早い本選考</span>
+              <span><strong>本選考</strong>内定に向けた通常選考</span>
+            </div>
             <div class="bulk-icon-controls" id="bulkIconControls" hidden>
               <button class="secondary-button small-button" id="bulkIconButton" type="button" aria-describedby="bulkIconStatus">未設定アイコンを一括設定</button>
               <button class="secondary-button small-button" id="cancelBulkIconButton" type="button" hidden>途中で止める</button>
@@ -113,7 +167,6 @@
               <button class="secondary-button small-button" id="moveLegacySummerButton" type="button">未分類を夏インターンへまとめる</button>
               <p id="legacySummerStatus" role="status"></p>
             </div>
-            </details>
             <div class="search-controls" aria-label="検索条件">
               <label>
                 キーワード
@@ -144,35 +197,16 @@
               <button class="secondary-button" id="clearFiltersButton" type="button">条件クリア</button>
             </div>
             <div class="company-list" id="companyList"></div>
-            <nav class="list-pagination" id="companyPagination" aria-label="企業一覧のページ"></nav>
           </article>
 
-          <aside class="workspace-sidebar">
-          <article class="panel calendar-panel" id="calendarPanel">
+          <article class="panel wide-panel template-panel">
             <div class="panel-heading">
-              <h2>カレンダー</h2>
-              <div class="calendar-controls" aria-label="カレンダー操作">
-                <button class="calendar-nav-button" id="prevCalendarButton" type="button" aria-label="前月">‹</button>
-                <span id="calendarMonthLabel"></span>
-                <button class="calendar-nav-button" id="nextCalendarButton" type="button" aria-label="翌月">›</button>
-                <button class="calendar-today-button" id="todayCalendarButton" type="button">今月</button>
+              <div>
+                <h2>ES・ガクチカの型</h2>
+                <span>使い回せる回答を保存</span>
               </div>
             </div>
-            <div class="calendar" id="calendarGrid"></div>
-          </article>
-            <article class="panel template-panel" id="templatesPanel">
-              <div class="panel-heading"><h2>ESの型 <small id="templateCount"></small></h2><button class="secondary-button small-button" id="openTemplateButton" type="button">＋ 型</button></div>
-              <div class="template-list" id="templateList"></div>
-              <nav class="list-pagination" id="templatePagination" aria-label="ESの型のページ"></nav>
-            </article>
-          </aside>
-        </section>
-      </div>
-    </main>
-
-    <dialog class="entry-dialog template-editor-dialog" id="templateDialog" aria-labelledby="templateDialogTitle">
-      <div class="form-heading"><h2 id="templateDialogTitle">ESの型</h2><button class="icon-button" id="closeTemplateButton" type="button" aria-label="型の編集を閉じる">×</button></div>
-      <form class="template-form" id="templateForm">
+            <form class="template-form" id="templateForm">
               <div class="field-grid">
                 <label>
                   種類
@@ -199,15 +233,24 @@
                 <button class="primary-button" id="saveTemplateButton" type="submit">型を保存</button>
               </div>
             </form>
-    </dialog>
-    <dialog class="entry-dialog" id="templatePreviewDialog" aria-labelledby="templatePreviewTitle">
-      <div class="form-heading"><h2 id="templatePreviewTitle">ESの型</h2><button class="icon-button" id="closeTemplatePreviewButton" type="button" aria-label="型の本文を閉じる">×</button></div>
-      <div id="templatePreviewContent"></div>
-    </dialog>
-    <dialog class="entry-dialog" id="calendarDayDialog" aria-labelledby="calendarDayTitle">
-      <div class="form-heading"><h2 id="calendarDayTitle">この日の予定</h2><button class="icon-button" id="closeCalendarDayButton" type="button" aria-label="日付の予定を閉じる">×</button></div>
-      <div class="calendar-day-list" id="calendarDayList"></div>
-    </dialog>
+            <div class="template-list" id="templateList"></div>
+          </article>
+
+          <article class="panel calendar-panel">
+            <div class="panel-heading">
+              <h2>カレンダーまとめ</h2>
+              <div class="calendar-controls" aria-label="カレンダー操作">
+                <button class="calendar-nav-button" id="prevCalendarButton" type="button">前月</button>
+                <span id="calendarMonthLabel"></span>
+                <button class="calendar-nav-button" id="nextCalendarButton" type="button">翌月</button>
+                <button class="calendar-today-button" id="todayCalendarButton" type="button">今月</button>
+              </div>
+            </div>
+            <div class="calendar" id="calendarGrid"></div>
+          </article>
+        </section>
+      </div>
+    </main>
 
     <dialog class="ai-import-dialog" id="aiImportDialog" aria-labelledby="aiImportTitle">
       <form class="ai-import-form" id="aiImportForm" method="dialog">
