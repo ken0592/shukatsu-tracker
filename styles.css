@@ -3215,3 +3215,15 @@ textarea {
   .header-account #userEmailLabel { max-width: 190px; }
   .header-actions > button { min-height: 36px; padding: 0 10px; font-size: 13px; }
 }
+
+/* Keep selection navigation and its delete target unambiguous. */
+.selection-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.selection-toolbar > strong { font-size: 14px; }
+.company-branch-navigation .branch-choices button[aria-pressed="true"] { background: var(--blue); color: #fff; border-color: var(--blue); }
+.company-branch-detail:hover, .company-branch-detail:focus-visible { background: #eef5ff; }
+.company-branch-detail::after { content: "›"; margin-left: 4px; color: var(--muted); font-size: 12px; }
+.company-panel .track-filter-button.active span, .track-filter-button.active > span { color: #fff; }
+.selection-delete-dialog { padding: 22px; }
+.selection-delete-dialog p { line-height: 1.7; overflow-wrap: anywhere; }
+.selection-delete-target { font-weight: 700; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: #f8faff; }
+.selection-delete-dialog .form-actions { margin-top: 20px; }

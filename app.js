@@ -137,6 +137,8 @@ const state = {
   detailEsMode: "read",
   pendingEntryConflict: null,
   trashDeletePending: false,
+  pendingSelectionChanges: new Set(),
+  selectionDeletePrompt: null,
   editingTemplateId: null,
   aiCards: [],
   aiCsvCards: [],
@@ -271,6 +273,11 @@ const els = {
   mascotHelpSubmitButton: document.querySelector("#mascotHelpSubmitButton"),
   clearMascotChatButton: document.querySelector("#clearMascotChatButton"),
   mascotHelpLog: document.querySelector("#mascotHelpLog"),
+  deleteBranchButton: document.querySelector("#deleteBranchButton"),
+  deleteSelectionDialog: document.querySelector("#deleteSelectionDialog"),
+  deleteSelectionTarget: document.querySelector("#deleteSelectionTarget"),
+  deleteSelectionNote: document.querySelector("#deleteSelectionNote"),
+  cancelDeleteSelectionButton: document.querySelector("#cancelDeleteSelectionButton"),
   addBranchDialog: document.querySelector("#addBranchDialog"),
   addBranchTitle: document.querySelector("#addBranchTitle"),
   addBranchChoices: document.querySelector("#addBranchChoices"),
@@ -405,6 +412,11 @@ function bindEvents() {
     closeEntryFormDialog();
   });
 
+  els.deleteBranchButton.addEventListener("click", () => { if (state.detailEditingId) void handleDeleteEntry(state.detailEditingId); });
+  els.cancelDeleteSelectionButton.addEventListener("click", () => finishSelectionDeletePrompt(false));
+  document.querySelector("#confirmDeleteSelectionButton").addEventListener("click", () => finishSelectionDeletePrompt(true));
+  els.deleteSelectionDialog.addEventListener("cancel", event => { event.preventDefault(); finishSelectionDeletePrompt(false); });
+  els.deleteSelectionDialog.addEventListener("close", () => { if (state.selectionDeletePrompt) finishSelectionDeletePrompt(false); });
   els.deleteEntryButton.addEventListener("click", () => {
     if (state.editingId) handleDeleteEntry(state.editingId);
   });
@@ -597,6 +609,8 @@ function bindEvents() {
     if (switchBranch) { void switchCompanyBranch(switchBranch.dataset.switchBranch); return; }
     const addBranch = event.target.closest("[data-add-company-track]");
     if (addBranch) { void openBranchChooser(addBranch.dataset.addCompanyTrack); return; }
+    const restoreBranch = event.target.closest("[data-restore-company-branch]");
+    if (restoreBranch) { void restoreCompanyBranch(restoreBranch.dataset.restoreCompanyBranch); return; }
     const newBranch = event.target.closest("[data-new-company-track]");
     if (newBranch) { createCompanyBranch(newBranch.dataset.sourceId, newBranch.dataset.newCompanyTrack); return; }
     const detailButton = event.target.closest("[data-detail-id]");
@@ -747,6 +761,8 @@ function clearUserScopedUiState(options = {}) {
   state.bulkIcons = null;
   state.summerMigration = null;
   state.pendingStatusChanges = new Set();
+  state.pendingSelectionChanges = new Set();
+  finishSelectionDeletePrompt(false);
   if (els.addBranchDialog.open) els.addBranchDialog.close();
   state.userScopeVersion += 1;
   state.entries = [];
@@ -2148,83 +2164,129 @@ function handleEditEntry(id) {
   openEntryDialog(entry);
 }
 
-async function handleDeleteEntry(id) {
-  const entryToDelete = state.entries.find((entry) => entry.id === id);
-  if (!entryToDelete) {
-    showToast("削除する企業が見つかりません。");
-    return;
-  }
+function selectionLabel(entry) {
+  return `${entry.companyName} ／ ${entry.trackType === "インターン" ? "未分類インターン" : entry.trackType}`;
+}
 
-  if (isTrashed(entryToDelete)) {
-    showToast("この企業はすでにゴミ箱にあります。");
-    return;
-  }
-
-  const shouldDelete = window.confirm(
-    `「${entryToDelete.companyName}」をゴミ箱に移動しますか？\n企業情報・ES・メモは残り、あとで復元できます。`
-  );
-  if (!shouldDelete) return;
-
-  if (!canUseCloudTrash()) return;
-
-  const trashedEntry = normalizeEntry({
-    ...entryToDelete,
-    deletedAt: new Date().toISOString(),
-    updatedAt: entryToDelete.updatedAt
+function confirmSelectionDelete(entry) {
+  if (state.selectionDeletePrompt) return Promise.resolve(false);
+  els.deleteSelectionTarget.textContent = selectionLabel(entry);
+  const otherBranches = window.SHUKATSU_GROUPS.branches(state.entries, entry).filter(item => item.id !== entry.id);
+  els.deleteSelectionNote.textContent = otherBranches.length
+    ? `この選考だけをゴミ箱へ移します。${otherBranches.map(item => item.trackType).join("・")}のES・メモ・進捗はそのまま残ります。`
+    : "この企業で最後の選考のため、企業カードも一覧から非表示になります。保存済みの情報はゴミ箱に残ります。";
+  return new Promise(resolve => {
+    state.selectionDeletePrompt = { resolve };
+    els.deleteSelectionDialog.showModal();
+    els.cancelDeleteSelectionButton.focus();
   });
+}
 
-  if (state.mode === "cloud") {
-    const saved = await updateCloudEntry(trashedEntry, entryToDelete);
-    if (!saved) return;
-    state.entries = state.entries.map((entry) => (entry.id === id ? saved : entry));
-  } else {
-    const localEntry = normalizeEntry({ ...trashedEntry, updatedAt: new Date().toISOString() });
-    const nextEntries = state.entries.map((entry) => (entry.id === id ? localEntry : entry));
-    if (!saveLocalEntries(nextEntries)) return;
-    state.entries = nextEntries;
-  }
+function finishSelectionDeletePrompt(confirmed = false) {
+  const prompt = state.selectionDeletePrompt;
+  state.selectionDeletePrompt = null;
+  if (els.deleteSelectionDialog.open) els.deleteSelectionDialog.close();
+  prompt?.resolve(confirmed);
+}
 
-  if (state.editingId === id) {
-    resetEntryForm();
-    els.entryDialog.close();
+function hasUnsavedSelectionDetails(id) {
+  if (!els.companyDetailDialog.open || state.detailEditingId !== id || !state.detailBaseEntry) return false;
+  return JSON.stringify(collectDetailEsItems()) !== JSON.stringify(state.detailBaseEntry.esItems)
+    || els.detailMemoInput.value.trim() !== state.detailBaseEntry.memo;
+}
+
+function updateSelectionDeleteControls() {
+  const detail = state.entries.find(item => item.id === state.detailEditingId);
+  els.deleteBranchButton.hidden = !detail || isTrashed(detail);
+  els.deleteBranchButton.textContent = detail ? `${detail.trackType === "インターン" ? "未分類インターン" : detail.trackType}を削除` : "この選考を削除";
+  els.deleteBranchButton.disabled = state.pendingSelectionChanges.has(state.detailEditingId);
+  els.deleteEntryButton.disabled = state.pendingSelectionChanges.has(state.editingId);
+}
+
+async function handleDeleteEntry(id) {
+  const entry = state.entries.find(item => item.id === id && !isTrashed(item));
+  if (!entry || state.pendingSelectionChanges.has(id)) return;
+  if (state.entrySavePending || state.detailSavePending || state.pendingStatusChanges.has(id)) {
+    showToast("保存が終わってから、もう一度お試しください。");
+    return;
   }
-  render();
-  showToast(`「${entryToDelete.companyName}」をゴミ箱に移動しました。`);
+  if (hasUnsavedSelectionDetails(id)) {
+    showToast("編集中のES・メモを残すため、先に「詳細を保存」を押してください。");
+    return;
+  }
+  if (!canUseCloudTrash()) return;
+  const scope = captureUserScope();
+  if (!await confirmSelectionDelete(entry) || !isCurrentUserScope(scope)) return;
+  if (state.entries.find(item => item.id === id) !== entry) {
+    showToast("この選考が更新されています。内容を確認してから、もう一度削除してください。");
+    return;
+  }
+  if (!await setSelectionTrashed(entry, true, scope)) return;
+  if (state.editingId === id) { resetEntryForm(); els.entryDialog.close(); }
+  if (state.detailEditingId === id) closeCompanyDetail();
+  showToast(`「${selectionLabel(entry)}」だけをゴミ箱に移しました。ゴミ箱から復元できます。`);
 }
 
 async function handleRestoreEntry(id) {
-  const entryToRestore = state.entries.find((entry) => entry.id === id);
-  if (!entryToRestore) {
-    showToast("復元する企業が見つかりません。");
-    return;
+  const entry = state.entries.find(item => item.id === id && isTrashed(item));
+  if (!entry) return false;
+  const scope = captureUserScope();
+  if (!await setSelectionTrashed(entry, false, scope)) return false;
+  showToast(`「${selectionLabel(entry)}」を復元しました。`);
+  return true;
+}
+
+async function setSelectionTrashed(entry, trashed, scope) {
+  const pending = state.pendingSelectionChanges;
+  if (!isCurrentUserScope(scope) || pending.has(entry.id) || state.entries.find(item => item.id === entry.id) !== entry
+    || isTrashed(entry) === trashed || !canUseCloudTrash()) return false;
+  pending.add(entry.id);
+  updateSelectionDeleteControls();
+  try {
+    const deletedAt = trashed ? new Date().toISOString() : "";
+    let saved;
+    if (state.mode === "cloud") {
+      if (!scope.userId || !entry.updatedAt) {
+        showToast("同期更新してから、もう一度お試しください。");
+        return false;
+      }
+      // Update only the selected row's trash flag. Never resend ES, notes or sibling selections.
+      const { data, error } = await supabaseClient.from("entries")
+        .update({ deleted_at: deletedAt || null })
+        .eq("id", entry.id).eq("user_id", scope.userId).eq("updated_at", entry.updatedAt).select("*");
+      if (!isCurrentUserScope(scope)) return false;
+      if (error) throw error;
+      if (data?.length !== 1 || data[0].id !== entry.id) {
+        showToast("別の更新があったため変更していません。同期更新して、内容を確認してください。");
+        return false;
+      }
+      saved = fromDbEntry(data[0]);
+    } else {
+      saved = { ...entry, deletedAt, updatedAt: new Date().toISOString() };
+      const next = state.entries.map(item => item === entry ? saved : item);
+      if (!saveLocalEntries(next)) return false;
+    }
+    if (state.entries.find(item => item.id === entry.id) !== entry) {
+      showToast("途中で画面のデータが更新されました。同期更新して結果を確認してください。");
+      return false;
+    }
+    state.entries = state.entries.map(item => item === entry ? saved : item);
+    return true;
+  } catch {
+    if (isCurrentUserScope(scope)) showToast("変更を保存できませんでした。接続を確認して、もう一度お試しください。");
+    return false;
+  } finally {
+    pending.delete(entry.id);
+    if (isCurrentUserScope(scope)) { render(); updateSelectionDeleteControls(); }
   }
+}
 
-  if (!isTrashed(entryToRestore)) {
-    showToast("この企業はゴミ箱にありません。");
-    return;
+async function restoreCompanyBranch(id) {
+  const scope = captureUserScope();
+  if (await handleRestoreEntry(id) && isCurrentUserScope(scope)) {
+    els.addBranchDialog.close();
+    openCompanyDetail(id);
   }
-
-  if (!canUseCloudTrash()) return;
-
-  const restoredEntry = normalizeEntry({
-    ...entryToRestore,
-    deletedAt: "",
-    updatedAt: entryToRestore.updatedAt
-  });
-
-  if (state.mode === "cloud") {
-    const saved = await updateCloudEntry(restoredEntry, entryToRestore);
-    if (!saved) return;
-    state.entries = state.entries.map((entry) => (entry.id === id ? saved : entry));
-  } else {
-    const localEntry = normalizeEntry({ ...restoredEntry, updatedAt: new Date().toISOString() });
-    const nextEntries = state.entries.map((entry) => (entry.id === id ? localEntry : entry));
-    if (!saveLocalEntries(nextEntries)) return;
-    state.entries = nextEntries;
-  }
-
-  render();
-  showToast(`「${entryToRestore.companyName}」を復元しました。`);
 }
 
 async function handlePermanentDeleteEntry(id) {
@@ -2242,7 +2304,7 @@ async function handlePermanentDeleteEntry(id) {
   }
 
   const confirmation = window.prompt(
-    `「${entryToDelete.companyName}」を完全に削除します。\n企業情報・ES・メモは復元できなくなります。\n続けるには「完全削除」と入力してください。`
+    `「${selectionLabel(entryToDelete)}」を完全に削除します。\nこの選考の企業情報・ES・メモは復元できなくなります。\n続けるには「完全削除」と入力してください。`
   );
   if (confirmation === null) return;
   if (confirmation.trim() !== "完全削除") {
@@ -2280,7 +2342,7 @@ async function handlePermanentDeleteEntry(id) {
 
     state.entries = state.entries.filter((entry) => entry.id !== id);
     render();
-    showToast(`「${entryToDelete.companyName}」を完全に削除しました。`);
+    showToast(`「${selectionLabel(entryToDelete)}」を完全に削除しました。`);
   } finally {
     if (!deleteScope || isCurrentUserScope(deleteScope)) {
       state.trashDeletePending = false;
@@ -2300,7 +2362,7 @@ async function handleEmptyTrash() {
 
   const expectedText = `${entriesToDelete.length}件を完全削除`;
   const confirmation = window.prompt(
-    `ゴミ箱にある企業 ${entriesToDelete.length}件をすべて完全に削除します。\n企業情報・ES・メモは復元できなくなります。\n続けるには「${expectedText}」と入力してください。`
+    `ゴミ箱にある選考 ${entriesToDelete.length}件をすべて完全に削除します。\n企業情報・ES・メモは復元できなくなります。\n続けるには「${expectedText}」と入力してください。`
   );
   if (confirmation === null) return;
   if (confirmation.trim() !== expectedText) {
@@ -2341,7 +2403,7 @@ async function handleEmptyTrash() {
     const deletedIds = new Set(idsToDelete);
     state.entries = state.entries.filter((entry) => !deletedIds.has(entry.id));
     render();
-    showToast(`ゴミ箱の企業 ${idsToDelete.length}件を完全に削除しました。`);
+    showToast(`ゴミ箱の選考 ${idsToDelete.length}件を完全に削除しました。`);
   } finally {
     if (!deleteScope || isCurrentUserScope(deleteScope)) {
       state.trashDeletePending = false;
@@ -4551,7 +4613,7 @@ function renderCompanyGroups(visibleEntries) {
     const source = group.entries[0];
     const branches = model.branches(state.entries, source);
     const icon = branches.find((entry) => entry.logoUrl) || source;
-    const available = model.availableTracks(state.entries, source);
+    const available = [...model.availableTracks(state.entries, source), ...model.restorableBranches(state.entries, source)];
     return `<article class="company-card company-group-card" data-company-card data-company-id="${escapeAttribute(source.id)}">
       <div class="company-group-heading">
         <button class="company-group-open" data-detail-id="${escapeAttribute(source.id)}" type="button" title="${escapeAttribute(source.companyName)}の詳細">
@@ -4640,7 +4702,8 @@ function renderDetailBranches(entry) {
   const model = window.SHUKATSU_GROUPS;
   els.detailBranchNavigation.innerHTML = model.branches(state.entries, entry).map((branch) =>
     `<button class="secondary-button small-button" data-switch-branch="${escapeAttribute(branch.id)}" aria-pressed="${branch.id === entry.id}" type="button">${escapeHtml(branch.trackType === "インターン" ? "未分類インターン" : branch.trackType)}</button>`
-  ).join("") + `<button class="secondary-button small-button" data-add-company-track="${escapeAttribute(entry.id)}" type="button" ${model.availableTracks(state.entries, entry).length ? "" : "disabled"}>＋選考を追加</button>`;
+  ).join("") + `<button class="secondary-button small-button" data-add-company-track="${escapeAttribute(entry.id)}" type="button" ${(model.availableTracks(state.entries, entry).length || model.restorableBranches(state.entries, entry).length) ? "" : "disabled"}>＋選考を追加</button>`;
+  updateSelectionDeleteControls();
 }
 
 async function prepareBranchNavigation() {
@@ -4668,9 +4731,12 @@ async function openBranchChooser(id) {
   if (!entry) return;
   const available = window.SHUKATSU_GROUPS.availableTracks(state.entries, entry);
   els.addBranchTitle.textContent = `${entry.companyName}に選考を追加`;
-  els.addBranchChoices.innerHTML = window.SHUKATSU_GROUPS.tracks.map((track) =>
-    `<button class="secondary-button" data-new-company-track="${escapeAttribute(track)}" data-source-id="${escapeAttribute(id)}" type="button" ${available.includes(track) ? "" : "disabled"}>${escapeHtml(track)}${available.includes(track) ? "" : "（登録済み）"}</button>`
-  ).join("");
+  const restorable = window.SHUKATSU_GROUPS.restorableBranches(state.entries, entry);
+  els.addBranchChoices.innerHTML = window.SHUKATSU_GROUPS.tracks.map(track => {
+    const trashed = restorable.find(item => item.trackType === track);
+    if (trashed) return `<button class="secondary-button" data-restore-company-branch="${escapeAttribute(trashed.id)}" type="button">${escapeHtml(track)}を復元</button>`;
+    return `<button class="secondary-button" data-new-company-track="${escapeAttribute(track)}" data-source-id="${escapeAttribute(id)}" type="button" ${available.includes(track) ? "" : "disabled"}>${escapeHtml(track)}${available.includes(track) ? "" : "（登録済み）"}</button>`;
+  }).join("");
   els.addBranchDialog.showModal();
 }
 
@@ -4899,6 +4965,7 @@ function openEntryDialog(entry = null, options = {}) {
   els.entryImportConflictNotice.hidden = !conflictMarkup;
   updateTrackTypeHint();
   updateEntrySaveButton();
+  updateSelectionDeleteControls();
 
   if (typeof els.entryDialog.showModal === "function") {
     els.entryDialog.showModal();

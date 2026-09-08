@@ -361,10 +361,18 @@
         </label>
 
         <div class="form-actions">
-          <button class="delete-button entry-delete-button" id="deleteEntryButton" type="button" hidden>ゴミ箱へ移動</button>
+          <button class="delete-button entry-delete-button" id="deleteEntryButton" type="button" hidden>この選考を削除</button>
           <button class="primary-button" id="saveEntryButton" type="submit">保存</button>
         </div>
       </form>
+    </dialog>
+
+    <dialog class="entry-dialog selection-delete-dialog" id="deleteSelectionDialog" aria-labelledby="deleteSelectionTitle" aria-describedby="deleteSelectionNote">
+      <h2 id="deleteSelectionTitle">この選考だけを削除</h2>
+      <p class="selection-delete-target" id="deleteSelectionTarget"></p>
+      <p id="deleteSelectionNote"></p>
+      <p class="field-hint">この選考の保存済みデータも残り、ゴミ箱や「＋」から復元できます。</p>
+      <div class="form-actions"><button class="secondary-button" id="cancelDeleteSelectionButton" type="button">キャンセル</button><button class="delete-button" id="confirmDeleteSelectionButton" type="button">この選考だけを削除</button></div>
     </dialog>
 
     <dialog class="entry-dialog" id="addBranchDialog" aria-labelledby="addBranchTitle">
@@ -386,6 +394,7 @@
         </div>
 
         <section class="company-branch-navigation" aria-label="この企業の選考">
+          <div class="selection-toolbar"><strong>この企業の選考</strong><button class="delete-button small-button" id="deleteBranchButton" type="button">この選考を削除</button></div>
           <div id="detailBranchNavigation" class="branch-choices"></div>
           <p class="field-hint">選考を切り替えると、編集中のES・メモを自動保存します。</p>
         </section>

@@ -18,6 +18,10 @@
       .sort((a, b) => (tracks.indexOf(a.trackType) < 0 ? 9 : tracks.indexOf(a.trackType))
         - (tracks.indexOf(b.trackType) < 0 ? 9 : tracks.indexOf(b.trackType)));
   }
+  function restorableBranches(entries, source) {
+    return entries.filter(entry => entry.deletedAt && key(entry) === key(source)
+      && !entries.some(other => !other.deletedAt && key(other) === key(source) && other.trackType === entry.trackType));
+  }
   function availableTracks(entries, source) {
     // Trashed selections still occupy the database's unique company/type key.
     const occupied = new Set(entries.filter((entry) => key(entry) === key(source)).map((entry) => entry.trackType));
@@ -34,7 +38,7 @@
     return source && !source.deletedAt && source.trackType === "インターン"
       && !entries.some((entry) => entry.id !== source.id && key(entry) === key(source) && entry.trackType === "夏インターン");
   }
-  const api = { tracks, key, group, branches, availableTracks, branchDraft, canMoveToSummer };
+  const api = { tracks, key, group, branches, restorableBranches, availableTracks, branchDraft, canMoveToSummer };
   global.SHUKATSU_GROUPS = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);
