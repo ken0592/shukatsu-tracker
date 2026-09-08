@@ -235,20 +235,11 @@ const els = {
   resetTemplateButton: document.querySelector("#resetTemplateButton"),
   saveTemplateButton: document.querySelector("#saveTemplateButton"),
   templateList: document.querySelector("#templateList"),
-  deadlineCount: document.querySelector("#deadlineCount"),
-  eventCount: document.querySelector("#eventCount"),
-  activeCount: document.querySelector("#activeCount"),
-  trashCount: document.querySelector("#trashCount"),
   emptyTrashButton: document.querySelector("#emptyTrashButton"),
   bulkIconControls: document.querySelector("#bulkIconControls"),
   bulkIconButton: document.querySelector("#bulkIconButton"),
   cancelBulkIconButton: document.querySelector("#cancelBulkIconButton"),
   bulkIconStatus: document.querySelector("#bulkIconStatus"),
-  todayActionTitle: document.querySelector("#todayActionTitle"),
-  todayActionCount: document.querySelector("#todayActionCount"),
-  todayActionList: document.querySelector("#todayActionList"),
-  deadlineList: document.querySelector("#deadlineList"),
-  eventList: document.querySelector("#eventList"),
   companyList: document.querySelector("#companyList"),
   calendarGrid: document.querySelector("#calendarGrid"),
   calendarMonthLabel: document.querySelector("#calendarMonthLabel"),
@@ -263,7 +254,6 @@ const els = {
   clearFiltersButton: document.querySelector("#clearFiltersButton"),
   filterButtons: document.querySelectorAll(".filter-button"),
   viewModeButtons: document.querySelectorAll(".view-button"),
-  actionScopeButtons: document.querySelectorAll(".today-scope-button"),
   mascot: document.querySelector("#mascot"),
   mascotBubble: document.querySelector("#mascotBubble"),
   celebrationOverlay: document.querySelector("#celebrationOverlay"),
@@ -588,12 +578,6 @@ function bindEvents() {
   els.viewModeButtons.forEach((button) => {
     button.addEventListener("click", () => {
       setCompanyViewMode(button.dataset.viewMode);
-    });
-  });
-
-  els.actionScopeButtons.forEach((button) => {
-    button.addEventListener("click", () => {
-      setActionScope(button.dataset.actionScope);
     });
   });
 
@@ -4325,10 +4309,6 @@ async function updateCloudTemplate(template, scope = captureUserScope()) {
 function render() {
   renderMode();
   renderDailyQuote();
-  renderSummary();
-  renderTodayActions();
-  renderDeadlineList();
-  renderEventList();
   renderCompanyList();
   renderTemplateList();
   renderTemplateOptions();
@@ -4376,54 +4356,6 @@ function renderMode() {
   }
 }
 
-function renderSummary() {
-  els.deadlineCount.textContent = getUpcomingDeadlines().length;
-  els.eventCount.textContent = getUpcomingEvents().length;
-  els.activeCount.textContent = activeEntries().filter(isActive).length;
-  els.trashCount.textContent = trashedEntries().length;
-}
-
-function renderTodayActions() {
-  const isWeek = state.actionScope === "week";
-  const actions = getTodayActions(isWeek ? 8 : 5);
-  els.todayActionTitle.textContent = isWeek ? "1週間以内にやること" : "今日やること";
-  els.todayActionCount.textContent = `${actions.length}件`;
-  updateActionScopeButtons();
-
-  if (actions.length === 0) {
-    els.todayActionList.innerHTML = emptyState(
-      isWeek
-        ? "1週間以内の急ぎタスクはありません。余裕があるうちに気になる企業を整理しておくと強いです。"
-        : "今日は急ぎのタスクはありません。気になる企業を1社だけ確認できたら十分です。"
-    );
-    return;
-  }
-
-  els.todayActionList.innerHTML = actions
-    .map(({ entry, action }) => {
-      return `
-        <button class="today-action-item ${action.tone}" data-detail-id="${escapeAttribute(entry.id)}" type="button">
-          <span class="today-action-company">${escapeHtml(entry.companyName)}</span>
-          <strong>${escapeHtml(action.label)}</strong>
-          <span>${escapeHtml(action.meta)}</span>
-        </button>
-      `;
-    })
-    .join("");
-}
-
-function setActionScope(scope) {
-  state.actionScope = actionScopes.includes(scope) ? scope : "today";
-  localStorage.setItem(actionScopeStorageKey, state.actionScope);
-  renderTodayActions();
-}
-
-function updateActionScopeButtons() {
-  els.actionScopeButtons.forEach((button) => {
-    button.classList.toggle("active", button.dataset.actionScope === state.actionScope);
-  });
-}
-
 function setCompanyFilter(filter) {
   state.filter = filter || "all";
   updateCompanyFilterButtons();
@@ -4455,58 +4387,6 @@ function matchesStandaloneListFilter(entry, filter) {
   if (filter === "active") return isActive(entry);
   if (filter === "finished") return isFinished(entry);
   return entry.trackType === filter;
-}
-
-function renderDeadlineList() {
-  const deadlines = getUpcomingDeadlines();
-  if (deadlines.length === 0) {
-    els.deadlineList.innerHTML = emptyState("近い締切はありません");
-    return;
-  }
-
-  els.deadlineList.innerHTML = deadlines
-    .map((entry) => {
-      return `
-        <article class="list-item">
-          <div class="list-title-row">
-            <strong>${escapeHtml(entry.companyName)}</strong>
-            ${statusTag(entry.status)}
-          </div>
-          <div class="meta-row">
-            ${trackTag(entry.trackType)}
-            <span>${formatDate(entry.deadline)} 締切</span>
-            <span>志望度 ${escapeHtml(entry.priority)}</span>
-          </div>
-        </article>
-      `;
-    })
-    .join("");
-}
-
-function renderEventList() {
-  const events = getUpcomingEvents();
-  if (events.length === 0) {
-    els.eventList.innerHTML = emptyState("近い予定はありません");
-    return;
-  }
-
-  els.eventList.innerHTML = events
-    .map((entry) => {
-      return `
-        <article class="list-item">
-          <div class="list-title-row">
-            <strong>${escapeHtml(entry.companyName)}</strong>
-            <span class="tag green">${escapeHtml(entry.eventType || "予定")}</span>
-          </div>
-          <div class="meta-row">
-            <span>${formatDate(entry.eventDate)}</span>
-            ${trackTag(entry.trackType)}
-            <span>${escapeHtml(simpleStatus(entry.status))}</span>
-          </div>
-        </article>
-      `;
-    })
-    .join("");
 }
 
 function renderBulkIcons() {

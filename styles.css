@@ -3174,3 +3174,22 @@ textarea {
 
 .wide-panel > .panel-heading { flex-wrap: wrap; }
 .wide-panel > .panel-heading > h2 { flex-shrink: 0; white-space: nowrap; }
+
+/* Keep the company list intact, with calendar and templates beside it. */
+.app-shell { width: min(1600px, 100%); }
+.dashboard-with-sidebar { grid-template-columns: minmax(0, 1fr) 360px; align-items: start; gap: 16px; }
+.dashboard-with-sidebar > .wide-panel, .dashboard-sidebar > .panel { grid-column: auto; }
+.dashboard-sidebar { display: grid; gap: 16px; min-width: 0; }
+.dashboard-sidebar .panel-heading { flex-wrap: wrap; }
+.dashboard-sidebar .calendar-controls { justify-content: flex-start; }
+.dashboard-sidebar .calendar-cell { min-height: 56px; padding: 4px; }
+.dashboard-sidebar .calendar-date { margin-bottom: 4px; }
+.dashboard-sidebar .field-grid { grid-template-columns: minmax(0, 1fr); }
+.dashboard-sidebar .template-card-heading { flex-wrap: wrap; }
+.dashboard-sidebar .template-form input, .dashboard-sidebar .template-form select, .dashboard-sidebar .template-form textarea { min-width: 0; }
+@media (max-width: 1100px) and (min-width: 761px) {
+  .dashboard-with-sidebar { grid-template-columns: minmax(0, 1fr) 320px; }
+}
+@media (max-width: 760px) {
+  .dashboard-with-sidebar { grid-template-columns: minmax(0, 1fr); }
+}

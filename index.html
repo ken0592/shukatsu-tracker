@@ -74,59 +74,7 @@
       <div id="appContent">
         <section class="daily-quote" id="dailyQuote" aria-label="今日の偉人の格言"></section>
 
-        <section class="summary-grid" aria-label="サマリー">
-          <article class="summary-item">
-            <span class="summary-label">近日の締切</span>
-            <strong id="deadlineCount">0</strong>
-          </article>
-          <article class="summary-item">
-            <span class="summary-label">面接・説明会</span>
-            <strong id="eventCount">0</strong>
-          </article>
-          <article class="summary-item">
-            <span class="summary-label">選考中</span>
-            <strong id="activeCount">0</strong>
-          </article>
-          <article class="summary-item">
-            <span class="summary-label">ゴミ箱</span>
-            <strong id="trashCount">0</strong>
-          </article>
-        </section>
-
-        <section class="today-panel" aria-label="今日やること">
-          <div class="today-panel-heading">
-            <div>
-              <p class="eyebrow">Focus</p>
-              <h2 id="todayActionTitle">今日やること</h2>
-            </div>
-            <div class="today-panel-tools">
-              <div class="today-scope-toggle" role="group" aria-label="やることの期間">
-                <button class="today-scope-button active" data-action-scope="today" type="button">今日</button>
-                <button class="today-scope-button" data-action-scope="week" type="button">1週間以内</button>
-              </div>
-              <span id="todayActionCount">0件</span>
-            </div>
-          </div>
-          <div class="today-action-list" id="todayActionList"></div>
-        </section>
-
-        <section class="dashboard-grid">
-          <article class="panel">
-            <div class="panel-heading">
-              <h2>近日の締切</h2>
-              <span>14日以内</span>
-            </div>
-            <div class="item-list" id="deadlineList"></div>
-          </article>
-
-          <article class="panel">
-            <div class="panel-heading">
-              <h2>近日の面接・説明会</h2>
-              <span>予定日順</span>
-            </div>
-            <div class="item-list" id="eventList"></div>
-          </article>
-
+        <section class="dashboard-grid dashboard-with-sidebar">
           <article class="panel wide-panel">
             <div class="panel-heading">
               <h2>企業一覧</h2>
@@ -199,6 +147,20 @@
             <div class="company-list" id="companyList"></div>
           </article>
 
+          <aside class="dashboard-sidebar" aria-label="カレンダーとESの型">
+          <article class="panel calendar-panel">
+            <div class="panel-heading">
+              <h2>カレンダーまとめ</h2>
+              <div class="calendar-controls" aria-label="カレンダー操作">
+                <button class="calendar-nav-button" id="prevCalendarButton" type="button">前月</button>
+                <span id="calendarMonthLabel"></span>
+                <button class="calendar-nav-button" id="nextCalendarButton" type="button">翌月</button>
+                <button class="calendar-today-button" id="todayCalendarButton" type="button">今月</button>
+              </div>
+            </div>
+            <div class="calendar" id="calendarGrid"></div>
+          </article>
+
           <article class="panel wide-panel template-panel">
             <div class="panel-heading">
               <div>
@@ -235,19 +197,7 @@
             </form>
             <div class="template-list" id="templateList"></div>
           </article>
-
-          <article class="panel calendar-panel">
-            <div class="panel-heading">
-              <h2>カレンダーまとめ</h2>
-              <div class="calendar-controls" aria-label="カレンダー操作">
-                <button class="calendar-nav-button" id="prevCalendarButton" type="button">前月</button>
-                <span id="calendarMonthLabel"></span>
-                <button class="calendar-nav-button" id="nextCalendarButton" type="button">翌月</button>
-                <button class="calendar-today-button" id="todayCalendarButton" type="button">今月</button>
-              </div>
-            </div>
-            <div class="calendar" id="calendarGrid"></div>
-          </article>
+          </aside>
         </section>
       </div>
     </main>
