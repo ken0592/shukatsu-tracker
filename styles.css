@@ -3227,3 +3227,57 @@ textarea {
 .selection-delete-dialog p { line-height: 1.7; overflow-wrap: anywhere; }
 .selection-delete-target { font-weight: 700; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: #f8faff; }
 .selection-delete-dialog .form-actions { margin-top: 20px; }
+
+/* Seasonal decoration stays outside the document flow and never captures input. */
+:root[data-season="spring"] {
+  --bg: #fcf7fa; --line: #ebdce4; --blue: #a33b67; --blue-dark: #82284f;
+  --season-soft: #f9edf3; --season-header: rgba(252, 247, 250, .94);
+  --season-glow: #f4dce7; --season-motif: url("./assets/season-spring.svg");
+}
+:root[data-season="summer"] {
+  --bg: #f3f9f7; --line: #d5e6e1; --blue: #087b79; --blue-dark: #05615f;
+  --season-soft: #eaf5f0; --season-header: rgba(243, 249, 247, .94);
+  --season-glow: #d5eee4; --season-motif: url("./assets/season-summer.svg");
+}
+:root[data-season="autumn"] {
+  --bg: #fbf7f1; --line: #e7ddd2; --blue: #a44924; --blue-dark: #813618;
+  --season-soft: #f8efe4; --season-header: rgba(251, 247, 241, .94);
+  --season-glow: #f1dfc7; --season-motif: url("./assets/season-autumn.svg");
+}
+:root[data-season="winter"] {
+  --bg: #f5f8fc; --line: #dbe3ef; --blue: #3e63a3; --blue-dark: #2e4b81;
+  --season-soft: #edf2fa; --season-header: rgba(245, 248, 252, .94);
+  --season-glow: #dfe9f7; --season-motif: url("./assets/season-winter.svg");
+}
+:root[data-season] body {
+  background: radial-gradient(ellipse at 100% 0, var(--season-glow), transparent 60%) 0 0 / 100% 620px no-repeat, var(--bg);
+}
+:root[data-season] .app-header { background: var(--season-header); }
+:root[data-season] .app-header h1::after {
+  content: ""; display: inline-block; width: .85em; height: .85em; margin-left: 10px;
+  background: var(--season-motif) center / contain no-repeat; pointer-events: none;
+}
+:root[data-season] .daily-quote {
+  position: relative; isolation: isolate; overflow: hidden;
+  background: linear-gradient(115deg, #fff 15%, var(--season-soft));
+}
+:root[data-season] .daily-quote::before {
+  content: ""; position: absolute; z-index: -1; inset: 0; opacity: .12; pointer-events: none;
+  background-image: var(--season-motif), var(--season-motif), var(--season-motif);
+  background-position: calc(100% - 18px) 12px, calc(100% - 110px) 80%, 24% 90%;
+  background-size: 74px, 40px, 52px; background-repeat: no-repeat;
+}
+:root[data-season] :is(.secondary-button, .icon-button, .filter-button:not(.active)) { background: var(--season-soft); }
+:root[data-season] :is(.edit-button, .reorder-button, .calendar-nav-button, .calendar-today-button, .calendar-weekday) { background: var(--season-soft); }
+:root[data-season] .calendar-cell.today { background: var(--season-soft); box-shadow: inset 0 0 0 2px var(--blue); }
+:root[data-season] :is(.company-add-branch:hover:not(:disabled), .company-branch:hover, .company-branch-detail:hover, .company-branch-detail:focus-visible) { background: var(--season-soft); }
+:root[data-season] .company-branch.is-filter-match { background: var(--season-soft); }
+@media (max-width: 760px) {
+  :root[data-season] .daily-quote::before { background-size: 54px, 28px, 38px; opacity: .09; }
+}
+@media (forced-colors: active) {
+  :root[data-season] .app-header h1::after, :root[data-season] .daily-quote::before { display: none; }
+}
+
+/* Progress badges keep their familiar status colors in every season. */
+:root[data-season] .tag { --blue-dark: #1747b8; }
