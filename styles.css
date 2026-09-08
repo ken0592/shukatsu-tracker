@@ -3310,3 +3310,14 @@ textarea {
   .scratchpad-panel { right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); max-height: calc(100dvh - 24px); }
   .scratchpad-panel textarea { font-size: 16px; }
 }
+
+.company-mypage-links { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
+.company-mypage-caption { font-size: 11px; color: var(--text); }
+.company-mypage-shortcut {
+  display: inline-flex; align-items: center; gap: 4px; min-height: 24px; max-width: 100%;
+  color: var(--blue-dark); font-size: 11px; line-height: 1.4; text-decoration: none;
+  border-radius: 4px; overflow-wrap: anywhere;
+}
+.company-mypage-shortcut:hover { text-decoration: underline; }
+.company-mypage-shortcut:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.company-mypage-shortcut > span { flex-shrink: 0; }

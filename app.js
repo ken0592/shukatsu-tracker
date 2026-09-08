@@ -4631,8 +4631,27 @@ function renderCompanyGroups(visibleEntries) {
           ${companyStatusPicker(entry)}
         </div>`).join("")}
       </div>
+      ${companyMypageLinks(branches)}
     </article>`;
   }).join("");
+}
+
+function companyMypageLinks(branches) {
+  const destinations = new Map();
+  for (const entry of branches) {
+    const url = normalizeExternalUrl(entry.mypageUrl);
+    if (!url) continue;
+    if (!destinations.has(url)) destinations.set(url, { companyName: entry.companyName, tracks: [] });
+    const tracks = destinations.get(url).tracks;
+    if (!tracks.includes(entry.trackType)) tracks.push(entry.trackType);
+  }
+  if (!destinations.size) return "";
+  const shortTracks = { 夏インターン: "夏", 冬インターン: "冬", 早期選考: "早期", 本選考: "本選考" };
+  return `<div class="company-mypage-links">${destinations.size > 1 ? '<span class="company-mypage-caption">マイページ</span>' : ""}${[...destinations].map(([url, destination]) => {
+    const label = destinations.size === 1 ? "マイページ" : destination.tracks.map(track => shortTracks[track] || track).join("・");
+    const description = `${destination.companyName}・${destination.tracks.join("・")}のマイページを開く（新しいタブ）`;
+    return `<a class="company-mypage-shortcut" href="${escapeAttribute(url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeAttribute(description)}" title="${escapeAttribute(description)}">${escapeHtml(label)}<span aria-hidden="true">↗</span></a>`;
+  }).join("")}</div>`;
 }
 
 function companyStatusPicker(entry) {
