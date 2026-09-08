@@ -3209,11 +3209,12 @@ textarea {
 .company-panel .search-controls label { font-size: 10px; gap: 3px; }
 .company-panel .search-controls input, .company-panel .search-controls select { padding: 5px 7px; min-height: 30px; font-size: 12px; }
 .company-panel .search-controls button { min-height: 30px; padding: 4px 7px; font-size: 11px; }
-.company-tools { color: var(--muted); font-size: 10px; margin: 2px 0; }
+.company-tools { color: var(--muted); font-size: 10px; margin: 0 0 0 auto; }
+.company-tools[open] { flex-basis: 100%; margin: 0; }
 .company-tools summary { cursor: pointer; width: fit-content; }
 .company-tools .bulk-icon-controls { margin: 5px 0; }
 .company-list { align-items: start; gap: 8px; }
-.company-list.compact-view { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+.company-list.compact-view { --company-columns: 4; grid-template-columns: repeat(var(--company-columns), minmax(0, 1fr)); }
 .list-pagination { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 8px; color: var(--muted); font-size: 11px; }
 .list-pagination > span:first-child { margin-right: auto; }
 .list-pagination button { width: 28px; height: 26px; padding: 0; border: 1px solid var(--line); border-radius: 5px; background: #fff; color: var(--blue-dark); font-size: 18px; cursor: pointer; }
@@ -3250,7 +3251,32 @@ textarea {
 .template-editor-dialog .template-form { border: 0; padding: 0; background: none; }
 .template-preview-body { max-height: 50vh; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; font-size: 14px; }
 .template-preview-meta { color: var(--muted); font-size: 12px; }
+/* Give desktop cards enough room to read and use three rows of the screen. */
+@media (min-width: 761px) {
+  .workspace-layout h2 { font-size: 17px; }
+  .company-panel > .panel-heading { margin-bottom: 6px; }
+  .company-panel h2 { margin-bottom: 6px; }
+  .company-panel .search-controls { margin-bottom: 8px; }
+  .company-panel .filter-button, .company-panel .view-button { min-height: 30px; font-size: 12px; }
+  .company-panel .search-controls label, .company-tools { font-size: 11px; }
+  .company-panel .search-controls input, .company-panel .search-controls select { font-size: 13px; min-height: 32px; }
+  .company-list.compact-view { gap: 10px; }
+  .company-list.compact-view .company-group-card { min-height: clamp(100px, calc((100dvh - 440px) / 3), 156px); padding: 10px; gap: 8px; align-content: space-between; }
+  .company-list.compact-view .company-group-open { font-size: 14px; gap: 9px; }
+  .company-list.compact-view .company-icon { width: 38px; height: 38px; border-radius: 8px; font-size: 12px; }
+  .company-list.compact-view .company-add-branch { flex-basis: 28px; width: 28px; height: 30px; font-size: 18px; }
+  .company-list.compact-view .company-branch .track-badge { font-size: 12px; }
+  .company-list.compact-view .company-branch .tag { min-height: 24px; font-size: 12px; padding: 3px 13px 3px 6px; }
+  .list-pagination { font-size: 12px; margin-top: 10px; }
+  .list-pagination button { width: 32px; height: 30px; }
+  .template-panel .template-title-button strong { font-size: 13px; }
+  .template-panel .template-title-button small, .template-panel .small-button { font-size: 11px; }
+}
+@media (min-width: 1001px) and (max-width: 1200px) {
+  .company-list.compact-view { --company-columns: 3; }
+}
 @media (max-width: 1000px) and (min-width: 761px) {
+  .company-list.compact-view { --company-columns: 2; }
   .workspace-layout { grid-template-columns: minmax(0, 1fr) 260px; }
 }
 @media (max-width: 760px) {
@@ -3275,7 +3301,7 @@ textarea {
   #appContent[data-active-view="templates"] #companyPanel, #appContent[data-active-view="calendar"] #companyPanel { display: none; }
   .company-panel .search-controls { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
   .company-panel .search-controls label:first-child { grid-column: 1 / -1; }
-  .company-list.compact-view { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .company-list.compact-view { --company-columns: 2; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .company-panel .filter-button, .company-panel .view-button { font-size: 10px; padding: 4px 5px; }
   .company-panel .track-filter-button { flex: 0 1 auto; min-width: 0; }
 }
