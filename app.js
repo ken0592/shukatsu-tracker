@@ -555,9 +555,7 @@ function bindEvents() {
   document.querySelector('#closeTemplateButton').addEventListener('click', () => els.templateDialog.close());
   document.querySelector('#closeTemplatePreviewButton').addEventListener('click', () => els.templatePreviewDialog.close());
   document.querySelector('#closeCalendarDayButton').addEventListener('click', () => els.calendarDayDialog.close());
-  [760, 1000, 1200].forEach(width => {
-    window.matchMedia(`(max-width: ${width}px)`).addEventListener('change', () => renderCompanyList());
-  });
+  window.matchMedia('(max-width: 760px)').addEventListener('change', () => renderCompanyList());
   els.templateForm.addEventListener("submit", handleTemplateSubmit);
   els.templateBodyInput.addEventListener("input", updateTemplateBodyCount);
   els.resetTemplateButton.addEventListener("click", resetTemplateForm);
@@ -4519,8 +4517,7 @@ function renderCompanyList() {
     : `ゴミ箱を空にする (${trashEntries.length})`;
 
   const smallScreen = window.matchMedia('(max-width: 760px)').matches;
-  const compactColumns = Number(window.getComputedStyle(els.companyList).getPropertyValue('--company-columns')) || (smallScreen ? 2 : 4);
-  const pageSize = isCompact ? compactColumns * 3 : isMedium && !smallScreen ? 6 : 3;
+  const pageSize = isCompact ? (smallScreen ? 6 : 12) : isMedium && !smallScreen ? 6 : 3;
   const pagingKey = JSON.stringify([state.filter, state.searchQuery, state.deadlineFilter, state.priorityFilter, state.companyViewMode, pageSize]);
   if (state.companyPagingKey !== pagingKey) { state.companyPage = 0; state.companyPagingKey = pagingKey; }
   if (isTrashView || !entries.length) {
