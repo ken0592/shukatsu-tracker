@@ -3201,3 +3201,17 @@ textarea {
 .template-add-button { flex: 0 0 36px; width: 36px; height: 36px; padding: 0; font-size: 22px; line-height: 1; }
 .template-editor-dialog { padding: 18px; }
 .template-editor-dialog .template-form { padding: 0; border: 0; background: none; }
+
+/* Account details share the existing header instead of a separate panel. */
+.app-header > div:first-child { flex-shrink: 0; }
+.header-actions { min-width: 0; flex-wrap: wrap; justify-content: flex-end; }
+.header-account { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.header-account #userEmailLabel { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 13px; }
+.header-account button { min-height: 36px; padding: 0 10px; font-size: 13px; }
+@media (max-width: 760px) {
+  .app-header { flex-wrap: wrap; align-items: center; }
+  .header-actions { flex-direction: row; justify-content: flex-start; width: 100%; gap: 8px; }
+  .header-account { flex-wrap: wrap; }
+  .header-account #userEmailLabel { max-width: 190px; }
+  .header-actions > button { min-height: 36px; padding: 0 10px; font-size: 13px; }
+}
