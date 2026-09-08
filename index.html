@@ -163,11 +163,18 @@
 
           <article class="panel wide-panel template-panel">
             <div class="panel-heading">
-              <div>
-                <h2>ES・ガクチカの型</h2>
-                <span>使い回せる回答を保存</span>
-              </div>
+              <div><h2>ES・ガクチカの型</h2><span>使い回せる回答を保存</span></div>
+              <button class="secondary-button template-add-button" id="openTemplateButton" type="button" aria-label="ESの型を追加" aria-haspopup="dialog">＋</button>
             </div>
+            <div class="template-list" id="templateList"></div>
+          </article>
+          </aside>
+        </section>
+      </div>
+    </main>
+
+    <dialog class="entry-dialog template-editor-dialog" id="templateDialog" aria-labelledby="templateDialogTitle">
+      <div class="form-heading"><h2 id="templateDialogTitle">ESの型を追加</h2><button class="icon-button" id="closeTemplateButton" type="button" aria-label="入力内容を保持して閉じる">×</button></div>
             <form class="template-form" id="templateForm">
               <div class="field-grid">
                 <label>
@@ -195,12 +202,7 @@
                 <button class="primary-button" id="saveTemplateButton" type="submit">型を保存</button>
               </div>
             </form>
-            <div class="template-list" id="templateList"></div>
-          </article>
-          </aside>
-        </section>
-      </div>
-    </main>
+    </dialog>
 
     <dialog class="ai-import-dialog" id="aiImportDialog" aria-labelledby="aiImportTitle">
       <form class="ai-import-form" id="aiImportForm" method="dialog">

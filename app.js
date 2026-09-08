@@ -227,6 +227,8 @@ const els = {
   closeConflictButton: document.querySelector("#closeConflictButton"),
   cancelConflictButton: document.querySelector("#cancelConflictButton"),
   resolveConflictButton: document.querySelector("#resolveConflictButton"),
+  templateDialog: document.querySelector("#templateDialog"),
+  templateDialogTitle: document.querySelector("#templateDialogTitle"),
   templateForm: document.querySelector("#templateForm"),
   templateKindInput: document.querySelector("#templateKindInput"),
   templateTitleInput: document.querySelector("#templateTitleInput"),
@@ -542,6 +544,8 @@ function bindEvents() {
   els.companyList.addEventListener("change", (event) => {
     if (event.target.matches("[data-company-status]")) void handleCompanyStatusChange(event.target);
   });
+  document.querySelector("#openTemplateButton").addEventListener("click", openTemplateEditor);
+  document.querySelector("#closeTemplateButton").addEventListener("click", () => els.templateDialog.close());
   els.templateForm.addEventListener("submit", handleTemplateSubmit);
   els.templateBodyInput.addEventListener("input", updateTemplateBodyCount);
   els.resetTemplateButton.addEventListener("click", resetTemplateForm);
@@ -765,6 +769,7 @@ function clearUserScopedUiState(options = {}) {
   clearFaqUserScopedUiState();
   resetEntryForm();
   resetTemplateForm();
+  if (els.templateDialog.open) els.templateDialog.close();
   if (els.entryDialog.open) els.entryDialog.close();
   if (els.companyDetailDialog.open) closeCompanyDetail();
   if (state.pendingEntryConflict) finishEntryConflict(null);
@@ -3544,9 +3549,16 @@ async function handleTemplateSubmit(event) {
   }
 
   resetTemplateForm();
+  els.templateDialog.close();
   renderTemplateList();
   renderTemplateOptions();
   showToast(existingTemplate ? "型を更新しました。" : "型を保存しました。");
+}
+
+function openTemplateEditor() {
+  els.templateDialogTitle.textContent = state.editingTemplateId ? "ESの型を編集" : "ESの型を追加";
+  if (!els.templateDialog.open) els.templateDialog.showModal();
+  els.templateTitleInput.focus();
 }
 
 function handleEditTemplate(id) {
@@ -3559,7 +3571,7 @@ function handleEditTemplate(id) {
   els.templateBodyInput.value = template.body;
   els.saveTemplateButton.textContent = "型を更新";
   updateTemplateBodyCount();
-  els.templateTitleInput.focus();
+  openTemplateEditor();
 }
 
 async function handleDeleteTemplate(id) {
@@ -3588,6 +3600,7 @@ async function handleDeleteTemplate(id) {
 function resetTemplateForm() {
   state.editingTemplateId = null;
   els.templateForm.reset();
+  els.templateDialogTitle.textContent = "ESの型を追加";
   els.saveTemplateButton.textContent = "型を保存";
   updateTemplateBodyCount();
 }

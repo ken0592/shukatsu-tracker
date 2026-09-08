@@ -3182,7 +3182,11 @@ textarea {
 .dashboard-sidebar { display: grid; gap: 16px; min-width: 0; }
 .dashboard-sidebar .panel-heading { flex-wrap: wrap; }
 .dashboard-sidebar .calendar-controls { justify-content: flex-start; }
-.dashboard-sidebar .calendar-cell { min-height: 56px; padding: 4px; }
+.dashboard-sidebar .calendar-cell { min-height: 44px; padding: 4px; }
+.dashboard-sidebar .calendar-panel { padding: 14px; }
+.dashboard-sidebar .calendar-panel .panel-heading { margin-bottom: 10px; }
+.dashboard-sidebar .calendar-weekday { padding: 6px 4px; }
+.dashboard-sidebar .calendar-dot { margin-top: 2px; padding: 2px 4px; }
 .dashboard-sidebar .calendar-date { margin-bottom: 4px; }
 .dashboard-sidebar .field-grid { grid-template-columns: minmax(0, 1fr); }
 .dashboard-sidebar .template-card-heading { flex-wrap: wrap; }
@@ -3193,3 +3197,7 @@ textarea {
 @media (max-width: 760px) {
   .dashboard-with-sidebar { grid-template-columns: minmax(0, 1fr); }
 }
+
+.template-add-button { flex: 0 0 36px; width: 36px; height: 36px; padding: 0; font-size: 22px; line-height: 1; }
+.template-editor-dialog { padding: 18px; }
+.template-editor-dialog .template-form { padding: 0; border: 0; background: none; }
