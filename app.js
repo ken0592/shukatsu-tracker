@@ -5,6 +5,7 @@ const storagePendingKey = `${storageKey}-pending`;
 const templateStorageBackupKey = `${templateStorageKey}-last-good`;
 const templateStoragePendingKey = `${templateStorageKey}-pending`;
 const mascotPositionKey = "shukatsu-tracker-mascot-position";
+const companyPinStoragePrefix = "shukatsu-tracker-company-pin:";
 const companyViewModeStorageKey = "shukatsu-tracker-company-view-mode";
 const actionScopeStorageKey = "shukatsu-tracker-action-scope";
 const companyViewModes = ["normal", "medium", "compact"];
@@ -161,6 +162,7 @@ const state = {
 
 const els = {
   openFormButton: document.querySelector("#openFormButton"),
+  moreActions: document.querySelector("#moreActions"),
   openAiImportButton: document.querySelector("#openAiImportButton"),
   aiImportDialog: document.querySelector("#aiImportDialog"),
   aiImportForm: document.querySelector("#aiImportForm"),
@@ -356,6 +358,20 @@ bindEvents();
 init();
 
 function bindEvents() {
+  document.addEventListener("click", event => {
+    if (!els.moreActions.contains(event.target)) els.moreActions.open = false;
+  });
+  els.moreActions.addEventListener("keydown", event => {
+    if (event.key === "Escape" && els.moreActions.open) {
+      event.preventDefault();
+      event.stopPropagation();
+      els.moreActions.open = false;
+      els.moreActions.querySelector("summary").focus();
+    }
+  });
+  window.addEventListener("storage", event => {
+    if (event.key === null || event.key.startsWith(companyPinStoragePrefix)) renderCompanyList();
+  });
   document.querySelector("#closeAddBranchButton").addEventListener("click", () => els.addBranchDialog.close());
   els.moveLegacySummerButton.addEventListener("click", handleSummerMigration);
   els.bulkIconButton.addEventListener("click", handleBulkIcons);
@@ -607,6 +623,10 @@ function bindEvents() {
       return;
     }
 
+    const pinButton = event.target.closest("[data-pin-company]");
+    if (pinButton) { toggleCompanyPin(pinButton.dataset.pinCompany); return; }
+    const copyIdButton = event.target.closest("[data-copy-mypage-id]");
+    if (copyIdButton) { void copyCompanyMypageId(copyIdButton.dataset.copyMypageId); return; }
     const switchBranch = event.target.closest("[data-switch-branch]");
     if (switchBranch) { void switchCompanyBranch(switchBranch.dataset.switchBranch); return; }
     const addBranch = event.target.closest("[data-add-company-track]");
@@ -760,6 +780,7 @@ async function init() {
 
 function clearUserScopedUiState(options = {}) {
   scratchpad?.setScope(null);
+  if (els.moreActions) els.moreActions.open = false;
   state.bulkIcons?.controller.abort();
   state.bulkIcons = null;
   state.summerMigration = null;
@@ -4472,6 +4493,7 @@ function renderBulkIcons() {
   const job = state.bulkIcons;
   const count = state.entries.filter(window.SHUKATSU_ICONS.needsIcon).length;
   const running = Boolean(job?.running);
+  if (els.moreActions) els.moreActions.dataset.busy = String(running);
   els.bulkIconControls.hidden = (!count && !job) || (state.mode === "cloud" && !state.session);
   els.bulkIconButton.disabled = running || !count || state.loading;
   els.bulkIconButton.textContent = running ? "アイコンを一括設定中…" : `未設定アイコンを一括設定（${count}件）`;
@@ -4611,14 +4633,15 @@ function renderCompanyList() {
 
 function renderCompanyGroups(visibleEntries) {
   const model = window.SHUKATSU_GROUPS;
-  const groups = model.group(visibleEntries);
+  const groups = model.group(visibleEntries).map(group => ({ ...group, pinned: isCompanyPinned(group.entries[0]) }))
+    .sort((a, b) => Number(b.pinned) - Number(a.pinned));
   const visibleIds = new Set(visibleEntries.map((entry) => entry.id));
   els.companyList.innerHTML = groups.map((group) => {
     const source = group.entries[0];
     const branches = model.branches(state.entries, source);
     const icon = branches.find((entry) => entry.logoUrl) || source;
     const available = [...model.availableTracks(state.entries, source), ...model.restorableBranches(state.entries, source)];
-    return `<article class="company-card company-group-card" data-company-card data-company-id="${escapeAttribute(source.id)}">
+    return `<article class="company-card company-group-card${group.pinned ? " is-pinned" : ""}" data-company-card data-company-id="${escapeAttribute(source.id)}">
       <div class="company-group-heading">
         <button class="company-group-open" data-detail-id="${escapeAttribute(source.id)}" type="button" title="${escapeAttribute(source.companyName)}の詳細">
           ${companyIconMarkup(icon)}<span><strong>${escapeHtml(source.companyName)}</strong></span>
@@ -4631,27 +4654,84 @@ function renderCompanyGroups(visibleEntries) {
           ${companyStatusPicker(entry)}
         </div>`).join("")}
       </div>
-      ${companyMypageLinks(branches)}
+      <div class="company-card-actions">
+        ${companyMypageLinks(branches)}
+        <button class="company-pin-button" data-pin-company="${escapeAttribute(source.id)}" type="button" aria-pressed="${group.pinned}" aria-label="${escapeAttribute(source.companyName)}${group.pinned ? "の固定を解除" : "を先頭に固定"}" title="${group.pinned ? "固定を解除" : "この端末で先頭に固定"}">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path class="pin-head" d="M8 3h8l-1 7 3 3v2H6v-2l3-3-1-7Z"/><path d="M12 15v7"/></svg>
+        </button>
+      </div>
     </article>`;
   }).join("");
 }
 
+function companyPinStorageKey(entry) {
+  const owner = state.mode === "local" ? "local" : state.session?.user?.id;
+  if (!owner || !entry) return null;
+  return companyPinStoragePrefix + JSON.stringify([owner, window.SHUKATSU_GROUPS.key(entry) || entry.id]);
+}
+
+function isCompanyPinned(entry) {
+  const key = companyPinStorageKey(entry);
+  if (!key) return false;
+  try { return localStorage.getItem(key) === "1"; } catch { return false; }
+}
+
+function toggleCompanyPin(id) {
+  const entry = state.entries.find(item => item.id === id && !isTrashed(item));
+  const key = companyPinStorageKey(entry);
+  if (!key) return;
+  let pinned;
+  try {
+    pinned = localStorage.getItem(key) !== "1";
+    if (pinned) localStorage.setItem(key, "1");
+    else localStorage.removeItem(key);
+  } catch {
+    showToast("固定を保存できませんでした。もう一度お試しください。");
+    return;
+  }
+  renderCompanyList();
+  [...els.companyList.querySelectorAll("[data-pin-company]")].find(button => button.dataset.pinCompany === id)?.focus({ preventScroll: true });
+  showToast(pinned ? "先頭に固定しました。" : "固定を解除しました。");
+}
+
+async function copyCompanyMypageId(id) {
+  const entry = state.entries.find(item => item.id === id && !isTrashed(item));
+  if (!entry?.mypageId?.trim()) return;
+  const scope = captureUserScope();
+  const copied = await copyTextToClipboard(entry.mypageId);
+  if (isCurrentUserScope(scope)) showToast(copied ? "マイページIDをコピーしました。" : "コピーできませんでした。企業詳細からIDを選択してコピーしてください。");
+}
+
 function companyMypageLinks(branches) {
   const destinations = new Map();
+  const credentials = new Map();
   for (const entry of branches) {
     const url = normalizeExternalUrl(entry.mypageUrl);
-    if (!url) continue;
-    if (!destinations.has(url)) destinations.set(url, { companyName: entry.companyName, tracks: [] });
-    const tracks = destinations.get(url).tracks;
-    if (!tracks.includes(entry.trackType)) tracks.push(entry.trackType);
+    if (url) {
+      if (!destinations.has(url)) destinations.set(url, { companyName: entry.companyName, tracks: [] });
+      const tracks = destinations.get(url).tracks;
+      if (!tracks.includes(entry.trackType)) tracks.push(entry.trackType);
+    }
+    if (entry.mypageId?.trim()) {
+      if (!credentials.has(entry.mypageId)) credentials.set(entry.mypageId, { id: entry.id, companyName: entry.companyName, tracks: [] });
+      const tracks = credentials.get(entry.mypageId).tracks;
+      if (!tracks.includes(entry.trackType)) tracks.push(entry.trackType);
+    }
   }
-  if (!destinations.size) return "";
-  const shortTracks = { 夏インターン: "夏", 冬インターン: "冬", 早期選考: "早期", 本選考: "本選考" };
-  return `<div class="company-mypage-links">${destinations.size > 1 ? '<span class="company-mypage-caption">マイページ</span>' : ""}${[...destinations].map(([url, destination]) => {
-    const label = destinations.size === 1 ? "マイページ" : destination.tracks.map(track => shortTracks[track] || track).join("・");
+  if (!destinations.size && !credentials.size) return "";
+  const shortTracks = new Map([["夏インターン", "夏"], ["冬インターン", "冬"], ["早期選考", "早期"], ["本選考", "本選考"]]);
+  const shorten = tracks => tracks.map(track => shortTracks.get(track) || track).join("・");
+  const links = [...destinations].map(([url, destination]) => {
+    const label = destinations.size === 1 ? "マイページ" : shorten(destination.tracks);
     const description = `${destination.companyName}・${destination.tracks.join("・")}のマイページを開く（新しいタブ）`;
     return `<a class="company-mypage-shortcut" href="${escapeAttribute(url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeAttribute(description)}" title="${escapeAttribute(description)}">${escapeHtml(label)}<span aria-hidden="true">↗</span></a>`;
-  }).join("")}</div>`;
+  }).join("");
+  const copies = [...credentials.values()].map(credential => {
+    const label = credentials.size === 1 ? "ID" : shorten(credential.tracks) + "ID";
+    const description = `${credential.companyName}・${credential.tracks.join("・")}のマイページIDをコピー`;
+    return `<button class="company-copy-id" data-copy-mypage-id="${escapeAttribute(credential.id)}" type="button" aria-label="${escapeAttribute(description)}" title="${escapeAttribute(description)}">${escapeHtml(label)}</button>`;
+  }).join("");
+  return `<div class="company-mypage-links">${destinations.size > 1 ? '<span class="company-mypage-caption">マイページ</span>' : ""}${links}${copies}</div>`;
 }
 
 function companyStatusPicker(entry) {

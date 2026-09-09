@@ -24,13 +24,27 @@
           <button class="secondary-button" id="refreshButton" type="button">同期更新</button>
           <button class="secondary-button" id="importLocalButton" type="button" hidden>端末データを移す</button>
         </div>
-        <button class="secondary-button" id="exportBackupButton" type="button">バックアップ</button>
-        <button class="secondary-button" id="importBackupButton" type="button">復元</button>
-        <input id="importBackupInput" type="file" accept="application/json,.json" hidden />
         <button class="secondary-button" id="signOutButton" type="button" hidden>ログアウト</button>
         <button class="secondary-button" id="openScratchpadButton" type="button" aria-controls="scratchpadPanel" aria-expanded="false" disabled>✎ メモ</button>
         <button class="ai-button" id="openAiImportButton" type="button"><span aria-hidden="true">✦</span> AIでメモ整理</button>
         <button class="primary-button" id="openFormButton" type="button">＋ 追加</button>
+        <details class="header-more" id="moreActions">
+          <summary aria-label="その他の操作" title="その他の操作">⋯</summary>
+          <div class="header-more-panel">
+            <button class="secondary-button" id="exportBackupButton" type="button">バックアップ</button>
+            <button class="secondary-button" id="importBackupButton" type="button">復元</button>
+            <input id="importBackupInput" type="file" accept="application/json,.json" hidden />
+            <div class="bulk-icon-controls" id="bulkIconControls" hidden>
+              <button class="secondary-button small-button" id="bulkIconButton" type="button" aria-describedby="bulkIconStatus">未設定アイコンを一括設定</button>
+              <button class="secondary-button small-button" id="cancelBulkIconButton" type="button" hidden>途中で止める</button>
+              <p id="bulkIconStatus" role="status" aria-live="polite"></p>
+            </div>
+            <div class="bulk-icon-controls" id="legacySummerControls" hidden>
+              <button class="secondary-button small-button" id="moveLegacySummerButton" type="button">未分類を夏インターンへまとめる</button>
+              <p id="legacySummerStatus" role="status"></p>
+            </div>
+          </div>
+        </details>
       </div>
     </header>
 
@@ -100,15 +114,6 @@
               <span><strong>選考ごとの記録</strong>ES・メモ・進捗を切り替えて管理</span>
               <span><strong>早期選考</strong>インターン後などの早い本選考</span>
               <span><strong>本選考</strong>内定に向けた通常選考</span>
-            </div>
-            <div class="bulk-icon-controls" id="bulkIconControls" hidden>
-              <button class="secondary-button small-button" id="bulkIconButton" type="button" aria-describedby="bulkIconStatus">未設定アイコンを一括設定</button>
-              <button class="secondary-button small-button" id="cancelBulkIconButton" type="button" hidden>途中で止める</button>
-              <p id="bulkIconStatus" role="status" aria-live="polite"></p>
-            </div>
-            <div class="bulk-icon-controls" id="legacySummerControls" hidden>
-              <button class="secondary-button small-button" id="moveLegacySummerButton" type="button">未分類を夏インターンへまとめる</button>
-              <p id="legacySummerStatus" role="status"></p>
             </div>
             <div class="search-controls" aria-label="検索条件">
               <label>
