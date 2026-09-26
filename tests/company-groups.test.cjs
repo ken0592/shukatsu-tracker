@@ -34,10 +34,20 @@ test("新しい枝は企業情報だけを引き継ぎ、他の枝のES・メモ
   assert.equal(draft.status, "応募予定");
   assert.equal(draft.memo, "");
   assert.equal(draft.deadline, "");
+  assert.equal(draft.deadlineTime, "");
   assert.deepEqual(draft.esItems, []);
   assert.equal(original.memo, "残すメモ");
   assert.equal(model.branchDraft(original, "invalid", "x", "now"), null);
-  assert.deepEqual(model.availableTracks([original, entry("trash", "冬インターン", { deletedAt: "today" })], original), ["早期選考", "本選考"]);
+  assert.deepEqual(model.availableTracks([original, entry("trash", "冬インターン", { deletedAt: "today" })], original), ["秋インターン", "早期選考", "本選考"]);
+});
+
+test("季節インターン枝は夏・秋・冬の順で追加候補に並ぶ", () => {
+  assert.deepEqual(model.tracks.slice(0, 3), ["夏インターン", "秋インターン", "冬インターン"]);
+  const original = entry("summer", "夏インターン");
+  assert.deepEqual(model.availableTracks([original], original), ["秋インターン", "冬インターン", "早期選考", "本選考"]);
+  const draft = model.branchDraft(original, "秋インターン", "autumn", "now");
+  assert.equal(draft.trackType, "秋インターン");
+  assert.equal(draft.deadlineTime, "");
 });
 
 function migrationHarness(mode = "local") {

@@ -9,6 +9,7 @@ create table if not exists public.entries (
   track_type text not null default '本選考',
   status text not null default '気になる',
   deadline date,
+  deadline_time text not null default '' check (deadline_time = '' or deadline_time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'),
   event_date date,
   event_type text not null default '面接',
   priority text not null default '未定',
@@ -24,6 +25,7 @@ create table if not exists public.entries (
 );
 
 alter table public.entries
+  add column if not exists deadline_time text not null default '' check (deadline_time = '' or deadline_time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'),
   add column if not exists industry text not null default '',
   add column if not exists mypage_id text not null default '',
   add column if not exists official_url text not null default '',

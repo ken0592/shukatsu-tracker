@@ -9,14 +9,14 @@ function harness() {
   ];
   const items = new Map([['shukatsu-tracker-entries',JSON.stringify(entries)], ['shukatsu-tracker-templates','ESの本文']]);
   const copies = [], notices = [];
-  const h = {URL, companyPinStoragePrefix:'shukatsu-tracker-company-pin:', state:{mode:'cloud',session:{user:{id:'owner-A'}},entries,filter:'all'},
+  const h = {URL, companyPinStoragePrefix:'shukatsu-tracker-company-pin:', state:{mode:'cloud',session:{user:{id:'owner-A'}},entries,filter:'all',pendingSelectionChanges:new Set(),pendingStatusChanges:new Set()},
     window:{SHUKATSU_GROUPS:model}, localStorage:{getItem:k=>items.get(k)??null,setItem:(k,v)=>items.set(k,v),removeItem:k=>items.delete(k)},
     els:{companyList:{innerHTML:'',querySelectorAll:()=>[]}}, isTrashed:e=>Boolean(e.deletedAt),
     companyIconMarkup:()=>'',trackTag:t=>t,companyStatusPicker:()=>'',showToast:t=>notices.push(t),
     captureUserScope:()=>({userId:h.state.session?.user.id}),isCurrentUserScope:s=>s.userId===h.state.session?.user.id,
     copyTextToClipboard:async value=>{copies.push(value);return true;}};
   vm.createContext(h);
-  for(const name of ['escapeHtml','escapeAttribute','normalizeExternalUrl','companyPinStorageKey','isCompanyPinned','toggleCompanyPin','copyCompanyMypageId','companyMypageLinks','renderCompanyGroups']) {
+  for(const name of ['escapeHtml','escapeAttribute','normalizeExternalUrl','companyPinStorageKey','isCompanyPinned','toggleCompanyPin','copyCompanyMypageId','companyMypageLinks','companySeasonPicker','renderCompanyGroups']) {
     const start=source.search(new RegExp('(?:async )?function '+name+'\\(')),tail=source.slice(start),end=tail.slice(1).search(/\n(?:async )?function /);
     assert.ok(start>=0,name);vm.runInContext(end<0?tail:tail.slice(0,end+1),h);
   }

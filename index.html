@@ -18,7 +18,7 @@
         <h1>就活管理</h1>
       </div>
       <div class="header-actions">
-        <span class="sync-pill" id="syncStatus">読み込み中</span>
+        <span class="sync-pill" id="syncStatus" role="status" aria-live="polite">読み込み中</span>
         <div class="header-account" id="accountPanel" role="group" aria-label="ログイン情報" hidden>
           <span id="userEmailLabel">ログイン中</span>
           <button class="secondary-button" id="refreshButton" type="button">同期更新</button>
@@ -91,6 +91,7 @@
                 <div class="filter-row track-filter-row" role="group" aria-label="選考タイプ">
                   <button class="filter-button track-filter-button active" data-filter="all" type="button"><span>すべて</span><strong data-filter-count="all">0</strong></button>
                   <button class="filter-button track-filter-button" data-filter="夏インターン" type="button"><span>夏インターン</span><strong data-filter-count="夏インターン">0</strong></button>
+                  <button class="filter-button track-filter-button" data-filter="秋インターン" type="button"><span>秋インターン</span><strong data-filter-count="秋インターン">0</strong></button>
                   <button class="filter-button track-filter-button" data-filter="冬インターン" type="button"><span>冬インターン</span><strong data-filter-count="冬インターン">0</strong></button>
                   <button class="filter-button track-filter-button" data-filter="早期選考" type="button"><span>早期選考</span><strong data-filter-count="早期選考">0</strong></button>
                   <button class="filter-button track-filter-button" data-filter="本選考" type="button"><span>本選考</span><strong data-filter-count="本選考">0</strong></button>
@@ -110,7 +111,7 @@
               </div>
             </div>
             <div class="track-guide" aria-label="選考タイプの使い分け">
-              <span><strong>企業ごとに1枚</strong>中に夏・冬インターンや各選考を追加</span>
+              <span><strong>企業ごとに1枚</strong>中に夏・秋・冬インターンや各選考を追加</span>
               <span><strong>選考ごとの記録</strong>ES・メモ・進捗を切り替えて管理</span>
               <span><strong>早期選考</strong>インターン後などの早い本選考</span>
               <span><strong>本選考</strong>内定に向けた通常選考</span>
@@ -316,6 +317,7 @@
             <select id="trackTypeInput" name="trackType">
               <option value="インターン">未分類インターン（その他・時期未設定）</option>
               <option value="夏インターン">夏インターン</option>
+              <option value="秋インターン">秋インターン</option>
               <option value="冬インターン">冬インターン</option>
               <option value="早期選考">早期選考（早い本選考）</option>
               <option value="本選考">本選考（内定までの選考）</option>
@@ -323,7 +325,7 @@
               <option value="面談">面談</option>
               <option value="OB/OG訪問">OB/OG訪問</option>
             </select>
-            <span class="field-hint" id="trackTypeHint">時期が決まっていれば夏・冬インターンを選べます。</span>
+            <span class="field-hint" id="trackTypeHint">夏・秋・冬の変更はES・メモ・進捗を残します。</span>
           </label>
 
           <label>
@@ -342,6 +344,12 @@
           <label>
             締切日
             <input id="deadlineInput" name="deadline" type="date" />
+          </label>
+
+          <label>
+            締切時刻（任意）
+            <input id="deadlineTimeInput" name="deadlineTime" type="time" step="60" />
+            <span class="field-hint">日本時間。空欄は「時刻未設定」として表示します。</span>
           </label>
 
           <label>
@@ -587,6 +595,7 @@
     <script src="./company-groups.js"></script>
     <script src="./csv-import.js"></script>
     <script src="./scratchpad.js"></script>
+    <script src="./template-conflicts.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>

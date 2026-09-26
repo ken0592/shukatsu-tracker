@@ -1,6 +1,6 @@
 (function (global) {
   "use strict";
-  const tracks = ["夏インターン", "冬インターン", "早期選考", "本選考"];
+  const tracks = ["夏インターン", "秋インターン", "冬インターン", "早期選考", "本選考"];
   function key(entry) {
     return String(entry?.companyName || "").normalize("NFKC").toLowerCase().replace(/[\s　]+/gu, "");
   }
@@ -32,7 +32,7 @@
     return { id, companyName: source.companyName, industry: source.industry, officialUrl: source.officialUrl,
       logoUrl: source.logoUrl, mypageUrl: source.mypageUrl, mypageId: source.mypageId, priority: source.priority,
       trackType: track, status: "応募予定", esItems: [], esContent: "", interviewNotes: "", memo: "",
-      deadline: "", eventDate: "", eventType: "", createdAt: now, updatedAt: now, deletedAt: "" };
+      deadline: "", deadlineTime: "", eventDate: "", eventType: "", createdAt: now, updatedAt: now, deletedAt: "" };
   }
   function canMoveToSummer(entries, source) {
     return source && !source.deletedAt && source.trackType === "インターン"

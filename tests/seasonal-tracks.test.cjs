@@ -5,7 +5,7 @@ const vm = require("node:vm");
 const ai = require("../ai.js");
 const csv = require("../csv-import.js");
 const app = fs.readFileSync(require.resolve("../app.js"), "utf8");
-const types = ["夏インターン", "冬インターン", "インターン", "早期選考", "本選考"];
+const types = ["夏インターン", "秋インターン", "冬インターン", "インターン", "早期選考", "本選考"];
 function appHelpers() {
   const context = { window: { SHUKATSU_GROUPS: require("../company-groups.js") }, state: { entries: types.map((trackType, id) => ({ id, companyName: "A社", trackType })), filter: "all" },
     trashFilterValue: "trash", isTrashed: (e) => Boolean(e.deletedAt), isActive: () => true, isFinished: () => false,
@@ -38,23 +38,31 @@ test("種類ごとの表示と件数が一致し、ゴミ箱のカードが混�
   assert.equal(h.countEntriesForListFilter("夏インターン"), 0);
 });
 
-test("CSVの夏冬を別カードとして保持し、予定の種類はインターンのまま", () => {
-  const result = csv.importCsv("企業名,選考区分,予定種別\nA社,サマーインターン,夏インターン\nA社,冬季インターン,冬インターン\nA社,インターン,インターン");
-  assert.deepEqual(result.cards.map((c) => c.trackType), ["夏インターン", "冬インターン", "インターン"]);
-  assert.equal(new Set(result.cards.map(csv.cardIdentityKey)).size, 3);
+test("CSVの夏秋冬を別カードとして保持し、予定の種類はインターンのまま", () => {
+  const result = csv.importCsv("企業名,選考区分,予定種別\nA社,サマーインターン,夏インターン\nA社,オータムインターン,秋インターン\nA社,冬季インターン,冬インターン\nA社,インターン,インターン");
+  assert.deepEqual(result.cards.map((c) => c.trackType), ["夏インターン", "秋インターン", "冬インターン", "インターン"]);
+  assert.equal(new Set(result.cards.map(csv.cardIdentityKey)).size, 4);
   assert.ok(result.cards.every((c) => c.eventType === "インターン"));
   assert.equal(csv.normalizeTrackType("summer internship"), "夏インターン");
+  assert.equal(csv.normalizeTrackType("秋季インターン"), "秋インターン");
+  assert.equal(csv.normalizeTrackType("オータム internship"), "秋インターン");
+  assert.equal(csv.normalizeTrackType("autumn internship"), "秋インターン");
+  assert.equal(csv.normalizeTrackType("fall internship"), "秋インターン");
   assert.equal(csv.normalizeTrackType("winter internship"), "冬インターン");
 });
 
 test("AI取り込みでも夏冬のカードとマイページIDを混同しない", () => {
-  const text = "株式会社テスト（夏インターン）\nマイページID: SUMMER-ID\n\n株式会社テスト（冬インターン）\nマイページID: WINTER-ID";
+  const text = "株式会社テスト（夏インターン）\nマイページID: SUMMER-ID\n\n株式会社テスト（autumn internship）\nマイページID: AUTUMN-ID\n\n株式会社テスト（冬インターン）\nマイページID: WINTER-ID";
   const result = ai.extractLocalCredentialRecords(ai.deriveMemoBlocks(text));
-  assert.deepEqual(result.records.map((r) => [r.trackType, r.mypageId]), [["夏インターン", "SUMMER-ID"], ["冬インターン", "WINTER-ID"]]);
+  assert.deepEqual(result.records.map((r) => [r.trackType, r.mypageId]), [["夏インターン", "SUMMER-ID"], ["秋インターン", "AUTUMN-ID"], ["冬インターン", "WINTER-ID"]]);
   const cards = ai.mergeCardsByCompanyAndTrack(ai.sanitizeCards(types.map((trackType) => ({ companyName: "A社", trackType }))));
-  assert.equal(cards.length, 5);
+  assert.equal(cards.length, 6);
   const h = appHelpers();
   assert.equal(h.stripAiTrackSuffix("A社（サマーインターン）"), "A社");
   assert.equal(h.detectAiBlockTrack("A社（冬季インターン）"), "冬インターン");
+  for (const text of ["A社（秋インターン）", "A社（オータムインターン）", "A社（autumn internship）", "A社（fall internship）"]) {
+    assert.equal(h.detectAiBlockTrack(text), "秋インターン");
+    assert.equal(h.stripAiTrackSuffix(text), "A社");
+  }
   assert.equal(h.detectAiBlockTrack("インターン 締切2026年8月1日"), "インターン");
 });

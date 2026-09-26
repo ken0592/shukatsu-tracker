@@ -27,8 +27,9 @@ const rejectionStatuses = ["落選", "不採用"];
 const sampleCompanyNames = ["株式会社サンプル商事", "ミライテック株式会社", "東都キャリア株式会社"];
 const initialCalendarDate = new Date();
 const trackTypeHints = {
-  インターン: "時期が未設定、または夏・冬以外のインターンです。夏・冬が決まっていれば種類を変更できます。",
+  インターン: "時期が未設定のインターンです。夏・秋・冬に変更してもES・メモ・進捗は残ります。",
   夏インターン: "この企業の夏インターンの応募・ES・面接をまとめます。冬インターンは企業内に別の選考として追加できます。",
+  秋インターン: "この企業の秋インターンの応募・ES・面接をまとめます。季節だけ変えてもES・メモ・進捗は残ります。",
   冬インターン: "冬インターンの応募・ES・面接をまとめます。夏インターンの記録と分けて管理できます。",
   早期選考: "インターン後など、通常より早く進む本選考です。迷ったら本選考寄りとして扱えば大丈夫です。",
   本選考: "内定に向けた通常選考です。ES締切、Webテスト、面接予定を中心に追います。",
@@ -39,6 +40,7 @@ const trackTypeHints = {
 const trackTypeClassNames = {
   インターン: "intern",
   夏インターン: "intern",
+  秋インターン: "intern",
   冬インターン: "intern",
   早期選考: "early",
   本選考: "main",
@@ -55,6 +57,7 @@ const entryMergeFields = [
   { key: "trackType", label: "選考の種類" },
   { key: "status", label: "ステータス" },
   { key: "deadline", label: "締切日" },
+  { key: "deadlineTime", label: "締切時刻" },
   { key: "eventDate", label: "次の予定日" },
   { key: "eventType", label: "予定の種類" },
   { key: "priority", label: "志望度" },
@@ -118,6 +121,10 @@ const state = {
   session: null,
   userScopeVersion: 0,
   loading: true,
+  syncError: "",
+  lastSyncedAt: "",
+  syncRequestId: 0,
+  cloudDeadlineTimeAvailable: false,
   cloudSortOrderAvailable: true,
   cloudTemplateSortOrderAvailable: true,
   cloudDeletedAtAvailable: false,
@@ -141,6 +148,8 @@ const state = {
   pendingSelectionChanges: new Set(),
   selectionDeletePrompt: null,
   editingTemplateId: null,
+  editingBaseTemplate: null,
+  templateSavePending: false,
   aiCards: [],
   aiCsvCards: [],
   aiCsvFileCount: 0,
@@ -573,9 +582,11 @@ function bindEvents() {
   els.companyList.addEventListener("pointercancel", cancelCompanyReorder);
   els.companyList.addEventListener("change", (event) => {
     if (event.target.matches("[data-company-status]")) void handleCompanyStatusChange(event.target);
+    if (event.target.matches("[data-company-track]")) void handleCompanyTrackChange(event.target);
   });
   document.querySelector("#openTemplateButton").addEventListener("click", openTemplateEditor);
-  document.querySelector("#closeTemplateButton").addEventListener("click", () => els.templateDialog.close());
+  document.querySelector("#closeTemplateButton").addEventListener("click", () => { if (!state.templateSavePending) els.templateDialog.close(); });
+  els.templateDialog.addEventListener("cancel", event => { if (state.templateSavePending) event.preventDefault(); });
   els.templateForm.addEventListener("submit", handleTemplateSubmit);
   els.templateBodyInput.addEventListener("input", updateTemplateBodyCount);
   els.resetTemplateButton.addEventListener("click", resetTemplateForm);
@@ -792,6 +803,11 @@ function clearUserScopedUiState(options = {}) {
   state.entries = [];
   state.templates = [];
   state.loading = Boolean(options.loading);
+  state.syncRequestId += 1;
+  state.syncError = "";
+  state.lastSyncedAt = "";
+  state.cloudDeadlineTimeAvailable = false;
+  state.templateSavePending = false;
   state.entrySavePending = false;
   state.detailSavePending = false;
   state.trashDeletePending = false;
@@ -1306,8 +1322,8 @@ function extractAiBlockCompany(block) {
 function stripAiTrackSuffix(value) {
   return String(value || "")
     .trim()
-    .replace(/\s*[（(【\[]\s*(?:(?:夏(?:季)?|冬(?:季)?|サマー|ウィンター)?\s*インターン|早期選考|本選考|説明会|面談|OB\s*\/\s*OG訪問)\s*[）)】\]]\s*$/iu, "")
-    .replace(/\s*[-‐–—|｜/：:]\s*(?:(?:夏(?:季)?|冬(?:季)?|サマー|ウィンター)?\s*インターン|早期選考|本選考|説明会|面談|OB\s*\/\s*OG訪問)\s*$/iu, "")
+    .replace(/\s*[（(【\[]\s*(?:(?:夏(?:季)?|秋(?:季)?|冬(?:季)?|サマー|オータム|ウィンター|summer|autumn|fall|winter)?\s*(?:インターン|intern(?:ship)?)|早期選考|本選考|説明会|面談|OB\s*\/\s*OG訪問)\s*[）)】\]]\s*$/iu, "")
+    .replace(/\s*[-‐–—|｜/：:]\s*(?:(?:夏(?:季)?|秋(?:季)?|冬(?:季)?|サマー|オータム|ウィンター|summer|autumn|fall|winter)?\s*(?:インターン|intern(?:ship)?)|早期選考|本選考|説明会|面談|OB\s*\/\s*OG訪問)\s*$/iu, "")
     .trim();
 }
 
@@ -1320,6 +1336,7 @@ function detectAiBlockTrack(value) {
   if (/OB\s*\/\s*OG訪問/iu.test(text)) return "OB/OG訪問";
   if (/早期選考/u.test(text)) return "早期選考";
   if (/(?:夏(?:季)?|サマー|summer)\s*(?:の)?\s*(?:インターン|intern)/iu.test(text)) return "夏インターン";
+  if (/(?:秋(?:季)?|オータム|autumn|fall)\s*(?:の)?\s*(?:インターン|intern)/iu.test(text)) return "秋インターン";
   if (/(?:冬(?:季)?|ウィンター|winter)\s*(?:の)?\s*(?:インターン|intern)/iu.test(text)) return "冬インターン";
   if (/インターン/u.test(text)) return "インターン";
   if (/説明会/u.test(text)) return "説明会";
@@ -1539,6 +1556,7 @@ const importFieldLabels = {
   logoUrl: "企業アイコン",
   status: "現在の状況",
   deadline: "締切日",
+  deadlineTime: "締切時刻",
   eventDate: "次の予定日",
   eventType: "予定の内容",
   priority: "志望度",
@@ -1615,6 +1633,9 @@ function mergeImportedEntry(existingEntry, incomingEntry, options = {}) {
   scalarFields.forEach((field) => {
     mergeImportedScalar(merged, incomingEntry, field, addedFields, conflicts, conflictDetails);
   });
+  if (merged.deadline && merged.deadline === incomingEntry.deadline) {
+    mergeImportedScalar(merged, incomingEntry, "deadlineTime", addedFields, conflicts, conflictDetails);
+  }
   mergeImportedScalar(merged, incomingEntry, "eventType", addedFields, conflicts, conflictDetails, {
     incomingMissing: (value) => !value || !hasIncomingEventDate,
     existingMissing: (value) => !value || !hadExistingEventDate
@@ -2069,6 +2090,7 @@ async function handleEntrySubmit(event) {
     trackType: String(formData.get("trackType")),
     status: String(formData.get("status")),
     deadline: String(formData.get("deadline")),
+    deadlineTime: String(formData.get("deadlineTime") || ""),
     eventDate: sourceEntry?.eventDate || "",
     eventType: sourceEntry?.eventType || "",
     priority: String(formData.get("priority")),
@@ -2090,6 +2112,11 @@ async function handleEntrySubmit(event) {
 
   if (!entry.companyName) {
     showToast("企業名を入力してください。");
+    return;
+  }
+
+  if (formData.get("deadlineTime") && !entry.deadline) {
+    showToast("締切時刻と一緒に締切日を入力してください。");
     return;
   }
 
@@ -2169,6 +2196,11 @@ async function handleEntrySubmit(event) {
       showToast("取込カード案を保存しました。");
     } else {
       showToast(existingEntry ? "更新しました。" : "保存しました。");
+    }
+  } catch (error) {
+    if (!saveScope || isCurrentUserScope(saveScope)) {
+      if (state.mode === "cloud") recordCloudSyncResult(error, saveScope);
+      showToast(error.message || "保存できませんでした。入力内容は残っています。");
     }
   } finally {
     if (!saveScope || isCurrentUserScope(saveScope)) {
@@ -2518,7 +2550,7 @@ function renderDetailInfoSummary(entry) {
     ["ステータス", simpleStatus(entry.status)],
     ["種類", entry.trackType],
     ["志望度", entry.priority === "未定" ? "未設定" : entry.priority],
-    ["締切", entry.deadline ? formatDate(entry.deadline) : "未設定"],
+    ["締切", entry.deadline ? formatDeadline(entry) : "未設定"],
     ["マイページID", entry.mypageId || "未登録"]
   ];
 
@@ -3276,6 +3308,7 @@ async function persistTemplateOrderFromDom() {
   if (visibleIds.length === 0) return;
 
   const rank = new Map(visibleIds.map((id, index) => [id, index]));
+  const baseTemplates = state.templates;
   const nextTemplates = state.templates.map((template) => ({
     ...template,
     sortOrder: rank.has(template.id) ? rank.get(template.id) : template.sortOrder
@@ -3290,21 +3323,33 @@ async function persistTemplateOrderFromDom() {
   state.templates = nextTemplates;
 
   if (state.mode === "cloud" && state.session && state.cloudTemplateSortOrderAvailable) {
-    await saveCloudTemplateOrder();
+    await saveCloudTemplateOrder(baseTemplates);
   }
 }
 
-async function saveCloudTemplateOrder() {
+async function saveCloudTemplateOrder(baseTemplates = state.templates) {
   const scope = captureUserScope();
-  const results = await Promise.all(
-    state.templates.map((template) => supabaseClient.from("es_templates").update({ sort_order: template.sortOrder }).eq("id", template.id))
-  );
-  if (!isCurrentUserScope(scope)) return;
-  const error = results.find((result) => result.error)?.error;
-  if (!error) return;
-
-  state.cloudTemplateSortOrderAvailable = false;
-  showToast("SupabaseのSQLを更新すると、型の並び順も端末間で保存できます。");
+  const requestedTemplates = state.templates;
+  try {
+    const results = await Promise.all(requestedTemplates.map(async template => {
+      const base = baseTemplates.find(item => item.id === template.id);
+      if (!base || base.sortOrder === template.sortOrder) return null;
+      const { data, error } = await supabaseClient.from("es_templates").update({ sort_order: template.sortOrder })
+        .eq("id", template.id).eq("user_id", scope.userId).eq("updated_at", base.updatedAt).select("*");
+      return { id: template.id, requested: template, data, error };
+    }));
+    if (!isCurrentUserScope(scope)) return;
+    const failed = results.filter(result => result && (result.error || result.data?.length !== 1));
+    for (const result of results) if (result?.data?.length === 1) state.templates = state.templates.map(item => item === result.requested ? fromDbTemplate(result.data[0]) : item);
+    if (failed.length) {
+      const error = failed.find(result => result.error)?.error;
+      if (error) recordCloudSyncResult(error, scope);
+      await loadCloudData();
+      if (isCurrentUserScope(scope)) showToast("一部の並び順を保存できませんでした。最新の一覧で並べ替えてください。");
+    } else recordCloudSyncResult(null, scope);
+  } catch (error) {
+    if (isCurrentUserScope(scope)) { recordCloudSyncResult(error, scope); showToast("並び順を保存できませんでした。同期更新して再試行してください。"); }
+  }
 }
 
 async function handleDetailSubmit(event) {
@@ -3349,6 +3394,11 @@ async function handleDetailSubmit(event) {
     render();
     showToast("詳細を保存しました。");
     return true;
+  } catch (error) {
+    if (!saveScope || isCurrentUserScope(saveScope)) {
+      if (state.mode === "cloud") recordCloudSyncResult(error, saveScope);
+      showToast(error.message || "保存できませんでした。入力内容は残っています。");
+    }
   } finally {
     if (!saveScope || isCurrentUserScope(saveScope)) {
       state.detailSavePending = false;
@@ -3591,67 +3641,71 @@ async function copyTemplateById(templateId) {
 
 async function handleTemplateSubmit(event) {
   event.preventDefault();
-  const existingTemplate = state.editingTemplateId
-    ? state.templates.find((template) => template.id === state.editingTemplateId)
-    : null;
+  if (state.templateSavePending) return;
+  const scope = captureUserScope();
+  const isEditing = Boolean(state.editingTemplateId);
+  const base = isEditing ? state.editingBaseTemplate : null;
+  if (isEditing && !base) { showToast("編集の基準を確認できません。型を開き直してください。"); return; }
   const template = normalizeTemplate({
-    id: existingTemplate?.id || createId(),
-    kind: els.templateKindInput.value,
-    title: els.templateTitleInput.value.trim(),
-    body: els.templateBodyInput.value.trim(),
-    createdAt: existingTemplate?.createdAt || new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    sortOrder: Number.isFinite(existingTemplate?.sortOrder) ? existingTemplate.sortOrder : nextTemplateSortOrder()
+    id: base?.id || createId(), kind: els.templateKindInput.value,
+    title: els.templateTitleInput.value.trim(), body: els.templateBodyInput.value.trim(),
+    createdAt: base?.createdAt || new Date().toISOString(), updatedAt: base?.updatedAt || new Date().toISOString(),
+    sortOrder: Number.isFinite(base?.sortOrder) ? base.sortOrder : nextTemplateSortOrder()
   });
-
-  if (!template.title || !template.body) {
-    showToast("タイトルと本文を入力してください。");
-    return;
-  }
-
-  if (state.mode === "cloud") {
-    if (!state.session) {
-      showToast("ログインすると保存できます。");
-      return;
-    }
-
-    const savedResult = existingTemplate ? await updateCloudTemplate(template) : await createCloudTemplate(template);
-    if (!savedResult) return;
-    const saved = normalizeTemplate({
-      ...savedResult,
-      sortOrder: Number.isFinite(savedResult.sortOrder) ? savedResult.sortOrder : template.sortOrder
-    });
-    if (existingTemplate) {
-      state.templates = state.templates.map((item) => (item.id === saved.id ? saved : item));
+  if (!template.title || !template.body) { showToast("タイトルと本文を入力してください。"); return; }
+  state.templateSavePending = true;
+  updateTemplateSaveControls();
+  try {
+    let saved = template;
+    if (state.mode === "cloud") {
+      if (!scope.userId) { showToast("ログインすると保存できます。"); return; }
+      saved = isEditing ? await updateCloudTemplate(template, base, 0, scope) : await createCloudTemplate(template, scope);
+      if (!isCurrentUserScope(scope) || !saved) return;
     } else {
-      state.templates.unshift(saved);
+      saved = normalizeTemplate({ ...template, updatedAt: new Date().toISOString() });
+      const next = isEditing ? state.templates.map(item => item.id === saved.id ? saved : item) : [saved, ...state.templates];
+      if (!saveLocalTemplates(next)) return;
     }
-  } else {
-    const nextTemplates = existingTemplate
-      ? state.templates.map((item) => (item.id === template.id ? template : item))
-      : [template, ...state.templates];
-    if (!saveLocalTemplates(nextTemplates)) return;
-    state.templates = nextTemplates;
+    // A concurrent refresh can remove the edited row from the list; this is still an update.
+    state.templates = state.templates.some(item => item.id === saved.id)
+      ? state.templates.map(item => item.id === saved.id ? saved : item) : [saved, ...state.templates];
+    state.templateSavePending = false;
+    resetTemplateForm();
+    els.templateDialog.close();
+    renderTemplateList();
+    renderTemplateOptions();
+    showToast(isEditing ? "型を更新しました。" : "型を保存しました。");
+  } catch (error) {
+    if (isCurrentUserScope(scope)) {
+      if (state.mode === "cloud") recordCloudSyncResult(error, scope);
+      showToast("型を保存できませんでした。編集内容は残っています。");
+    }
+  } finally {
+    if (isCurrentUserScope(scope)) { state.templateSavePending = false; updateTemplateSaveControls(); }
   }
+}
 
-  resetTemplateForm();
-  els.templateDialog.close();
-  renderTemplateList();
-  renderTemplateOptions();
-  showToast(existingTemplate ? "型を更新しました。" : "型を保存しました。");
+function updateTemplateSaveControls() {
+  for (const element of [els.templateKindInput, els.templateTitleInput, els.templateBodyInput, els.saveTemplateButton, els.resetTemplateButton, document.querySelector("#closeTemplateButton")]) {
+    element.disabled = state.templateSavePending;
+  }
+  els.saveTemplateButton.textContent = state.templateSavePending ? "安全に保存中..." : state.editingTemplateId ? "型を更新" : "型を保存";
 }
 
 function openTemplateEditor() {
+  if (state.templateSavePending) return;
   els.templateDialogTitle.textContent = state.editingTemplateId ? "ESの型を編集" : "ESの型を追加";
   if (!els.templateDialog.open) els.templateDialog.showModal();
   els.templateTitleInput.focus();
 }
 
 function handleEditTemplate(id) {
+  if (state.templateSavePending) return;
   const template = state.templates.find((item) => item.id === id);
   if (!template) return;
 
   state.editingTemplateId = template.id;
+  state.editingBaseTemplate = normalizeTemplate(template);
   els.templateKindInput.value = template.kind;
   els.templateTitleInput.value = template.title;
   els.templateBodyInput.value = template.body;
@@ -3661,34 +3715,38 @@ function handleEditTemplate(id) {
 }
 
 async function handleDeleteTemplate(id) {
-  const shouldDelete = window.confirm("この型を削除しますか？");
-  if (!shouldDelete) return;
-
-  if (state.mode === "cloud") {
-    const scope = captureUserScope();
-    const { error } = await supabaseClient.from("es_templates").delete().eq("id", id);
-    if (!isCurrentUserScope(scope)) return;
-    if (error) {
-      showToast(error.message);
-      return;
+  if (state.templateSavePending) return;
+  const base = state.editingBaseTemplate?.id === id ? state.editingBaseTemplate : state.templates.find(item => item.id === id);
+  if (!base || !window.confirm("この型を削除しますか？")) return;
+  const scope = captureUserScope();
+  try {
+    if (state.mode === "cloud") {
+      const { data, error } = await supabaseClient.from("es_templates").delete()
+        .eq("id", id).eq("user_id", scope.userId).eq("updated_at", base.updatedAt).select("id");
+      if (!isCurrentUserScope(scope)) return;
+      if (error) throw error;
+      if (data?.length !== 1) { showToast("別端末で更新されています。型を削除せず残しました。同期更新して確認してください。"); return; }
+      recordCloudSyncResult(null, scope);
     }
+    const next = state.templates.filter(item => item.id !== id);
+    if (state.mode === "local" && !saveLocalTemplates(next)) return;
+    state.templates = next;
+    if (state.editingTemplateId === id) resetTemplateForm();
+    renderTemplateList(); renderTemplateOptions(); showToast("型を削除しました。");
+  } catch (error) {
+    if (isCurrentUserScope(scope)) { if (state.mode === "cloud") recordCloudSyncResult(error, scope); showToast("型を削除できませんでした。記録は残っています。"); }
   }
-
-  const nextTemplates = state.templates.filter((template) => template.id !== id);
-  if (state.mode === "local" && !saveLocalTemplates(nextTemplates)) return;
-  state.templates = nextTemplates;
-  if (state.editingTemplateId === id) resetTemplateForm();
-  renderTemplateList();
-  renderTemplateOptions();
-  showToast("型を削除しました。");
 }
 
 function resetTemplateForm() {
+  if (state.templateSavePending) return;
+  state.editingBaseTemplate = null;
   state.editingTemplateId = null;
   els.templateForm.reset();
   els.templateDialogTitle.textContent = "ESの型を追加";
   els.saveTemplateButton.textContent = "型を保存";
   updateTemplateBodyCount();
+  updateTemplateSaveControls();
 }
 
 function updateTemplateBodyCount() {
@@ -3800,11 +3858,12 @@ async function handleImportBackup(event) {
     }
     state.cloudSortOrderAvailable = !entrySortProbe.error;
     state.cloudTemplateSortOrderAvailable = !templateSortProbe.error;
+    if (!state.cloudDeadlineTimeAvailable && entryRestorePlan.upserts.some(entry => entry.deadlineTime)) {
+      showToast("締切時刻用のSQLを実行してから復元してください。データは変更していません。");
+      return;
+    }
     const entryPayload = entryRestorePlan.upserts.map((entry) => toDbEntry(entry, {
       includeSortOrder: !entrySortProbe.error
-    }));
-    const templatePayload = templateRestorePlan.upserts.map((template) => toDbTemplate(template, {
-      includeSortOrder: !templateSortProbe.error
     }));
     if (entryPayload.length > 0) {
       const { error } = await supabaseClient.from("entries").upsert(entryPayload, { onConflict: "id" });
@@ -3814,15 +3873,15 @@ async function handleImportBackup(event) {
         return;
       }
     }
-    if (templatePayload.length > 0) {
-      const { error } = await supabaseClient.from("es_templates").upsert(templatePayload, { onConflict: "id" });
+    for (const template of templateRestorePlan.upserts) {
+      const base = state.templates.find(item => item.id === template.id);
+      const saved = base ? await updateCloudTemplate(template, base, 0, scope) : await createCloudTemplate(template, scope);
       if (!isCurrentUserScope(scope)) return;
-      if (error) {
-        await loadCloudData();
-        if (!isCurrentUserScope(scope)) return;
-        showToast(`企業カードは復元しましたが、ESの型は復元できませんでした: ${error.message}`);
+      if (!saved) {
+        showToast("企業カードは復元しましたが、一部のESの型は保存できませんでした。最新状態を確認して再実行してください。");
         return;
       }
+      state.templates = state.templates.some(item => item.id === saved.id) ? state.templates.map(item => item.id === saved.id ? saved : item) : [saved, ...state.templates];
     }
     await loadCloudData();
     if (!isCurrentUserScope(scope)) return;
@@ -3887,7 +3946,7 @@ function isValidBackupEntryRecord(value) {
   if (!isPlainRecord(value) || typeof value.companyName !== "string" || !value.companyName.trim()) return false;
   const textFields = [
     "id", "companyName", "industry", "mypageId", "officialUrl", "logoUrl", "trackType", "status",
-    "deadline", "eventDate", "eventType", "priority", "mypageUrl", "esContent", "interviewNotes", "memo",
+    "deadline", "deadlineTime", "eventDate", "eventType", "priority", "mypageUrl", "esContent", "interviewNotes", "memo",
     "createdAt", "updatedAt", "deletedAt"
   ];
   if (!textFields.every((field) => !Object.hasOwn(value, field) || typeof value[field] === "string")) return false;
@@ -3953,6 +4012,10 @@ function downloadTextFile(filename, content, type) {
 async function handleImportLocalEntries() {
   const localEntries = readSavedLocalEntries();
   if (localEntries.length === 0 || !state.session) return;
+  if (!state.cloudDeadlineTimeAvailable && localEntries.some(entry => entry.deadlineTime)) {
+    showToast("締切時刻用のSQLを実行してから移してください。端末データは残っています。");
+    return;
+  }
 
   if (!state.cloudDeletedAtAvailable && localEntries.some(isTrashed)) {
     showToast("ゴミ箱入りデータを移すにはSupabaseのSQL更新が必要です。");
@@ -3983,69 +4046,71 @@ async function handleImportLocalEntries() {
 }
 
 async function loadCloudData() {
-  if (!state.session) return;
-  const scope = captureUserScope();
-
-  state.loading = true;
-  renderMode();
-  await refreshCloudEntryColumnSupport(scope);
-  if (!isCurrentUserScope(scope)) return;
-  const [entriesResult, templatesResult] = await Promise.all([
-    supabaseClient.from("entries").select("*").order("created_at", { ascending: false }),
-    supabaseClient.from("es_templates").select("*").order("updated_at", { ascending: false })
-  ]);
-  if (!isCurrentUserScope(scope)) return;
-  state.loading = false;
-
-  if (entriesResult.error) {
-    showToast(entriesResult.error.message);
-  } else {
-    state.entries = entriesResult.data.map(fromDbEntry);
-  }
-
-  if (templatesResult.error) {
-    state.templates = [];
-    showToast("SupabaseのSQLを更新すると、ESの型保存も使えます。");
-  } else {
-    state.templates = templatesResult.data.map(fromDbTemplate);
-  }
-
-  render();
+  return refreshCloudCollections(false);
 }
 
 async function loadCloudEntries() {
+  return refreshCloudCollections(true);
+}
+
+async function refreshCloudCollections(entriesOnly) {
   if (!state.session) return;
   const scope = captureUserScope();
-
+  const requestId = ++state.syncRequestId;
   state.loading = true;
   renderMode();
-  await refreshCloudEntryColumnSupport(scope);
-  if (!isCurrentUserScope(scope)) return;
-  const { data, error } = await supabaseClient.from("entries").select("*").order("created_at", { ascending: false });
-  if (!isCurrentUserScope(scope)) return;
-  state.loading = false;
-
-  if (error) {
-    showToast(error.message);
-    render();
-    return;
+  try {
+    await refreshCloudEntryColumnSupport(scope);
+    if (!isCurrentUserScope(scope) || requestId !== state.syncRequestId) return;
+    const [entriesResult, templatesResult] = await Promise.all([
+      supabaseClient.from("entries").select("*").order("created_at", { ascending: false }),
+      entriesOnly ? Promise.resolve(null) : supabaseClient.from("es_templates").select("*").order("updated_at", { ascending: false })
+    ]);
+    if (!isCurrentUserScope(scope) || requestId !== state.syncRequestId) return;
+    if (!entriesResult.error) state.entries = entriesResult.data.map(fromDbEntry);
+    // Preserve the last successful data on transient failures, including templates.
+    if (templatesResult && !templatesResult.error) state.templates = templatesResult.data.map(fromDbTemplate);
+    const error = entriesResult.error || templatesResult?.error;
+    recordCloudSyncResult(error, scope, !entriesOnly);
+    if (error) showToast("同期に失敗しました。表示中のデータを残しています。接続を確認して「同期更新」を押してください。");
+  } catch (error) {
+    if (isCurrentUserScope(scope) && requestId === state.syncRequestId) {
+      recordCloudSyncResult(error, scope);
+      showToast("同期に失敗しました。表示中のデータを残しています。");
+    }
+  } finally {
+    if (isCurrentUserScope(scope) && requestId === state.syncRequestId) {
+      state.loading = false;
+      render();
+    }
   }
+}
 
-  state.entries = data.map(fromDbEntry);
-  render();
+function recordCloudSyncResult(error, scope = captureUserScope(), complete = false) {
+  if (!isCurrentUserScope(scope)) return;
+  if (error) state.syncError = "接続を確認して同期更新してください";
+  else {
+    if (complete) state.syncError = "";
+    state.lastSyncedAt = new Date().toISOString();
+  }
+  renderMode();
 }
 
 async function refreshCloudEntryColumnSupport(scope = captureUserScope()) {
   if (!state.session) return;
-
-  const { error } = await supabaseClient.from("entries").select("id, deleted_at").limit(1);
+  const [trashResult, timeResult, templateSortResult] = await Promise.all([
+    supabaseClient.from("entries").select("id, deleted_at").limit(1),
+    supabaseClient.from("entries").select("id, deadline_time").limit(1),
+    supabaseClient.from("es_templates").select("sort_order").limit(1)
+  ]);
   if (!isCurrentUserScope(scope)) return;
-  state.cloudDeletedAtAvailable = !error;
-
-  if (error && !state.cloudDeletedAtWarningShown) {
-    state.cloudDeletedAtWarningShown = true;
-    showToast("SupabaseのSQLを更新すると、ゴミ箱と復元が使えます。");
-  }
+  if (!templateSortResult.error) state.cloudTemplateSortOrderAvailable = true;
+  else if (["42703", "PGRST204"].includes(templateSortResult.error.code)) state.cloudTemplateSortOrderAvailable = false;
+  // A missing column is a migration issue; a network failure is not evidence of it.
+  if (!trashResult.error) state.cloudDeletedAtAvailable = true;
+  else if (["42703", "PGRST204"].includes(trashResult.error.code)) state.cloudDeletedAtAvailable = false;
+  if (!timeResult.error) state.cloudDeadlineTimeAvailable = true;
+  else if (["42703", "PGRST204"].includes(timeResult.error.code)) state.cloudDeadlineTimeAvailable = false;
 }
 
 function canUseCloudTrash() {
@@ -4168,9 +4233,11 @@ async function createCloudEntry(entry, scope = captureUserScope()) {
   const { data, error } = await supabaseClient.from("entries").insert(toDbEntry(entry)).select("*").single();
   if (!isCurrentUserScope(scope)) return null;
   if (error) {
+    recordCloudSyncResult(error, scope);
     showToast(cloudEntryErrorMessage(error));
     return null;
   }
+  recordCloudSyncResult(null, scope);
   return fromDbEntry(data);
 }
 
@@ -4183,11 +4250,12 @@ async function updateCloudEntry(entry, baseEntry = entry, retryCount = 0, scope 
   const { data, error } = await request.select("*");
   if (!isCurrentUserScope(scope)) return null;
   if (error) {
+    recordCloudSyncResult(error, scope);
     showToast(cloudEntryErrorMessage(error));
     return null;
   }
 
-  if (Array.isArray(data) && data.length === 1) return fromDbEntry(data[0]);
+  if (Array.isArray(data) && data.length === 1) { recordCloudSyncResult(null, scope); return fromDbEntry(data[0]); }
   if (retryCount >= 2) {
     showToast("別の端末で更新が続いています。最新状態を確認してから、もう一度保存してください。");
     return null;
@@ -4222,7 +4290,15 @@ function mergeEntryVersions(baseEntry, draftEntry, latestEntry) {
   const merged = normalizeEntry({ ...latest });
   const conflicts = [];
 
+  const pair = entry => [entry.deadline, entry.deadlineTime];
+  const baseDeadline = JSON.stringify(pair(base)), draftDeadline = JSON.stringify(pair(draft)), latestDeadline = JSON.stringify(pair(latest));
+  if (draftDeadline !== baseDeadline && latestDeadline !== baseDeadline && draftDeadline !== latestDeadline) {
+    conflicts.push({ key: "deadline", label: "締切日・時刻", type: "deadline" });
+  } else if (draftDeadline !== baseDeadline) {
+    merged.deadline = draft.deadline; merged.deadlineTime = draft.deadlineTime;
+  }
   entryMergeFields.forEach((field) => {
+    if (field.key === "deadline" || field.key === "deadlineTime") return;
     const baseValue = base[field.key];
     const draftValue = draft[field.key];
     const latestValue = latest[field.key];
@@ -4281,8 +4357,8 @@ function renderEntryConflictDialog() {
   els.saveConflictList.innerHTML = pending.conflicts.map((field, index) => `
     <article class="conflict-item">
       <h3>${escapeHtml(field.label)}</h3>
-      ${conflictChoiceMarkup(field, index, "draft", "この端末の編集", pending.draft[field.key], true)}
-      ${conflictChoiceMarkup(field, index, "latest", "クラウドの最新", pending.latest[field.key], false)}
+      ${conflictChoiceMarkup(field, index, "draft", "この端末の編集", field.type === "deadline" ? pending.draft : pending.draft[field.key], true)}
+      ${conflictChoiceMarkup(field, index, "latest", "クラウドの最新", field.type === "deadline" ? pending.latest : pending.latest[field.key], false)}
     </article>
   `).join("");
 }
@@ -4300,6 +4376,7 @@ function conflictChoiceMarkup(field, index, value, title, content, checked) {
 }
 
 function conflictValuePreview(field, value) {
+  if (field.type === "deadline") return value.deadline ? formatDeadline(value) : "締切未設定";
   if (field.type === "trash") return value ? "ゴミ箱に入っている" : "通常の一覧に表示";
   if (field.type === "es") {
     const items = normalizeEsItems(value);
@@ -4313,56 +4390,56 @@ function conflictValuePreview(field, value) {
 
   const text = String(value || "").trim();
   if (!text) return "未入力";
+  if (field.type === "long") return text;
   return text.length > 180 ? `${text.slice(0, 180)}...` : text;
 }
 
 async function handleConflictSubmit(event) {
   event.preventDefault();
   const pending = state.pendingEntryConflict;
-  if (!pending || pending.saving) return;
-
+  if (!pending || pending.saving || !isCurrentUserScope(pending.scope)) return;
   pending.saving = true;
   els.resolveConflictButton.disabled = true;
   els.closeConflictButton.disabled = true;
   els.cancelConflictButton.disabled = true;
   els.resolveConflictButton.textContent = "安全に保存中...";
-
-  const resolved = normalizeEntry({ ...pending.entry });
-  pending.conflicts.forEach((field, index) => {
-    const control = els.saveConflictForm.elements.namedItem(`entry-conflict-${index}`);
-    const source = control?.value === "latest" ? pending.latest : pending.draft;
-    resolved[field.key] = cloneEntryFieldValue(source[field.key]);
-  });
-  resolved.esItems = normalizeEsItems(resolved.esItems, resolved.esContent);
-  resolved.esContent = esItemsToLegacyText(resolved.esItems);
-
-  const { id, user_id, created_at, ...changes } = toDbEntry(resolved);
-  const { data, error } = await supabaseClient
-    .from("entries")
-    .update(changes)
-    .eq("id", id)
-    .eq("updated_at", pending.latest.updatedAt)
-    .select("*");
-
-  if (!isCurrentUserScope(pending.scope) || state.pendingEntryConflict !== pending) return;
-
-  if (error) {
-    pending.saving = false;
-    els.resolveConflictButton.disabled = false;
-    els.closeConflictButton.disabled = false;
-    els.cancelConflictButton.disabled = false;
-    els.resolveConflictButton.textContent = "選んだ内容で安全に保存";
-    showToast(cloudEntryErrorMessage(error));
-    return;
+  try {
+    const isTemplate = pending.kind === "template";
+    const resolved = isTemplate ? normalizeTemplate(pending.entry) : normalizeEntry(pending.entry);
+    pending.conflicts.forEach((field, index) => {
+      const control = els.saveConflictForm.elements.namedItem("entry-conflict-" + index);
+      const source = control?.value === "latest" ? pending.latest : pending.draft;
+      resolved[field.key] = cloneEntryFieldValue(source[field.key]);
+      if (field.type === "deadline") resolved.deadlineTime = source.deadlineTime;
+    });
+    if (!isTemplate) {
+      resolved.esItems = normalizeEsItems(resolved.esItems, resolved.esContent);
+      resolved.esContent = esItemsToLegacyText(resolved.esItems);
+    }
+    const payload = isTemplate ? toDbTemplate(resolved, { includeSortOrder: state.cloudTemplateSortOrderAvailable }) : toDbEntry(resolved);
+    const { id, user_id, created_at, updated_at, ...changes } = payload;
+    const { data, error } = await supabaseClient.from(isTemplate ? "es_templates" : "entries").update(changes)
+      .eq("id", id).eq("user_id", pending.scope.userId).eq("updated_at", pending.latest.updatedAt).select("*");
+    if (!isCurrentUserScope(pending.scope) || state.pendingEntryConflict !== pending) return;
+    if (error) throw error;
+    if (data?.length !== 1) {
+      showToast("確認中に別の更新が入りました。編集内容は残っています。もう一度保存してください。");
+      finishEntryConflict(null);
+      return;
+    }
+    recordCloudSyncResult(null, pending.scope);
+    finishEntryConflict(isTemplate ? fromDbTemplate(data[0]) : fromDbEntry(data[0]));
+  } catch (error) {
+    if (isCurrentUserScope(pending.scope) && state.pendingEntryConflict === pending) {
+      recordCloudSyncResult(error, pending.scope);
+      pending.saving = false;
+      els.resolveConflictButton.disabled = false;
+      els.closeConflictButton.disabled = false;
+      els.cancelConflictButton.disabled = false;
+      els.resolveConflictButton.textContent = "選んだ内容で安全に保存";
+      showToast(cloudEntryErrorMessage(error));
+    }
   }
-
-  if (!Array.isArray(data) || data.length !== 1) {
-    showToast("確認中に別の更新が入りました。編集内容は残っているので、もう一度保存してください。");
-    finishEntryConflict(null);
-    return;
-  }
-
-  finishEntryConflict(fromDbEntry(data[0]));
 }
 
 function cancelEntryConflict() {
@@ -4385,24 +4462,40 @@ function finishEntryConflict(result) {
 }
 
 async function createCloudTemplate(template, scope = captureUserScope()) {
-  const { data, error } = await supabaseClient.from("es_templates").insert(toDbTemplate(template)).select("*").single();
+  const { data, error } = await supabaseClient.from("es_templates").insert(toDbTemplate(template, { includeSortOrder: state.cloudTemplateSortOrderAvailable })).select("*").single();
   if (!isCurrentUserScope(scope)) return null;
   if (error) {
+    recordCloudSyncResult(error, scope);
     showToast(error.message);
     return null;
   }
+  recordCloudSyncResult(null, scope);
   return fromDbTemplate(data);
 }
 
-async function updateCloudTemplate(template, scope = captureUserScope()) {
-  const { id, user_id, created_at, ...changes } = toDbTemplate(template);
-  const { data, error } = await supabaseClient.from("es_templates").update(changes).eq("id", id).select("*").single();
+async function updateCloudTemplate(template, baseTemplate = template, retryCount = 0, scope = captureUserScope()) {
   if (!isCurrentUserScope(scope)) return null;
-  if (error) {
-    showToast(error.message);
-    return null;
-  }
-  return fromDbTemplate(data);
+  const draft = normalizeTemplate(template), base = normalizeTemplate(baseTemplate);
+  const { id, user_id, created_at, updated_at, ...changes } = toDbTemplate(draft, { includeSortOrder: state.cloudTemplateSortOrderAvailable });
+  const { data, error } = await supabaseClient.from("es_templates").update(changes)
+    .eq("id", id).eq("user_id", scope.userId).eq("updated_at", base.updatedAt).select("*");
+  if (!isCurrentUserScope(scope)) return null;
+  if (error) { recordCloudSyncResult(error, scope); showToast(error.message); return null; }
+  if (data?.length === 1) { recordCloudSyncResult(null, scope); return fromDbTemplate(data[0]); }
+  if (retryCount >= 2) { showToast("別端末の更新が続いています。編集内容は残っています。もう一度保存してください。"); return null; }
+  const latest = await fetchCloudTemplate(id, scope);
+  if (!isCurrentUserScope(scope)) return null;
+  if (!latest) { showToast("クラウドの型を確認できません。削除や接続を確認してください。編集内容は残っています。"); return null; }
+  const merge = window.SHUKATSU_TEMPLATE_CONFLICTS.mergeTemplateVersions(base, draft, latest);
+  if (!merge.conflicts.length) return updateCloudTemplate(merge.template, latest, retryCount + 1, scope);
+  return requestEntryConflictResolution({ ...merge, entry: merge.template, kind: "template", draft, latest, scope });
+}
+
+async function fetchCloudTemplate(id, scope = captureUserScope()) {
+  const { data, error } = await supabaseClient.from("es_templates").select("*").eq("id", id).eq("user_id", scope.userId).limit(1);
+  if (!isCurrentUserScope(scope)) return null;
+  if (error) recordCloudSyncResult(error, scope);
+  return !error && data?.length === 1 ? fromDbTemplate(data[0]) : null;
 }
 
 function render() {
@@ -4447,8 +4540,11 @@ function renderMode() {
     els.syncStatus.textContent = "端末保存";
     els.syncStatus.className = "sync-pill local";
   } else if (state.session) {
-    els.syncStatus.textContent = state.loading ? "同期中" : "クラウド同期";
-    els.syncStatus.className = "sync-pill cloud";
+    const syncedTime = state.lastSyncedAt ? new Date(state.lastSyncedAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }) : "";
+    els.syncStatus.textContent = state.loading ? "同期中" : state.syncError ? "同期失敗・再試行してください" : syncedTime ? "同期済み " + syncedTime : "未同期";
+    els.syncStatus.className = "sync-pill " + (state.syncError && !state.loading ? "error" : "cloud");
+    els.syncStatus.title = state.syncError || (state.lastSyncedAt ? "最終成功: " + formatDateTime(state.lastSyncedAt) : "同期更新で最新のデータを取得します");
+    els.refreshButton.disabled = state.loading;
     els.userEmailLabel.textContent = state.session.user.email || "ログイン中";
   } else {
     els.syncStatus.textContent = "ログイン待ち";
@@ -4615,7 +4711,7 @@ function renderCompanyList() {
             </div>
             <div class="meta-row">
               <span>ゴミ箱へ移動 ${formatDateTime(entry.deletedAt)}</span>
-              ${entry.deadline ? `<span>${formatDate(entry.deadline)} 締切</span>` : ""}
+              ${entry.deadline ? `<span>${escapeHtml(formatDeadline(entry))} 締切</span>` : ""}
               ${entry.eventDate ? `<span>${formatDate(entry.eventDate)} 予定</span>` : ""}
             </div>
             ${entry.mypageId ? `<div class="credential-line"><strong>マイページID</strong><span>${escapeHtml(entry.mypageId)}</span></div>` : ""}
@@ -4652,6 +4748,8 @@ function renderCompanyGroups(visibleEntries) {
         ${branches.map((entry) => `<div class="company-branch ${state.filter !== "all" && visibleIds.has(entry.id) ? "is-filter-match" : ""}">
           <button class="company-branch-detail" data-detail-id="${escapeAttribute(entry.id)}" type="button" aria-label="${escapeAttribute(entry.companyName)}・${escapeAttribute(entry.trackType)}の詳細">${trackTag(entry.trackType)}</button>
           ${companyStatusPicker(entry)}
+          ${companySeasonPicker(entry)}
+          ${entry.deadline ? `<span class="branch-deadline${isDeadlineOverdue(entry) ? " is-overdue" : ""}">${escapeHtml(formatDeadline(entry))} 締切</span>` : ""}
         </div>`).join("")}
       </div>
       <div class="company-card-actions">
@@ -4719,7 +4817,7 @@ function companyMypageLinks(branches) {
     }
   }
   if (!destinations.size && !credentials.size) return "";
-  const shortTracks = new Map([["夏インターン", "夏"], ["冬インターン", "冬"], ["早期選考", "早期"], ["本選考", "本選考"]]);
+  const shortTracks = new Map([["夏インターン", "夏"], ["秋インターン", "秋"], ["冬インターン", "冬"], ["早期選考", "早期"], ["本選考", "本選考"]]);
   const shorten = tracks => tracks.map(track => shortTracks.get(track) || track).join("・");
   const links = [...destinations].map(([url, destination]) => {
     const label = destinations.size === 1 ? "マイページ" : shorten(destination.tracks);
@@ -4798,6 +4896,76 @@ async function handleCompanyStatusChange(control) {
       if (restoreFocus) Array.from(els.companyList.querySelectorAll("[data-company-status]"))
         .find((item) => item.dataset.companyStatus === id)?.focus({ preventScroll: true });
     }
+  }
+}
+
+function companySeasonPicker(entry) {
+  const seasons = ["インターン", "夏インターン", "秋インターン", "冬インターン"];
+  if (!seasons.includes(entry.trackType)) return "";
+  const pending = state.pendingSelectionChanges.has(entry.id) || state.pendingStatusChanges.has(entry.id);
+  return `<label class="company-season-control"><span class="visually-hidden">インターンの季節</span>
+    <select data-company-track="${escapeAttribute(entry.id)}" aria-label="${escapeAttribute(entry.companyName)}・インターンの季節を変更" title="ES・メモ・進捗を残して季節だけ変更" ${pending ? "disabled" : ""}>
+      ${seasons.map(track => `<option value="${escapeAttribute(track)}" ${track === entry.trackType ? "selected" : ""}>${track === "インターン" ? "未分類" : track.replace("インターン", "")}</option>`).join("")}
+    </select></label>`;
+}
+
+async function handleCompanyTrackChange(control) {
+  const id = control.dataset.companyTrack;
+  const trackType = control.value;
+  const seasons = ["インターン", "夏インターン", "秋インターン", "冬インターン"];
+  const entry = state.entries.find(item => item.id === id && !isTrashed(item));
+  if (!entry || !seasons.includes(entry.trackType) || !seasons.includes(trackType)) return;
+  if (trackType === entry.trackType) return;
+  control.value = entry.trackType;
+  if (state.pendingSelectionChanges.has(id) || state.pendingStatusChanges.has(id) || state.entrySavePending || state.detailSavePending) {
+    showToast("保存が終わってから季節を変更してください。");
+    return;
+  }
+  if (state.entries.some(item => item.id !== id && window.SHUKATSU_GROUPS.key(item) === window.SHUKATSU_GROUPS.key(entry) && item.trackType === trackType)) {
+    showToast("同じ企業の変更先の季節がすでにあります。ゴミ箱も確認してください。記録は変更していません。");
+    return;
+  }
+  const scope = captureUserScope(), pending = state.pendingSelectionChanges;
+  pending.add(id);
+  control.disabled = true;
+  try {
+    let saved;
+    if (state.mode === "cloud") {
+      if (!scope.userId || !entry.updatedAt) { showToast("同期更新してから季節を変更してください。"); return; }
+      const { data, error } = await supabaseClient.from("entries").update({ track_type: trackType })
+        .eq("id", id).eq("user_id", scope.userId).eq("updated_at", entry.updatedAt).select("*");
+      if (!isCurrentUserScope(scope)) return;
+      if (error) throw error;
+      if (data?.length !== 1) {
+        const latest = await fetchCloudEntry(id, scope);
+        if (!isCurrentUserScope(scope)) return;
+        if (latest) state.entries = state.entries.map(item => item === entry ? latest : item);
+        showToast("別端末で更新されています。最新の記録を確認して、もう一度季節を選んでください。");
+        return;
+      }
+      saved = fromDbEntry(data[0]);
+      recordCloudSyncResult(null, scope);
+    } else {
+      saved = { ...entry, trackType, updatedAt: new Date().toISOString() };
+      const next = state.entries.map(item => item === entry ? saved : item);
+      if (!saveLocalEntries(next)) return;
+    }
+    state.entries = state.entries.map(item => item === entry ? saved : item);
+    if (state.mode === "local") {
+      if (state.editingBaseEntry?.id === id) state.editingBaseEntry = { ...state.editingBaseEntry, trackType };
+      if (state.detailBaseEntry?.id === id) state.detailBaseEntry = { ...state.detailBaseEntry, trackType };
+      if (state.editingId === id) setFormValue("trackType", trackType);
+    }
+    // Cloud editors keep the original base so later saves merge rather than overwrite.
+    showToast(`${entry.companyName}を${trackType}に変更しました。ES・メモ・進捗はそのままです。`);
+  } catch (error) {
+    if (isCurrentUserScope(scope)) {
+      if (state.mode === "cloud") recordCloudSyncResult(error, scope);
+      showToast(error?.code === "23505" ? "変更先の季節が別端末で追加されました。同期更新して確認してください。" : "季節を保存できませんでした。記録は残っています。");
+    }
+  } finally {
+    pending.delete(id);
+    if (isCurrentUserScope(scope)) render();
   }
 }
 
@@ -5088,6 +5256,7 @@ function fillEntryForm(entry) {
   setFormValue("trackType", values.trackType);
   setFormValue("status", simpleStatus(values.status));
   setFormValue("deadline", entry ? values.deadline : "");
+  setFormValue("deadlineTime", entry ? values.deadlineTime : "");
   setFormValue("priority", values.priority === "未定" ? "" : values.priority);
   setFormValue("esContent", entry ? entryEsText(values) : "");
   setFormValue("memo", entry ? values.memo : "");
@@ -5307,6 +5476,8 @@ function toDbEntry(entry, options = {}) {
   if (state.cloudDeletedAtAvailable) {
     payload.deleted_at = values.deletedAt || null;
   }
+  if (state.cloudDeadlineTimeAvailable) payload.deadline_time = values.deadlineTime;
+  else if (values.deadlineTime) throw new Error("締切時刻の保存先が未更新です。締切時刻用のSQLを実行してから、もう一度保存してください。");
 
   return payload;
 }
@@ -5322,6 +5493,7 @@ function fromDbEntry(row) {
     trackType: row.track_type,
     status: row.status,
     deadline: row.deadline || "",
+    deadlineTime: row.deadline_time || "",
     eventDate: row.event_date || "",
     eventType: row.event_type,
     priority: row.priority,
@@ -5384,6 +5556,11 @@ function normalizeStoredTimestamp(value, fallback = "") {
   return text && Number.isFinite(Date.parse(text)) ? text : fallback;
 }
 
+function normalizeDeadlineTime(value) {
+  const text = typeof value === "string" ? value.trim() : "";
+  return /^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(text) ? text : "";
+}
+
 function normalizeEntry(entry = {}) {
   const source = isPlainRecord(entry) ? entry : {};
   const now = new Date().toISOString();
@@ -5406,6 +5583,7 @@ function normalizeEntry(entry = {}) {
     trackType: Object.hasOwn(trackTypeHints, trackType) ? trackType : "本選考",
     status: [...activeStatuses, ...finishedStatuses].includes(status) ? status : "気になる",
     deadline: normalizeStoredDate(source.deadline),
+    deadlineTime: normalizeStoredDate(source.deadline) ? normalizeDeadlineTime(source.deadlineTime) : "",
     eventDate: normalizeStoredDate(source.eventDate),
     eventType: allowedEventTypes.has(eventType) ? eventType : "",
     priority: ["最優先", "高", "中", "低", "未定"].includes(priority) ? priority : "未定",
@@ -5837,7 +6015,7 @@ function getEntryCelebration(entry, existingEntry) {
     };
   }
 
-  if (["インターン", "夏インターン", "冬インターン"].includes(entry.trackType)) {
+  if (["インターン", "夏インターン", "秋インターン", "冬インターン"].includes(entry.trackType)) {
     return {
       title: ["インターン", "選考通過！"],
       message: `${entry.companyName}のインターン選考通過、おめでとう。次もこの勢いでいこう。`,
@@ -6066,10 +6244,10 @@ function getNextAction(entry) {
   const eventDays = daysUntil(entry.eventDate);
 
   if (Number.isFinite(deadlineDays)) {
-    if (deadlineDays < 0) {
-      candidates.push(createNextAction("締切超過。提出状況を確認", "danger", `${Math.abs(deadlineDays)}日超過`, 0, entry.deadline, deadlineDays));
+    if (isDeadlineOverdue(entry)) {
+      candidates.push(createNextAction("締切超過。提出状況を確認", "danger", deadlineDays === 0 ? `${entry.deadlineTime}を過ぎています` : `${Math.abs(deadlineDays)}日超過`, 0, entry.deadline, deadlineDays));
     } else if (deadlineDays === 0) {
-      candidates.push(createNextAction("今日締切。最優先で提出", "danger", "今日締切", 1, entry.deadline, deadlineDays));
+      candidates.push(createNextAction("今日締切。最優先で提出", "danger", entry.deadlineTime ? `今日 ${entry.deadlineTime} 締切` : "今日締切（時刻未設定）", 1, entry.deadline, deadlineDays));
     } else if (deadlineDays <= 3) {
       candidates.push(createNextAction("締切が近い。ES・応募を仕上げる", "danger", `${deadlineDays}日後に締切`, 2, entry.deadline, deadlineDays));
     } else if (deadlineDays <= 7) {
@@ -6213,7 +6391,7 @@ function matchesDeadlineFilter(entry) {
 
   if (state.deadlineFilter === "within7") return diff >= 0 && diff <= 7;
   if (state.deadlineFilter === "within14") return diff >= 0 && diff <= 14;
-  if (state.deadlineFilter === "overdue") return diff < 0;
+  if (state.deadlineFilter === "overdue") return isDeadlineOverdue(entry);
   return true;
 }
 
@@ -6234,7 +6412,7 @@ function calendarItemsFor(dateKey) {
   const items = [];
   activeEntries().forEach((entry) => {
     if (entry.deadline === dateKey) {
-      items.push({ kind: "deadline", label: `${entry.companyName} 締切` });
+      items.push({ kind: "deadline", label: `${entry.companyName} ${entry.deadlineTime || "時刻未設定"} 締切` });
     }
     if (entry.eventDate === dateKey) {
       items.push({ kind: "event", label: `${entry.companyName} ${entry.eventType || "予定"}` });
@@ -6578,6 +6756,18 @@ function formatDateTime(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "日時不明";
   return `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function formatDeadline(entry) {
+  return `${formatDate(entry.deadline)} ${normalizeDeadlineTime(entry.deadlineTime) || "時刻未設定"}`;
+}
+
+function isDeadlineOverdue(entry, now = new Date()) {
+  if (!entry.deadline) return false;
+  const time = normalizeDeadlineTime(entry.deadlineTime);
+  if (time) return now.getTime() > Date.parse(`${entry.deadline}T${time}:00+09:00`);
+  const todayInJapan = new Date(now.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  return entry.deadline < todayInJapan;
 }
 
 function clampNumber(value, min, max) {

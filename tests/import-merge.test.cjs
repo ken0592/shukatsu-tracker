@@ -61,6 +61,7 @@ function normalizeEntry(entry = {}) {
     trackType: entry.trackType || "本選考",
     status: entry.status || "気になる",
     deadline: entry.deadline || "",
+    deadlineTime: entry.deadlineTime || "",
     eventDate: entry.eventDate || "",
     eventType: entry.eventType == null ? "面接" : String(entry.eventType),
     priority: entry.priority || "未定",
@@ -454,4 +455,13 @@ test("CSV and TXT fixtures combine locally and remain idempotent on an existing 
   assert.equal(second.hasChanges, false);
 });
 
-console.log("15 import merge tests passed");
+test("復元した締切時刻は同じ締切日だけに追加し、異なる日の時刻を合成しない", () => {
+  const original = normalizeEntry({ companyName: "確認社", deadline: "2026-09-27" });
+  const sameDay = helpers.mergeImportedEntry(original, { ...original, deadlineTime: "12:00" });
+  assert.equal(sameDay.entry.deadlineTime, "12:00");
+  const differentDay = helpers.mergeImportedEntry(original, { ...original, deadline: "2026-09-28", deadlineTime: "23:59" });
+  assert.equal(differentDay.entry.deadline, "2026-09-27");
+  assert.equal(differentDay.entry.deadlineTime, "");
+});
+
+console.log("16 import merge tests passed");

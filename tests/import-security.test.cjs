@@ -46,7 +46,9 @@ assert.match(app, /entryRestorePlan\.blockingIssues\.length[\s\S]*復元を中�
 assert.match(app, /mergeImportedEntry\([^;]*\{ textLimit: 100_000 \}\)/u, "backup notes must use the stored-data length limit");
 assert.match(app, /!Number\.isFinite\(nextEntry\.sortOrder\)[\s\S]*incoming\.sortOrder/u, "backup order must fill an unset existing order");
 assert.match(app, /includeSortOrder: !entrySortProbe\.error/u, "cloud backup restoration must preserve entry ordering when the column exists");
-assert.match(app, /includeSortOrder: !templateSortProbe\.error/u, "cloud backup restoration must preserve template ordering when the column exists");
+assert.match(app, /state\.cloudTemplateSortOrderAvailable = !templateSortProbe\.error/u, "cloud restoration must detect template order support");
+assert.match(app, /insert\(toDbTemplate\(template, \{ includeSortOrder: state\.cloudTemplateSortOrderAvailable \}\)\)/u, "restored new templates must include order when supported");
+assert.match(app, /base \? await updateCloudTemplate\(template, base, 0, scope\)/u, "restoration must protect existing templates with versioned updates");
 assert.match(app, /state\.aiReviewedConflictKeys\.add\(importReviewKey\)/u, "reviewed import conflicts must not loop forever");
 assert.match(app, /sensitiveFields\.has\(detail\.field\)[\s\S]*値は確認画面の中だけで表示します/u, "sensitive conflict values must stay out of the result list");
 assert.match(app, /data-import-conflict-index/u, "the confirmation screen must offer an explicit imported-value action");
