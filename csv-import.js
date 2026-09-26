@@ -678,9 +678,9 @@
     if (trackTypes.includes(text)) return text;
     if (/ob\s*\/\s*og/iu.test(text)) return "OB/OG訪問";
     if (/早期/u.test(text)) return "早期選考";
-    if (/(?:夏(?:季)?|サマー|summer)\s*(?:の)?\s*(?:インターン|intern(?:ship)?)/iu.test(text)) return "夏インターン";
+    if (/(?:夏(?:季)?|サマー|summer)\s*(?:の)?\s*(?:インターン|intern)/iu.test(text)) return "夏インターン";
     if (/(?:秋(?:季)?|オータム|autumn|fall)\s*(?:の)?\s*(?:インターン|intern(?:ship)?)/iu.test(text)) return "秋インターン";
-    if (/(?:冬(?:季)?|ウィンター|winter)\s*(?:の)?\s*(?:インターン|intern(?:ship)?)/iu.test(text)) return "冬インターン";
+    if (/(?:冬(?:季)?|ウィンター|winter)\s*(?:の)?\s*(?:インターン|intern)/iu.test(text)) return "冬インターン";
     if (/インターン|intern/iu.test(text)) return "インターン";
     if (/説明会|セミナー/u.test(text)) return "説明会";
     if (/面談/u.test(text)) return "面談";

@@ -18,7 +18,7 @@
         <h1>就活管理</h1>
       </div>
       <div class="header-actions">
-        <span class="sync-pill" id="syncStatus" role="status" aria-live="polite">読み込み中</span>
+        <span class="sync-pill" id="syncStatus">読み込み中</span>
         <div class="header-account" id="accountPanel" role="group" aria-label="ログイン情報" hidden>
           <span id="userEmailLabel">ログイン中</span>
           <button class="secondary-button" id="refreshButton" type="button">同期更新</button>
@@ -325,7 +325,7 @@
               <option value="面談">面談</option>
               <option value="OB/OG訪問">OB/OG訪問</option>
             </select>
-            <span class="field-hint" id="trackTypeHint">夏・秋・冬の変更はES・メモ・進捗を残します。</span>
+            <span class="field-hint" id="trackTypeHint">時期が決まっていれば夏・秋・冬インターンを選べます。</span>
           </label>
 
           <label>
@@ -344,12 +344,6 @@
           <label>
             締切日
             <input id="deadlineInput" name="deadline" type="date" />
-          </label>
-
-          <label>
-            締切時刻（任意）
-            <input id="deadlineTimeInput" name="deadlineTime" type="time" step="60" />
-            <span class="field-hint">日本時間。空欄は「時刻未設定」として表示します。</span>
           </label>
 
           <label>
@@ -595,7 +589,6 @@
     <script src="./company-groups.js"></script>
     <script src="./csv-import.js"></script>
     <script src="./scratchpad.js"></script>
-    <script src="./template-conflicts.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>

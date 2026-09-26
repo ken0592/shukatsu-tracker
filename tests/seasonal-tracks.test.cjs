@@ -60,7 +60,7 @@ test("AI取り込みでも夏冬のカードとマイページIDを混同しな�
   const h = appHelpers();
   assert.equal(h.stripAiTrackSuffix("A社（サマーインターン）"), "A社");
   assert.equal(h.detectAiBlockTrack("A社（冬季インターン）"), "冬インターン");
-  for (const text of ["A社（秋インターン）", "A社（オータムインターン）", "A社（autumn internship）", "A社（fall internship）"]) {
+  for (const text of ["A社（秋インターン）", "A社（秋のインターン）", "A社（オータムインターン）", "A社（autumn internship）", "A社（fall internship）"]) {
     assert.equal(h.detectAiBlockTrack(text), "秋インターン");
     assert.equal(h.stripAiTrackSuffix(text), "A社");
   }

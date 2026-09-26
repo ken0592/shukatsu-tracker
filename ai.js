@@ -428,7 +428,7 @@
     const headingLine = findCredentialCompanyBoundaryIndex(block, String(block?.text || "").split("\n"));
     const allLines = String(block?.text || "").split("\n");
     const normalizedHeading = headingLine >= 0 ? allLines[headingLine].normalize("NFKC") : "";
-    const headingSuffix = normalizedHeading.match(/(?:[（(【\[]\s*((?:夏(?:季)?|秋(?:季)?|冬(?:季)?|サマー|オータム|ウィンター|summer|autumn|fall)?\s*(?:インターン|intern(?:ship)?)|早期選考|本選考|説明会|面談|OB\s*\/\s*OG訪問)\s*[）)】\]]|[-‐–—|｜/：:]\s*((?:夏(?:季)?|秋(?:季)?|冬(?:季)?|サマー|オータム|ウィンター|summer|autumn|fall)?\s*(?:インターン|intern(?:ship)?)|早期選考|本選考|説明会|面談|OB\s*\/\s*OG訪問))\s*$/iu);
+    const headingSuffix = normalizedHeading.match(/(?:[（(【\[]\s*((?:(?:秋(?:季)?|オータム|autumn|fall)\s*(?:の\s*)?(?:インターン|intern(?:ship)?)|(?:夏(?:季)?|冬(?:季)?|サマー|ウィンター|summer|winter)?\s*(?:インターン|intern)|早期選考|本選考|説明会|面談|OB\s*\/\s*OG訪問))\s*[）)】\]]|[-‐–—|｜/：:]\s*((?:(?:秋(?:季)?|オータム|autumn|fall)\s*(?:の\s*)?(?:インターン|intern(?:ship)?)|(?:夏(?:季)?|冬(?:季)?|サマー|ウィンター|summer|winter)?\s*(?:インターン|intern)|早期選考|本選考|説明会|面談|OB\s*\/\s*OG訪問)))\s*$/iu);
     const headingTrack = normalizeExplicitTrack(headingSuffix?.[1] || headingSuffix?.[2]);
     if (headingTrack) return headingTrack;
     for (const line of scopedLines) {
@@ -443,9 +443,9 @@
     const text = String(value || "").normalize("NFKC");
     if (/OB\s*\/\s*OG訪問/iu.test(text)) return "OB/OG訪問";
     if (/早期選考/u.test(text)) return "早期選考";
-    if (/(?:夏(?:季)?|サマー|summer)\s*(?:の)?\s*(?:インターン|intern(?:ship)?)/iu.test(text)) return "夏インターン";
+    if (/(?:夏(?:季)?|サマー|summer)\s*(?:の)?\s*(?:インターン|intern)/iu.test(text)) return "夏インターン";
     if (/(?:秋(?:季)?|オータム|autumn|fall)\s*(?:の)?\s*(?:インターン|intern(?:ship)?)/iu.test(text)) return "秋インターン";
-    if (/(?:冬(?:季)?|ウィンター|winter)\s*(?:の)?\s*(?:インターン|intern(?:ship)?)/iu.test(text)) return "冬インターン";
+    if (/(?:冬(?:季)?|ウィンター|winter)\s*(?:の)?\s*(?:インターン|intern)/iu.test(text)) return "冬インターン";
     if (/インターン/iu.test(text)) return "インターン";
     if (/説明会/u.test(text)) return "説明会";
     if (/面談/u.test(text)) return "面談";
@@ -512,8 +512,8 @@
   function stripTrackSuffix(value) {
     return String(value || "")
       .trim()
-      .replace(/\s*[（(【\[]\s*(?:(?:夏(?:季)?|秋(?:季)?|冬(?:季)?|サマー|オータム|ウィンター|summer|autumn|fall)?\s*(?:インターン|intern(?:ship)?)|早期選考|本選考|説明会|面談|OB\s*\/\s*OG訪問)\s*[）)】\]]\s*$/iu, "")
-      .replace(/\s*[-‐–—|｜/：:]\s*(?:(?:夏(?:季)?|秋(?:季)?|冬(?:季)?|サマー|オータム|ウィンター|summer|autumn|fall)?\s*(?:インターン|intern(?:ship)?)|早期選考|本選考|説明会|面談|OB\s*\/\s*OG訪問)\s*$/iu, "")
+      .replace(/\s*[（(【\[]\s*(?:(?:秋(?:季)?|オータム|autumn|fall)\s*(?:の\s*)?(?:インターン|intern(?:ship)?)|(?:夏(?:季)?|冬(?:季)?|サマー|ウィンター|summer|winter)?\s*(?:インターン|intern)|早期選考|本選考|説明会|面談|OB\s*\/\s*OG訪問)\s*[）)】\]]\s*$/iu, "")
+      .replace(/\s*[-‐–—|｜/：:]\s*(?:(?:秋(?:季)?|オータム|autumn|fall)\s*(?:の\s*)?(?:インターン|intern(?:ship)?)|(?:夏(?:季)?|冬(?:季)?|サマー|ウィンター|summer|winter)?\s*(?:インターン|intern)|早期選考|本選考|説明会|面談|OB\s*\/\s*OG訪問)\s*$/iu, "")
       .trim();
   }
 
@@ -521,9 +521,9 @@
     const text = String(value || "").normalize("NFKC");
     if (/OB\s*\/\s*OG訪問/iu.test(text)) return "OB/OG訪問";
     if (/早期選考/u.test(text)) return "早期選考";
-    if (/(?:夏(?:季)?|サマー|summer)\s*(?:の)?\s*(?:インターン|intern(?:ship)?)/iu.test(text)) return "夏インターン";
+    if (/(?:夏(?:季)?|サマー|summer)\s*(?:の)?\s*(?:インターン|intern)/iu.test(text)) return "夏インターン";
     if (/(?:秋(?:季)?|オータム|autumn|fall)\s*(?:の)?\s*(?:インターン|intern(?:ship)?)/iu.test(text)) return "秋インターン";
-    if (/(?:冬(?:季)?|ウィンター|winter)\s*(?:の)?\s*(?:インターン|intern(?:ship)?)/iu.test(text)) return "冬インターン";
+    if (/(?:冬(?:季)?|ウィンター|winter)\s*(?:の)?\s*(?:インターン|intern)/iu.test(text)) return "冬インターン";
     if (/インターン/u.test(text)) return "インターン";
     if (/説明会/u.test(text)) return "説明会";
     if (/面談/u.test(text)) return "面談";

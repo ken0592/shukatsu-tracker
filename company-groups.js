@@ -32,7 +32,7 @@
     return { id, companyName: source.companyName, industry: source.industry, officialUrl: source.officialUrl,
       logoUrl: source.logoUrl, mypageUrl: source.mypageUrl, mypageId: source.mypageId, priority: source.priority,
       trackType: track, status: "応募予定", esItems: [], esContent: "", interviewNotes: "", memo: "",
-      deadline: "", deadlineTime: "", eventDate: "", eventType: "", createdAt: now, updatedAt: now, deletedAt: "" };
+      deadline: "", eventDate: "", eventType: "", createdAt: now, updatedAt: now, deletedAt: "" };
   }
   function canMoveToSummer(entries, source) {
     return source && !source.deletedAt && source.trackType === "インターン"

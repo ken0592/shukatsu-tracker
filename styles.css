@@ -3358,11 +3358,3 @@ textarea {
   .dashboard-with-sidebar .search-controls { grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr)) auto; }
   .dashboard-with-sidebar #clearFiltersButton { white-space: nowrap; }
 }
-
-.sync-pill.error { background: #fef3f2; color: #b42318; }
-.company-branch { flex-wrap: wrap; }
-.company-season-control select { min-height: 32px; max-width: 90px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); font-size: 12px; }
-.branch-deadline { flex-basis: 100%; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
-.branch-deadline.is-overdue { color: #b42318; font-weight: 700; }
-.conflict-choice small { max-height: 240px; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
-@media (max-width: 760px) { .company-season-control select { font-size: 16px; min-height: 36px; } }
