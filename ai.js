@@ -2,6 +2,7 @@
   "use strict";
 
   const endpoint = "/api/ai-cards";
+  const defaultCloudflareModel = "@cf/qwen/qwen3.8-27b";
   const maxMemoChars = 12000;
   const maxFaqChars = 500;
   const maxFaqAnswerChars = 700;
@@ -766,6 +767,26 @@
     };
   }
 
+  function buildCloudflareRequest(request, model = defaultCloudflareModel) {
+    // Qwen 3.8 uses the OpenAI-compatible request schema; keep custom legacy models compatible.
+    if (model !== defaultCloudflareModel) return request;
+    const { max_tokens, response_format, messages, ...options } = request;
+    return {
+      ...options,
+      max_completion_tokens: max_tokens,
+      reasoning_effort: "low",
+      chat_template_kwargs: { enable_thinking: false },
+      response_format: {
+        type: "json_schema",
+        json_schema: { name: "shukatsu_response", schema: response_format.json_schema, strict: true }
+      },
+      messages: messages.map((message) => ({
+        ...message,
+        content: message.content.replace(/\n\/no_think$/u, "")
+      }))
+    };
+  }
+
   function sanitizeChatHistory(history) {
     if (!Array.isArray(history)) return [];
     return history.slice(-4)
@@ -1189,6 +1210,8 @@
 
   global.SHUKATSU_AI = {
     endpoint,
+    defaultCloudflareModel,
+    buildCloudflareRequest,
     maxMemoChars,
     maxFaqChars,
     countCharacters,

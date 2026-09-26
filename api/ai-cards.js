@@ -4,7 +4,7 @@ const ai = require("../ai.js");
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://fqsacoijtxgzsnvluecy.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY || "sb_publishable_49ZKBFL3sb9DeJhPt5EXrg_YKvAsptw";
-const CLOUDFLARE_MODEL = process.env.CLOUDFLARE_AI_MODEL || "@cf/qwen/qwen3-30b-a3b-fp8";
+const CLOUDFLARE_MODEL = process.env.CLOUDFLARE_AI_MODEL || ai.defaultCloudflareModel;
 
 module.exports = async function handler(request, response) {
   response.setHeader("Cache-Control", "no-store, max-age=0");
@@ -16,7 +16,8 @@ module.exports = async function handler(request, response) {
   if (request.method === "GET") {
     return response.status(200).json({
       ready: Boolean(process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_AI_TOKEN),
-      loginRequired: true
+      loginRequired: true,
+      model: CLOUDFLARE_MODEL
     });
   }
 
@@ -220,7 +221,7 @@ async function runCloudflareAi(requestBody) {
         Authorization: `Bearer ${process.env.CLOUDFLARE_AI_TOKEN}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify(requestBody),
+      body: JSON.stringify(ai.buildCloudflareRequest(requestBody, CLOUDFLARE_MODEL)),
       signal: controller.signal
     });
   } catch {

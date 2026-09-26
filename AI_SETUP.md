@@ -2,6 +2,10 @@
 
 この機能は、公開サイトのVercel FunctionからCloudflare Workers AIを呼び出します。利用者のPCにOllamaを入れる必要はなく、PC・スマホのどちらからでも利用できます。
 
+標準モデルは [Qwen 3.8 27B](https://developers.cloudflare.com/workers-ai/models/qwen3.8-27b/)（`@cf/qwen/qwen3.8-27b`）です。メモ整理・FAQ・ES添削で共通して使用し、長い内部推論を無効にして回答の時間と消費量を抑えます。最新モデルへ自動追従する設定ではありません。
+
+旧Qwen3より1回あたりの無料枠の消費量が大きくなります。[Cloudflareの料金表](https://developers.cloudflare.com/workers-ai/platform/pricing/)を確認し、課金を避ける場合はWorkers Freeプランを維持してください。
+
 ## 1. Cloudflareの無料AIを準備
 
 1. Cloudflareアカウントを作り、ダッシュボードの「Workers AI」を開きます。
@@ -27,6 +31,8 @@ Vercelのプロジェクト設定にあるEnvironment Variablesへ、次の2件�
 - `CLOUDFLARE_AI_TOKEN`: Workers AI用のAPIトークン
 
 Production、Preview、Developmentのうち、利用する環境を選びます。登録後は再デプロイが必要です。
+
+`CLOUDFLARE_AI_MODEL` は任意のモデル指定です。未設定なら上記の標準モデルを使います。旧モデルを指定している場合は `@cf/qwen/qwen3.8-27b` に変更して再デプロイしてください。`/api/ai-cards` のGET応答の `model` で公開環境の設定を確認できます。
 
 ## ESチェック・AI添削
 

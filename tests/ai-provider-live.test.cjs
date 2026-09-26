@@ -4,6 +4,7 @@ const ai = require("../ai.js");
 async function main() {
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
   const token = process.env.CLOUDFLARE_AI_TOKEN;
+  const model = process.env.CLOUDFLARE_AI_MODEL || ai.defaultCloudflareModel;
   assert.ok(accountId, "CLOUDFLARE_ACCOUNT_ID is required");
   assert.ok(token, "CLOUDFLARE_AI_TOKEN is required");
 
@@ -15,14 +16,15 @@ async function main() {
     "回答2：研究活動で改善を重ねました。"
   ].join("\n");
   const response = await fetch(
-    `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/run/@cf/qwen/qwen3-30b-a3b-fp8`,
+    `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/run/${model}`,
     {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify(ai.buildRequest(memo, "2026-07-18"))
+      body: JSON.stringify(ai.buildCloudflareRequest(ai.buildRequest(memo, "2026-07-18"), model)),
+      signal: AbortSignal.timeout(45000)
     }
   );
 
