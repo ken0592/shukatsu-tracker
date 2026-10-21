@@ -871,7 +871,7 @@ async function handleSignIn() {
 }
 
 async function handleSignUp() {
-  const credentials = getAuthCredentials();
+  const credentials = getAuthCredentials(8);
   if (!credentials) return;
 
   setAuthBusy(true);
@@ -5565,7 +5565,7 @@ function fromDbTemplate(row) {
   });
 }
 
-function getAuthCredentials() {
+function getAuthCredentials(minimumPasswordLength = 6) {
   const email = els.authEmailInput.value.trim();
   const password = els.authPasswordInput.value;
 
@@ -5574,8 +5574,8 @@ function getAuthCredentials() {
     return null;
   }
 
-  if (password.length < 6) {
-    setAuthMessage("パスワードは6文字以上にしてください。");
+  if (password.length < minimumPasswordLength) {
+    setAuthMessage(`パスワードは${minimumPasswordLength}文字以上にしてください。`);
     return null;
   }
 

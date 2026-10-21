@@ -1,4 +1,4 @@
-const cacheName = "shukatsu-tracker-v70";
+const cacheName = "shukatsu-tracker-v71";
 const assets = [
   "./",
   "./index.html",
