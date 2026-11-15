@@ -11,8 +11,12 @@ export function createImageRig(texture) {
     uLook: { value: new THREE.Vector2() },
     uGreeting: { value: 0 },
     uNod: { value: 0 },
-    uJoy: { value: 0 }
+    uJoy: { value: 0 },
+    uBlink: { value: 0 },
+    uBlinkMap: { value: texture },
+    uArtworkSize: { value: new THREE.Vector2(texture.image.width, texture.image.height) }
   };
+  let blinkTexture = null;
   const material = new THREE.MeshBasicMaterial({
     map: texture,
     transparent: true,
@@ -60,8 +64,47 @@ export function createImageRig(texture) {
       float relief = exp(-dot(reliefPoint, reliefPoint) * 1.8);
       transformed.z += (head * 0.012 + body * 0.008 + relief * 0.012) * uAmount;
     `);
+    shader.fragmentShader = shader.fragmentShader.replace('#include <map_pars_fragment>', `
+      #include <map_pars_fragment>
+      #ifdef USE_MAP
+      uniform float uBlink;
+      uniform sampler2D uBlinkMap;
+      uniform vec2 uArtworkSize;
+
+      float eyeRegion(vec2 point, vec2 center) {
+        vec2 q = abs(point - center) / vec2(75.0, 63.0);
+        float distance = dot(q * q, q * q);
+        return 1.0 - smoothstep(0.55, 1.0, distance);
+      }
+
+      vec3 blinkEye(vec2 point, vec2 center, vec3 original, vec3 closed) {
+        float area = eyeRegion(point, center);
+        if (area <= 0.0) return original;
+        // Compress the existing eye toward its lower lid, then settle onto the
+        // relaxed closed lid. Outside these two feathered regions is untouched.
+        float openness = max(0.025, 1.0 - uBlink);
+        vec2 source = point;
+        source.y = (point.y - center.y - 14.0 * uBlink) / openness + center.y;
+        vec2 sourceUv = vec2(source.x, uArtworkSize.y - source.y) / uArtworkSize;
+        vec3 openEye = texture2D(map, sourceUv).rgb;
+        float openArea = eyeRegion(source, center) * (1.0 - smoothstep(0.72, 1.0, uBlink));
+        vec3 eye = mix(closed, openEye, openArea);
+        return mix(original, eye, area * smoothstep(0.0, 0.12, uBlink));
+      }
+      #endif
+    `).replace('#include <map_fragment>', `
+      #include <map_fragment>
+      #ifdef USE_MAP
+        if (uBlink > 0.0001) {
+          vec2 point = vec2(vMapUv.x, 1.0 - vMapUv.y) * uArtworkSize;
+          vec3 closed = texture2D(uBlinkMap, vMapUv).rgb;
+          diffuseColor.rgb = blinkEye(point, vec2(465.0, 511.0), diffuseColor.rgb, closed);
+          diffuseColor.rgb = blinkEye(point, vec2(668.0, 511.0), diffuseColor.rgb, closed);
+        }
+      #endif
+    `);
   };
-  material.customProgramCacheKey = () => 'mascot-faithful-25d-v1';
+  material.customProgramCacheKey = () => 'mascot-faithful-25d-blink-v2';
 
   const mesh = new THREE.Mesh(geometry, material);
   mesh.frustumCulled = false;
@@ -71,10 +114,17 @@ export function createImageRig(texture) {
     root,
     aspect,
     uniforms,
+    get blinkReady() { return Boolean(blinkTexture); },
+    setBlinkTexture(nextTexture) {
+      blinkTexture?.dispose();
+      blinkTexture = nextTexture;
+      uniforms.uBlinkMap.value = nextTexture;
+    },
     dispose() {
       geometry.dispose();
       material.dispose();
       texture.dispose();
+      blinkTexture?.dispose();
     }
   };
 }

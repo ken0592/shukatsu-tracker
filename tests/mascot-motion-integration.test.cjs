@@ -199,6 +199,8 @@ test("service-worker install precaches every new mascot module, renderer depende
     "./assets/mascot-2-5d.png",
     "./mascot-motion.js",
     "./mascot-rig.js",
+    "./mascot-blink.js",
+    "./assets/mascot-blink-closed.png",
     "./vendor/three.module.min.js"
   ]) {
     assert.ok(precached.includes(asset), `${asset} must be available offline`);

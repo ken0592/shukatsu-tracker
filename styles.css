@@ -1508,7 +1508,7 @@ button:disabled {
   padding: 0;
   background: transparent;
   cursor: grab;
-  filter: drop-shadow(0 12px 18px rgba(18, 38, 63, 0.2));
+  filter: drop-shadow(0 5px 6px rgba(18, 38, 63, 0.16));
   transform: translate3d(28px, 140px, 0);
   transition: transform 1800ms cubic-bezier(0.22, 1, 0.36, 1);
   touch-action: none;

@@ -1,7 +1,9 @@
 import * as THREE from './vendor/three.module.min.js';
 import { createImageRig, gestureAt } from './mascot-rig.js';
+import { createBlinkTimeline } from './mascot-blink.js';
 
 const artworkUrl = new URL('./assets/mascot-2-5d.png', import.meta.url).href;
+const blinkArtworkUrl = new URL('./assets/mascot-blink-closed.png', import.meta.url).href;
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 const gestureNames = new Set(['greet', 'celebrate', 'encourage', 'idle']);
 
@@ -45,6 +47,7 @@ function createController(host) {
   let visible = false;
   let destroyed = false;
   let rendererFailed = false;
+  const blinkTimeline = createBlinkTimeline();
   let x = 0, y = 0, vx = 0, vy = 0, targetX = 0, targetY = 0;
 
   const isVisible = () => {
@@ -76,13 +79,16 @@ function createController(host) {
     canvas.width = 0;
     canvas.height = 0;
     setFallback(reducedMotion.matches ? 'reduced' : 'fallback');
+    host.dataset.blinkState = 'unavailable';
   }
 
   function resize() {
     if (!renderer || !rig || destroyed) return;
     const bounds = host.getBoundingClientRect();
     if (!bounds.width || !bounds.height) return;
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    const pixelRatio = Math.min(3, Math.max(2, window.devicePixelRatio || 1));
+    renderer.setPixelRatio(pixelRatio);
+    canvas.dataset.renderScale = String(pixelRatio);
     renderer.setSize(bounds.width, bounds.height, false);
     const aspect = bounds.width / bounds.height;
     const viewHeight = Math.max(1, rig.aspect / aspect) * 1.04;
@@ -111,6 +117,7 @@ function createController(host) {
     rig.uniforms.uGreeting.value = pose.greeting;
     rig.uniforms.uNod.value = pose.nod;
     rig.uniforms.uJoy.value = pose.joy;
+    rig.uniforms.uBlink.value = rig.blinkReady ? blinkTimeline.sample(elapsed) : 0;
     rig.root.position.set(Math.sin(elapsed * 0.67) * 0.0018 + pose.greeting * 0.004,
       Math.sin(elapsed * 1.55) * 0.003 + pose.lift * 0.022 - pose.nod * 0.006, 0);
     rig.root.rotation.set(-y * 0.026 + pose.nod * 0.075,
@@ -159,6 +166,7 @@ function createController(host) {
   function startAnimation() {
     if (!isVisible() || !renderer || frameRequest) return;
     lastFrame = null;
+    blinkTimeline.reset(elapsed);
     host.dataset.motionPlayback = 'running';
     frameRequest = requestAnimationFrame(animate);
   }
@@ -168,6 +176,31 @@ function createController(host) {
     frameRequest = 0;
     lastFrame = null;
     host.dataset.motionPlayback = 'paused';
+    blinkTimeline.reset(elapsed);
+  }
+
+  function prepareTexture(texture) {
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.generateMipmaps = false;
+    return texture;
+  }
+
+  async function loadBlinkTexture(token) {
+    host.dataset.blinkState = 'loading';
+    try {
+      const texture = await new THREE.TextureLoader().loadAsync(blinkArtworkUrl);
+      if (destroyed || token !== generation || !rig) {
+        texture.dispose();
+        return;
+      }
+      rig.setBlinkTexture(prepareTexture(texture));
+      blinkTimeline.reset(elapsed);
+      host.dataset.blinkState = 'ready';
+    } catch {
+      if (!destroyed && token === generation) host.dataset.blinkState = 'unavailable';
+    }
   }
 
   async function ensureRenderer() {
@@ -197,9 +230,7 @@ function createController(host) {
         if (token === generation) releaseRenderer();
         return;
       }
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.anisotropy = Math.min(2, renderer.capabilities.getMaxAnisotropy());
-      rig = createImageRig(texture);
+      rig = createImageRig(prepareTexture(texture));
       scene.add(rig.root);
       resizeObserver = new ResizeObserver(resize);
       resizeObserver.observe(host);
@@ -208,6 +239,7 @@ function createController(host) {
       host.classList.add('has-mascot-motion');
       host.dataset.motionState = 'ready';
       canvas.dataset.motionState = 'ready';
+      loadBlinkTexture(token);
       startAnimation();
     } catch {
       if (token === generation) {
@@ -289,6 +321,7 @@ function createController(host) {
     window.addEventListener('blur', onPointerReset);
   }
   document.addEventListener('visibilitychange', onVisibilityChange);
+  window.addEventListener('resize', resize, { passive: true });
   reducedMotion.addEventListener('change', onReducedMotionChange);
 
   intersectionObserver = new IntersectionObserver(entries => {
@@ -331,6 +364,7 @@ function createController(host) {
       window.removeEventListener('pointercancel', onPointerReset);
       window.removeEventListener('blur', onPointerReset);
       document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('resize', resize);
       reducedMotion.removeEventListener('change', onReducedMotionChange);
       intersectionObserver?.disconnect();
       overlayObserver?.disconnect();
@@ -339,6 +373,7 @@ function createController(host) {
       delete host.dataset.motionState;
       delete host.dataset.motionPlayback;
       delete host.dataset.motionGesture;
+      delete host.dataset.blinkState;
     }
   };
 }
