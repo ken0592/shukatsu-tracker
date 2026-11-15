@@ -565,9 +565,9 @@
     </section>
 
     <div class="toast" id="toast" role="status" hidden></div>
-    <button class="mascot" id="mascot" type="button" aria-label="AIに相談する" aria-controls="mascotHelpPanel" aria-expanded="false">
+    <button class="mascot" id="mascot" type="button" data-mascot-motion aria-label="AIに相談する" aria-controls="mascotHelpPanel" aria-expanded="false">
       <span class="mascot-fallback" aria-hidden="true">祝</span>
-      <img src="./assets/mascot-summer-smile.png" alt="" />
+      <img src="./assets/mascot-2-5d.png" alt="" decoding="async" draggable="false" />
       <span class="mascot-bubble" id="mascotBubble">今日もいける！</span>
     </button>
 
@@ -575,7 +575,9 @@
       <div class="celebration-confetti" id="celebrationConfetti" aria-hidden="true"></div>
       <section class="celebration-card" role="dialog" aria-modal="true" aria-labelledby="celebrationTitle">
         <span class="celebration-character-fallback" aria-hidden="true">祝</span>
-        <img class="celebration-character" src="./assets/mascot-summer-smile.png" alt="" />
+        <div class="celebration-art" data-mascot-motion aria-hidden="true">
+          <img class="celebration-character" src="./assets/mascot-2-5d.png" alt="" decoding="async" draggable="false" />
+        </div>
         <p class="eyebrow" id="celebrationEyebrow">Congratulations</p>
         <h2 id="celebrationTitle">おめでとう！</h2>
         <p id="celebrationMessage">ここまでの積み重ね、ちゃんと届いた。</p>
@@ -591,5 +593,6 @@
     <script src="./csv-import.js"></script>
     <script src="./scratchpad.js"></script>
     <script src="./app.js"></script>
+    <script type="module" src="./mascot-motion.js"></script>
   </body>
 </html>

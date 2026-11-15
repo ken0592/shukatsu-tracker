@@ -69,25 +69,7 @@ const entryMergeFields = [
 const quoteMonthDays = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 const quoteEntries = window.SHUKATSU_DAILY_QUOTES || [];
 const dailyQuotes = buildDailyQuotes();
-const defaultMascotImage = "./assets/mascot-summer-smile.png";
-const mascotImageVariants = {
-  spring: {
-    normal: ["./assets/mascot-spring-open.png", "./assets/mascot-spring-smile.png"],
-    angry: "./assets/mascot-spring-angry.png"
-  },
-  summer: {
-    normal: ["./assets/mascot-summer-open.png", "./assets/mascot-summer-smile.png"],
-    angry: "./assets/mascot-summer-angry.png"
-  },
-  autumn: {
-    normal: ["./assets/mascot-autumn-open.png", "./assets/mascot-autumn-smile.png"],
-    angry: "./assets/mascot-autumn-angry.png"
-  },
-  winter: {
-    normal: ["./assets/mascot-winter-open.png", "./assets/mascot-winter-smile.png"],
-    angry: "./assets/mascot-winter-angry.png"
-  }
-};
+const defaultMascotImage = "./assets/mascot-2-5d.png";
 
 ensureMascotDom();
 
@@ -719,10 +701,13 @@ function ensureMascotDom() {
     mascot.className = "mascot";
     mascot.id = "mascot";
     mascot.type = "button";
-    mascot.setAttribute("aria-label", "応援キャラクター");
+    mascot.setAttribute("data-mascot-motion", "");
+    mascot.setAttribute("aria-label", "AIに相談する");
+    mascot.setAttribute("aria-controls", "mascotHelpPanel");
+    mascot.setAttribute("aria-expanded", "false");
     mascot.innerHTML = `
       <span class="mascot-fallback" aria-hidden="true">祝</span>
-      <img src="${getMascotImageSrc()}" alt="" />
+      <img src="${getMascotImageSrc()}" alt="" decoding="async" draggable="false" />
       <span class="mascot-bubble" id="mascotBubble">今日もいける！</span>
     `;
     document.body.append(mascot);
@@ -737,7 +722,9 @@ function ensureMascotDom() {
       <div class="celebration-confetti" id="celebrationConfetti" aria-hidden="true"></div>
       <section class="celebration-card" role="dialog" aria-modal="true" aria-labelledby="celebrationTitle">
         <span class="celebration-character-fallback" aria-hidden="true">祝</span>
-        <img class="celebration-character" src="${getMascotImageSrc()}" alt="" />
+        <div class="celebration-art" data-mascot-motion aria-hidden="true">
+          <img class="celebration-character" src="${getMascotImageSrc()}" alt="" decoding="async" draggable="false" />
+        </div>
         <p class="eyebrow" id="celebrationEyebrow">Congratulations</p>
         <h2 id="celebrationTitle">おめでとう！</h2>
         <p id="celebrationMessage">ここまでの積み重ね、ちゃんと届いた。</p>
@@ -5673,6 +5660,10 @@ function initMascot() {
   applyMascotPosition();
 
   window.addEventListener("resize", handleMascotResize);
+  window.matchMedia?.("(prefers-reduced-motion: reduce)").addEventListener?.("change", (event) => {
+    mascotState.reducedMotion = event.matches;
+    updateMascotWander();
+  });
   updateMascotWander();
 }
 
@@ -5734,20 +5725,14 @@ function setMascotImage(mood = "normal") {
   });
 }
 
-function getMascotImageSrc(mood = "normal") {
-  const seasonImages = mascotImageVariants[getCurrentSeason()] || mascotImageVariants.summer;
-  if (mood === "angry") return seasonImages.angry || defaultMascotImage;
-
-  const candidates = seasonImages.normal || [defaultMascotImage];
-  return candidates[Math.floor(Math.random() * candidates.length)] || defaultMascotImage;
+function getMascotImageSrc() {
+  return defaultMascotImage;
 }
 
-function getCurrentSeason() {
-  const month = new Date().getMonth() + 1;
-  if (month >= 3 && month <= 5) return "spring";
-  if (month >= 6 && month <= 8) return "summer";
-  if (month >= 9 && month <= 11) return "autumn";
-  return "winter";
+function playMascotMotion(action) {
+  document.querySelectorAll("[data-mascot-motion]").forEach((host) => {
+    host.dispatchEvent(new CustomEvent("mascot:motion", { detail: { action } }));
+  });
 }
 
 function bindMascotImageFallbacks() {
@@ -5839,7 +5824,6 @@ function getMascotSize() {
 
 function applyMascotPosition() {
   els.mascot.style.transform = `translate3d(${mascotState.x}px, ${mascotState.y}px, 0)`;
-  els.mascot.classList.toggle("facing-left", mascotState.vx < 0);
 }
 
 function loadMascotPosition() {
@@ -5934,6 +5918,7 @@ function showCelebration(entry, celebration) {
   els.celebrationOverlay.hidden = false;
   document.body.classList.add("is-celebrating");
   els.mascot.classList.add("is-celebrating");
+  playMascotMotion(celebration.mood === "angry" ? "encourage" : "celebrate");
   showMascotBubble(celebration.bubble);
   setMascotVelocity();
 
@@ -5955,6 +5940,7 @@ function closeCelebration() {
   els.celebrationOverlay.classList.remove("is-rejection");
   document.body.classList.remove("is-celebrating");
   els.mascot.classList.remove("is-celebrating");
+  playMascotMotion("idle");
   window.clearTimeout(mascotState.celebrationTimer);
   setMascotImage("normal");
   if (state.aiReturnAfterCelebration && state.aiCards.length) {
@@ -6008,6 +5994,7 @@ function showToast(message) {
 function openMascotHelp() {
   els.mascotHelpPanel.hidden = false;
   els.mascot.setAttribute("aria-expanded", "true");
+  playMascotMotion("greet");
   showMascotBubble("相談のるよ");
   window.setTimeout(() => els.mascotHelpInput.focus(), 80);
 }

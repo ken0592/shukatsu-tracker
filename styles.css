@@ -1498,7 +1498,6 @@ button:disabled {
 }
 
 .mascot {
-  --face: 1;
   position: fixed;
   top: 0;
   left: 0;
@@ -1524,7 +1523,7 @@ button:disabled {
 
 .mascot-fallback,
 .celebration-character-fallback {
-  display: grid;
+  display: none;
   place-items: center;
   background: radial-gradient(circle at 35% 25%, #fff7ad, #f59e0b 62%, #b45309);
   color: #fff;
@@ -1551,12 +1550,7 @@ button:disabled {
   clip-path: none;
   object-fit: contain;
   box-shadow: none;
-  transform: scaleX(var(--face, 1));
   transition: box-shadow 180ms ease, filter 180ms ease;
-}
-
-.mascot:not(.is-celebrating) img {
-  animation: mascotIdle 3600ms ease-in-out infinite;
 }
 
 .mascot img[hidden],
@@ -1564,20 +1558,38 @@ button:disabled {
   display: none;
 }
 
-.mascot.facing-left {
-  --face: -1;
-}
-
 .mascot:hover img,
 .mascot.is-celebrating img {
   filter: saturate(1.12) drop-shadow(0 0 12px rgba(250, 204, 21, 0.55));
 }
 
-.mascot.is-celebrating img {
-  animation: mascotParty 520ms ease-in-out infinite alternate;
+.mascot-motion-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+[data-mascot-motion].has-mascot-motion > img {
+  opacity: 0;
+}
+
+.mascot.image-missing .mascot-fallback,
+.celebration-card.image-missing .celebration-character-fallback {
+  display: grid;
+}
+
+.mascot[data-mascot-motion] > img,
+.celebration-art > img {
+  animation: none;
+  transform: none;
 }
 
 .mascot-bubble {
+  z-index: 2;
   position: absolute;
   right: 70%;
   top: -8px;
@@ -1672,15 +1684,22 @@ button:disabled {
   border-color: rgba(251, 146, 60, 0.42);
 }
 
+.celebration-art {
+  position: relative;
+  width: min(240px, 54vw);
+  aspect-ratio: 1174 / 1339;
+  margin: 0 auto 12px;
+}
+
 .celebration-character {
-  width: min(270px, 58vw);
-  aspect-ratio: 0.86;
+  display: block;
+  width: 100%;
+  height: 100%;
   border: 0;
   border-radius: 0;
   background: transparent;
   object-fit: contain;
   filter: drop-shadow(0 20px 30px rgba(217, 119, 6, 0.28));
-  animation: mascotParty 560ms ease-in-out infinite alternate;
 }
 
 .celebration-overlay.is-rejection .celebration-character {
@@ -3123,6 +3142,7 @@ textarea {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .mascot { transition: none; }
   .mascot.is-celebrating img,
   .celebration-card,
   .celebration-character,
