@@ -2658,7 +2658,6 @@ function esEditorCard(item) {
           <button class="es-drag-handle" data-es-drag-handle type="button" aria-label="長押ししてES質問を並べ替え">並べ替え</button>
           <button class="es-title-button" data-es-toggle type="button" aria-expanded="false">
             <strong data-es-title>${escapeHtml(title)}</strong>
-            <span data-es-title-meta>${escapeHtml(esItemMeta(value))}</span>
           </button>
         </div>
         <button class="delete-button" data-es-delete type="button">削除</button>
@@ -2682,13 +2681,12 @@ function esEditorCard(item) {
 
 function esReadBlock(item) {
   const answers = item.variants
-    .map((variant, index) => {
+    .map((variant) => {
       const answer = variant.answer.trim();
       const empty = !answer;
       return `
         <section class="es-read-answer" data-es-read-answer>
           <div class="es-read-answer-heading">
-            <span class="tag">${escapeHtml(esVariantUiTitle(variant, index, item.variants.length))}</span>
             <span class="char-count">${escapeHtml(esDraftCountText(item.question, variant))}</span>
           </div>
           <p class="${empty ? "empty-answer" : ""}" data-es-read-answer-text>${escapeHtml(answer || "回答未入力")}</p>
@@ -2824,9 +2822,7 @@ function updateEsCardSummary(card) {
   if (!card) return;
   const item = collectEsItemFromCard(card);
   const title = card.querySelector("[data-es-title]");
-  const meta = card.querySelector("[data-es-title-meta]");
   if (title) title.textContent = esItemTitle(item);
-  if (meta) meta.textContent = esItemMeta(item);
   card.querySelectorAll("[data-es-variant-tab]").forEach((tab, index) => {
     const variant = item.variants.find((candidate) => candidate.id === tab.dataset.esVariantTab);
     if (variant) tab.textContent = esVariantUiTitle(variant, index, item.variants.length);
@@ -5556,10 +5552,6 @@ function esItemTitle(item) {
   const answer = getActiveEsVariant(item).answer.trim();
   if (answer) return `${answer.slice(0, 32)}${answer.length > 32 ? "..." : ""}`;
   return "未入力のES質問";
-}
-
-function esItemMeta(item) {
-  return `${item.variants.length}パターン`;
 }
 
 function esVariantUiTitle(variant, index, total) {
