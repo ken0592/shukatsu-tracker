@@ -355,6 +355,17 @@ const detailSwipeState = {
 };
 
 const scratchpad = window.SHUKATSU_SCRATCHPAD?.mount();
+const companyPins = window.SHUKATSU_PINS.createStore({
+  storage: () => window.localStorage,
+  keyOf: (entry) => window.SHUKATSU_GROUPS.key(entry) || entry.id,
+  read: readCloudCompanyPins,
+  seed: seedCloudCompanyPins,
+  write: writeCloudCompanyPin,
+  onChange: () => renderCompanyList(),
+  onError: (error) => showToast(["42P01", "PGRST205"].includes(error?.code)
+    ? "ピンの端末間同期にはSupabaseのSQL更新が必要です。今のピンはこの端末に残っています。"
+    : "ピンを同期できませんでした。接続を確認して、もう一度お試しください。")
+});
 
 bindEvents();
 init();
@@ -372,8 +383,19 @@ function bindEvents() {
     }
   });
   window.addEventListener("storage", event => {
-    if (event.key === null || event.key.startsWith(companyPinStoragePrefix)) renderCompanyList();
+    if (event.key === null || event.key.startsWith(companyPinStoragePrefix)) {
+      if (state.mode === "cloud") void refreshCompanyPins();
+      else renderCompanyList();
+    }
   });
+  window.addEventListener("focus", () => { void refreshCompanyPins(); });
+  window.addEventListener("online", () => { void refreshCompanyPins(); });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") void refreshCompanyPins();
+  });
+  window.setInterval(() => {
+    if (document.visibilityState === "visible") void refreshCompanyPins();
+  }, 30000);
   document.querySelector("#closeAddBranchButton").addEventListener("click", () => els.addBranchDialog.close());
   els.moveLegacySummerButton.addEventListener("click", handleSummerMigration);
   els.bulkIconButton.addEventListener("click", handleBulkIcons);
@@ -781,6 +803,7 @@ async function init() {
 }
 
 function clearUserScopedUiState(options = {}) {
+  companyPins.setScope(null);
   scratchpad?.setScope(null);
   if (els.moreActions) els.moreActions.open = false;
   state.bulkIcons?.controller.abort();
@@ -4006,6 +4029,8 @@ async function loadCloudData() {
     state.entries = entriesResult.data.map(fromDbEntry);
   }
 
+  void refreshCompanyPins();
+
   if (templatesResult.error) {
     state.templates = [];
     showToast("SupabaseのSQLを更新すると、ESの型保存も使えます。");
@@ -4659,7 +4684,7 @@ function renderCompanyGroups(visibleEntries) {
       </div>
       <div class="company-card-actions">
         ${companyMypageLinks(branches)}
-        <button class="company-pin-button" data-pin-company="${escapeAttribute(source.id)}" type="button" aria-pressed="${group.pinned}" aria-label="${escapeAttribute(source.companyName)}${group.pinned ? "の固定を解除" : "を先頭に固定"}" title="${group.pinned ? "固定を解除" : "この端末で先頭に固定"}">
+        <button class="company-pin-button" data-pin-company="${escapeAttribute(source.id)}" type="button" aria-pressed="${group.pinned}" aria-label="${escapeAttribute(source.companyName)}${group.pinned ? "の固定を解除" : "を先頭に固定"}" title="${group.pinned ? "固定を解除" : "先頭に固定"}" ${state.mode === "cloud" && companyPins.isPending(model.key(source) || source.id) ? "disabled" : ""}>
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path class="pin-head" d="M8 3h8l-1 7 3 3v2H6v-2l3-3-1-7Z"/><path d="M12 15v7"/></svg>
         </button>
       </div>
@@ -4676,25 +4701,67 @@ function companyPinStorageKey(entry) {
 function isCompanyPinned(entry) {
   const key = companyPinStorageKey(entry);
   if (!key) return false;
+  if (state.mode === "cloud") return companyPins.isPinned(window.SHUKATSU_GROUPS.key(entry) || entry.id);
   try { return localStorage.getItem(key) === "1"; } catch { return false; }
 }
 
-function toggleCompanyPin(id) {
+async function toggleCompanyPin(id) {
   const entry = state.entries.find(item => item.id === id && !isTrashed(item));
   const key = companyPinStorageKey(entry);
   if (!key) return;
+  const scope = captureUserScope();
   let pinned;
-  try {
-    pinned = localStorage.getItem(key) !== "1";
-    if (pinned) localStorage.setItem(key, "1");
-    else localStorage.removeItem(key);
-  } catch {
-    showToast("固定を保存できませんでした。もう一度お試しください。");
-    return;
+  if (state.mode === "cloud") {
+    companyPins.setScope(scope.userId, scope.version);
+    if (!await companyPins.toggle(window.SHUKATSU_GROUPS.key(entry) || entry.id, state.entries)
+      || !isCurrentUserScope(scope)) return;
+    pinned = isCompanyPinned(entry);
+  } else {
+    try {
+      pinned = localStorage.getItem(key) !== "1";
+      if (pinned) localStorage.setItem(key, "1");
+      else localStorage.removeItem(key);
+    } catch {
+      showToast("固定を保存できませんでした。もう一度お試しください。");
+      return;
+    }
   }
   renderCompanyList();
   [...els.companyList.querySelectorAll("[data-pin-company]")].find(button => button.dataset.pinCompany === id)?.focus({ preventScroll: true });
   showToast(pinned ? "先頭に固定しました。" : "固定を解除しました。");
+}
+
+async function refreshCompanyPins() {
+  if (state.mode !== "cloud" || !state.session) return false;
+  const scope = captureUserScope();
+  companyPins.setScope(scope.userId, scope.version);
+  return companyPins.refresh(state.entries);
+}
+
+async function readCloudCompanyPins(owner) {
+  const rows = [];
+  const pageSize = 500;
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await supabaseClient.from("company_pins")
+      .select("company_key,pinned").eq("user_id", owner).order("company_key")
+      .range(offset, offset + pageSize - 1);
+    if (error) throw error;
+    rows.push(...data);
+    if (data.length < pageSize) return rows;
+  }
+}
+
+async function seedCloudCompanyPins(rows) {
+  const { error } = await supabaseClient.from("company_pins")
+    .upsert(rows, { onConflict: "user_id,company_key", ignoreDuplicates: true });
+  if (error) throw error;
+}
+
+async function writeCloudCompanyPin(row) {
+  const { data, error } = await supabaseClient.from("company_pins")
+    .upsert(row, { onConflict: "user_id,company_key" }).select("company_key,pinned").single();
+  if (error) throw error;
+  return data;
 }
 
 async function copyCompanyMypageId(id) {

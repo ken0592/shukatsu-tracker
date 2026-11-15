@@ -166,6 +166,51 @@ begin
 end;
 $$;
 
+-- 企業カードのピン留めは企業データと分け、アカウントごとに同期します。
+-- pinned = false の行も解除状態として残し、古い端末のピンが復活しないようにします。
+create table if not exists public.company_pins (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  company_key text not null,
+  pinned boolean not null default true,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, company_key)
+);
+
+alter table public.company_pins enable row level security;
+
+revoke all on table public.company_pins from anon, authenticated;
+grant select, insert, update on table public.company_pins to authenticated;
+
+drop policy if exists "Users can read own company pins" on public.company_pins;
+drop policy if exists "Users can insert own company pins" on public.company_pins;
+drop policy if exists "Users can update own company pins" on public.company_pins;
+
+create policy "Users can read own company pins"
+  on public.company_pins
+  for select
+  to authenticated
+  using (auth.uid() is not null and auth.uid() = user_id);
+
+create policy "Users can insert own company pins"
+  on public.company_pins
+  for insert
+  to authenticated
+  with check (auth.uid() is not null and auth.uid() = user_id);
+
+create policy "Users can update own company pins"
+  on public.company_pins
+  for update
+  to authenticated
+  using (auth.uid() is not null and auth.uid() = user_id)
+  with check (auth.uid() is not null and auth.uid() = user_id);
+
+drop trigger if exists company_pins_set_updated_at on public.company_pins;
+
+create trigger company_pins_set_updated_at
+  before update on public.company_pins
+  for each row
+  execute function public.set_updated_at();
+
 drop trigger if exists entries_set_updated_at on public.entries;
 
 create trigger entries_set_updated_at
