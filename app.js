@@ -2610,11 +2610,11 @@ function esEditorCard(item) {
   const activeVariantId = activeVariant?.id || value.variants[0]?.id || "";
   const templateOptions = templateOptionsMarkup();
   const tabs = value.variants
-    .map((variant) => {
+    .map((variant, index) => {
       const active = variant.id === activeVariantId;
       return `
         <button class="es-variant-tab ${active ? "active" : ""}" data-es-variant-tab="${escapeAttribute(variant.id)}" type="button">
-          ${escapeHtml(esVariantTitle(variant))}
+          ${escapeHtml(esVariantUiTitle(variant, index, value.variants.length))}
         </button>
       `;
     })
@@ -2682,13 +2682,13 @@ function esEditorCard(item) {
 
 function esReadBlock(item) {
   const answers = item.variants
-    .map((variant) => {
+    .map((variant, index) => {
       const answer = variant.answer.trim();
       const empty = !answer;
       return `
         <section class="es-read-answer" data-es-read-answer>
           <div class="es-read-answer-heading">
-            <span class="tag">${escapeHtml(esVariantTitle(variant))}</span>
+            <span class="tag">${escapeHtml(esVariantUiTitle(variant, index, item.variants.length))}</span>
             <span class="char-count">${escapeHtml(esDraftCountText(item.question, variant))}</span>
           </div>
           <p class="${empty ? "empty-answer" : ""}" data-es-read-answer-text>${escapeHtml(answer || "回答未入力")}</p>
@@ -2827,9 +2827,9 @@ function updateEsCardSummary(card) {
   const meta = card.querySelector("[data-es-title-meta]");
   if (title) title.textContent = esItemTitle(item);
   if (meta) meta.textContent = esItemMeta(item);
-  card.querySelectorAll("[data-es-variant-tab]").forEach((tab) => {
+  card.querySelectorAll("[data-es-variant-tab]").forEach((tab, index) => {
     const variant = item.variants.find((candidate) => candidate.id === tab.dataset.esVariantTab);
-    if (variant) tab.textContent = esVariantTitle(variant);
+    if (variant) tab.textContent = esVariantUiTitle(variant, index, item.variants.length);
   });
   const readBlock = card.querySelector("[data-es-read]");
   if (readBlock) readBlock.outerHTML = esReadBlock(item);
@@ -5559,8 +5559,15 @@ function esItemTitle(item) {
 }
 
 function esItemMeta(item) {
-  const active = getActiveEsVariant(item);
-  return `${item.variants.length}パターン / ${formatCharCount(active.answer)}`;
+  return `${item.variants.length}パターン`;
+}
+
+function esVariantUiTitle(variant, index, total) {
+  const label = String(variant.label || "").trim();
+  const normalized = label.normalize("NFKC").replace(/\s+/gu, "");
+  const countOnly = /^(?:\d+|\d{1,3}(?:,\d{3})+)(?:文字|字)(?:版|以内|以下)?$/u.test(normalized);
+  if (label && !countOnly) return label;
+  return total > 1 ? `回答${index + 1}` : "回答";
 }
 
 function esVariantTitle(variant) {
