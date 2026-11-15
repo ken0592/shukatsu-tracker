@@ -1405,13 +1405,13 @@ button:disabled {
 .mascot-help-panel {
   position: fixed;
   right: 18px;
-  bottom: 146px;
+  bottom: 235px;
   z-index: 65;
   display: grid;
   gap: 12px;
   width: min(380px, calc(100% - 36px));
-  max-height: calc(100vh - 164px);
-  max-height: calc(100dvh - 164px);
+  max-height: calc(100vh - 253px);
+  max-height: calc(100dvh - 253px);
   padding: 14px;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -3077,10 +3077,10 @@ textarea {
 
   .mascot-help-panel {
     right: 12px;
-    bottom: 118px;
+    bottom: 182px;
     width: calc(100% - 24px);
-    max-height: calc(100vh - 130px);
-    max-height: calc(100dvh - 130px);
+    max-height: calc(100vh - 194px);
+    max-height: calc(100dvh - 194px);
   }
 
   .mascot-bubble {
