@@ -2681,7 +2681,6 @@ function esEditorCard(item) {
 }
 
 function esReadBlock(item) {
-  const question = item.question.trim() || "未入力のES質問";
   const answers = item.variants
     .map((variant) => {
       const answer = variant.answer.trim();
@@ -2701,10 +2700,6 @@ function esReadBlock(item) {
 
   return `
     <div class="es-read-card" data-es-read>
-      <div class="es-read-question">
-        <span>質問</span>
-        <strong>${escapeHtml(question)}</strong>
-      </div>
       <div class="es-read-answers">${answers}</div>
       <button class="edit-button es-read-edit-button" data-es-edit-card type="button">この質問を編集</button>
     </div>
